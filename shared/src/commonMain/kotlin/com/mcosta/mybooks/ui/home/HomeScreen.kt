@@ -1,6 +1,7 @@
 package com.mcosta.mybooks.ui.home
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,7 +32,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
@@ -192,7 +192,11 @@ private fun SectionTitle(text: String, onClick: (() -> Unit)? = null) {
 /** A book being read: a large cover, its title and progress. */
 @Composable
 private fun ReadingCard(book: Book, onClick: () -> Unit, onUpdate: () -> Unit) {
-    Column(Modifier.width(112.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    // A tap opens the book; a long press updates its progress.
+    Column(
+        Modifier.width(112.dp).combinedClickable(onClick = onClick, onLongClick = onUpdate, onLongClickLabel = "Update progress"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 4.dp, modifier = Modifier.width(112.dp).height(168.dp)) {
             BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
         }
@@ -202,9 +206,6 @@ private fun ReadingCard(book: Book, onClick: () -> Unit, onUpdate: () -> Unit) {
             Text("$progress%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(book.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        FilledTonalButton(onClick = onUpdate, contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(32.dp)) {
-            Text("Update", style = MaterialTheme.typography.labelMedium)
-        }
     }
 }
 
