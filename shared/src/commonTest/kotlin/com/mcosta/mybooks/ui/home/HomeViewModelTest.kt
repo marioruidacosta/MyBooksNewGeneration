@@ -5,6 +5,7 @@ import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.ChallengeRepository
 import com.mcosta.mybooks.data.FakeBookDao
 import com.mcosta.mybooks.data.FakeChallengeDao
+import com.mcosta.mybooks.data.SaveResult
 import com.mcosta.mybooks.data.backup.BackupSerializer
 import com.mcosta.mybooks.data.lookup.BookLookupService
 import com.mcosta.mybooks.data.lookup.LookupResult
@@ -73,5 +74,35 @@ class HomeViewModelTest : MainDispatcherTest() {
         challenges.setGoal(2026, 30)
         assertEquals(ChallengeProgress(2026, 30, 1), vm.state.value.challenge)
         assertEquals(Pace.Behind(24), vm.state.value.pace)
+    }
+
+    @Test
+    fun quickUpdateToTheLastPageAsksIfFinished() = runTest {
+        val id = (repo.save(Book(title = "Dune", status = ReadingStatus.READING, pageCount = 688)) as SaveResult.Saved).id
+        val vm = vm()
+        backgroundScope.launch(mainDispatcher) { vm.state.collect {} }
+        assertEquals(true, vm.updateProgress(id, "300", byPages = true))
+        assertEquals(43, repo.getBook(id)!!.progressPercent)
+        assertNull(vm.finishPrompt.value)
+        assertEquals(true, vm.updateProgress(id, "688", byPages = true))
+        assertEquals("Dune", vm.finishPrompt.value?.title)
+        vm.markFinished()
+        assertNull(vm.finishPrompt.value)
+        assertEquals(ReadingStatus.READ, repo.getBook(id)!!.status)
+    }
+
+    @Test
+    fun quickUpdateByPercentAndNotYetFinished() = runTest {
+        val id = (repo.save(Book(title = "Emma", status = ReadingStatus.READING)) as SaveResult.Saved).id
+        val vm = vm()
+        backgroundScope.launch(mainDispatcher) { vm.state.collect {} }
+        assertEquals(false, vm.updateProgress(id, "150", byPages = false))
+        assertEquals("Enter a percentage from 0 to 100", vm.progressError.value)
+        assertEquals(true, vm.updateProgress(id, "100", byPages = false))
+        assertNull(vm.progressError.value)
+        assertEquals("Emma", vm.finishPrompt.value?.title)
+        vm.dismissFinish()
+        assertNull(vm.finishPrompt.value)
+        assertEquals(ReadingStatus.READING, repo.getBook(id)!!.status)
     }
 }

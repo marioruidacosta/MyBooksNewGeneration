@@ -1,8 +1,11 @@
 package com.mcosta.mybooks.ui.library
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,9 +18,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
@@ -30,6 +43,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -37,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,6 +72,7 @@ import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.ui.components.BookCover
 import com.mcosta.mybooks.ui.components.RatingStars
+import kotlinx.coroutines.launch
 
 fun ReadingStatus?.label() = when (this) {
     null -> "All"
@@ -83,6 +106,30 @@ fun LibraryScreen(
         }
     }
     val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    /** Swipes: right marks Read (or To read), left deletes; both offer Undo. */
+    val onSwipeRight = { book: Book ->
+        viewModel.swipeStatus(book)
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            val moved = if (swipeTarget(book) == ReadingStatus.READ) "Marked as Read" else "Moved to To read"
+            if (snackbar.showSnackbar(moved, actionLabel = "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                viewModel.undoStatus(book)
+            }
+        }
+        Unit
+    }
+    val onSwipeLeft = { book: Book ->
+        viewModel.hide(book.id)
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            val result = snackbar.showSnackbar("Deleted 201c${book.title}201d", actionLabel = "Undo", duration = SnackbarDuration.Short)
+            if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete(book.id) else viewModel.delete(book.id)
+        }
+        Unit
+    }
     // A new order or tab starts at the top. Otherwise the list keeps the book that was on top in view, and a
     // reversed order moves it to the end, so the list seemed not to change. Saved so coming back from a book
     // keeps the place.
@@ -92,15 +139,20 @@ fun LibraryScreen(
         if (shown != lastShown) {
             lastShown = shown
             listState.scrollToItem(0)
+            gridState.scrollToItem(0)
         }
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text(title) },
                 navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
+                    IconButton(onClick = { viewModel.setGrid(!state.grid) }) {
+                        if (state.grid) Icon(Icons.AutoMirrored.Filled.ViewList, "Show as list") else Icon(Icons.Filled.GridView, "Show as grid")
+                    }
                     Box {
                         IconButton(onClick = { sortMenuOpen = true }) { Icon(Icons.AutoMirrored.Filled.Sort, "Sort") }
                         DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
@@ -139,10 +191,23 @@ fun LibraryScreen(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(if (query.isBlank()) "No books here yet" else "No books match", style = MaterialTheme.typography.bodyLarge)
                 }
+            } else if (state.grid) {
+                LazyVerticalGrid(
+                    GridCells.Fixed(3),
+                    state = gridState,
+                    contentPadding = PaddingValues(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    items(state.books, key = { it.id }) { book -> GridCell(book, onClick = { onOpenBook(book.id) }) }
+                }
             } else {
                 LazyColumn(Modifier.fillMaxSize(), state = listState) {
                     items(state.books, key = { it.id }) { book ->
-                        BookRow(book, onClick = { onOpenBook(book.id) })
+                        SwipeRow(book, onSwipeRight = { onSwipeRight(book) }, onSwipeLeft = { onSwipeLeft(book) }) {
+                            BookRow(book, onClick = { onOpenBook(book.id) })
+                        }
                         HorizontalDivider()
                     }
                     item { Spacer(Modifier.height(88.dp)) }
@@ -188,5 +253,64 @@ private fun BookRow(book: Book, onClick: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+/** A list row that swipes: right for [onSwipeRight] (Read, or To read), left for [onSwipeLeft] (delete). */
+@Composable
+private fun SwipeRow(book: Book, onSwipeRight: () -> Unit, onSwipeLeft: () -> Unit, content: @Composable () -> Unit) {
+    val swipe = rememberSwipeToDismissBoxState()
+    val scope = rememberCoroutineScope()
+    SwipeToDismissBox(
+        state = swipe,
+        backgroundContent = {
+            val right = swipe.dismissDirection == SwipeToDismissBoxValue.StartToEnd
+            val left = swipe.dismissDirection == SwipeToDismissBoxValue.EndToStart
+            val color = when {
+                right -> MaterialTheme.colorScheme.primaryContainer
+                left -> MaterialTheme.colorScheme.errorContainer
+                else -> MaterialTheme.colorScheme.surface
+            }
+            Row(
+                Modifier.fillMaxSize().background(color).padding(horizontal = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = if (left) Arrangement.End else Arrangement.Start,
+            ) {
+                when {
+                    right -> {
+                        val toRead = swipeTarget(book) == ReadingStatus.TO_READ
+                        Icon(if (toRead) Icons.Filled.Bookmark else Icons.Filled.Done, null)
+                        Text(if (toRead) "  To read" else "  Read", style = MaterialTheme.typography.labelLarge)
+                    }
+                    left -> {
+                        Text("Delete  ", style = MaterialTheme.typography.labelLarge)
+                        Icon(Icons.Filled.Delete, null)
+                    }
+                }
+            }
+        },
+        onDismiss = { direction ->
+            when (direction) {
+                SwipeToDismissBoxValue.StartToEnd -> onSwipeRight()
+                SwipeToDismissBoxValue.EndToStart -> onSwipeLeft()
+                SwipeToDismissBoxValue.Settled -> Unit
+            }
+            // The row slides back: a status change keeps it (or moves it to another shelf); a deletion hides it.
+            scope.launch { swipe.reset() }
+        },
+    ) {
+        Box(Modifier.background(MaterialTheme.colorScheme.surface)) { content() }
+    }
+}
+
+/** A cover in the grid, with its title below. */
+@Composable
+private fun GridCell(book: Book, onClick: () -> Unit) {
+    Column(Modifier.clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Surface(shape = RoundedCornerShape(4.dp), shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
+            BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
+        }
+        Text(book.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        if (book.rating != null) RatingStars(book.rating, onRate = null, size = 12.dp)
     }
 }

@@ -74,15 +74,14 @@ class BookDetailViewModel(
 
     /** Updates reading progress from typed [input]: a page number, or a percentage when [byPages] is false. */
     fun updateProgress(input: String, byPages: Boolean) {
-        val value = input.trim().toIntOrNull()
-        _progressError.value = when {
-            byPages && (value == null || value < 0) -> "Enter a page number"
-            !byPages && (value == null || value !in 0..100) -> "Enter a percentage from 0 to 100"
-            else -> null
-        }
-        if (_progressError.value != null || value == null) return
+        val progress = parseProgress(input, byPages)
+        _progressError.value = (progress as? ProgressInput.Invalid)?.message
         viewModelScope.launch {
-            if (byPages) repo.setProgressPages(id, value) else repo.setProgressPercent(id, value)
+            when (progress) {
+                is ProgressInput.Page -> repo.setProgressPages(id, progress.page)
+                is ProgressInput.Percent -> repo.setProgressPercent(id, progress.percent)
+                is ProgressInput.Invalid -> Unit
+            }
         }
     }
 
