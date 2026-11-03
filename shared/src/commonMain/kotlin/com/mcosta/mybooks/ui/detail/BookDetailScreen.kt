@@ -251,27 +251,22 @@ private fun Header(b: Book, onAddPhoto: () -> Unit) {
 
 private val COVER_HEIGHT = 225.dp
 
-/** The book's details, the size of the cover: label and value per line. */
+/** The book's details in the cover's place, as plain text over the blurred backdrop: label and value per line. */
 @Composable
 private fun DetailsPanel(b: Book) {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        shadowElevation = 10.dp,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxHeight().widthIn(max = 300.dp).fillMaxWidth(),
+    Column(
+        Modifier.fillMaxHeight().widthIn(max = 300.dp).fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Details", style = MaterialTheme.typography.titleMedium)
-            for ((label, value) in bookDetails(b)) {
-                Row {
-                    Text(
-                        label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(84.dp),
-                    )
-                    Text(value, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
+        for ((label, value) in bookDetails(b)) {
+            Row {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(84.dp),
+                )
+                Text(value, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
