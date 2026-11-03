@@ -86,7 +86,7 @@ fun ReadYearScreen(viewModel: ReadYearViewModel, onBack: () -> Unit, onOpenBook:
 @Composable
 private fun UndatedRow(book: Book, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        BookCover(book.coverUrl, Modifier.width(40.dp).height(60.dp))
+        BookCover(book.coverUrl, Modifier.width(40.dp).height(60.dp), title = book.title, authors = book.authors)
         Column(Modifier.padding(start = 12.dp).weight(1f)) {
             Text(book.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (book.authors.isNotBlank()) {

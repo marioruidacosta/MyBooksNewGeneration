@@ -19,13 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Group
-import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -73,36 +68,16 @@ fun HomeScreen(
     onOpenBook: (Long) -> Unit,
     /** A shelf's list ([ReadingStatus] null is All books). */
     onOpenShelf: (ReadingStatus?) -> Unit,
-    onSearch: () -> Unit,
     onOpenReadingActivity: () -> Unit,
     onAddManually: () -> Unit,
     onScan: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenReleases: () -> Unit,
-    /** Null when the community features aren't configured: no Friends icon. */
-    onOpenFriends: (() -> Unit)? = null,
-    /** Null when the community features aren't configured: no Activity icon. */
-    onOpenActivity: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var addMenuOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("MyBooks") },
-                actions = {
-                    IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, "Search") }
-                    IconButton(onClick = onOpenReleases) { Icon(Icons.Filled.NewReleases, "New in Portugal") }
-                    if (onOpenActivity != null) {
-                        IconButton(onClick = onOpenActivity) { Icon(Icons.Filled.DynamicFeed, "Activity") }
-                    }
-                    if (onOpenFriends != null) {
-                        IconButton(onClick = onOpenFriends) { Icon(Icons.Filled.Group, "Friends") }
-                    }
-                    IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, "Settings") }
-                },
-            )
+            TopAppBar(title = { Text("MyBooks", style = MaterialTheme.typography.headlineSmall) })
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
@@ -184,7 +159,7 @@ private fun SectionTitle(text: String, onClick: (() -> Unit)? = null) {
 private fun ReadingCard(book: Book, onClick: () -> Unit) {
     Column(Modifier.width(112.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 4.dp, modifier = Modifier.width(112.dp).height(168.dp)) {
-            BookCover(book.coverUrl, Modifier.fillMaxSize())
+            BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
         }
         val progress = book.progressPercent
         if (progress != null) {

@@ -95,7 +95,7 @@ fun ReleaseGenreScreen(
 @Composable
 private fun BookRow(book: ReleaseBook, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-        BookCover(book.listCover, Modifier.width(48.dp).height(72.dp))
+        BookCover(book.listCover, Modifier.width(48.dp).height(72.dp), title = book.title, authors = book.authors.joinToString(", "))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(book.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)

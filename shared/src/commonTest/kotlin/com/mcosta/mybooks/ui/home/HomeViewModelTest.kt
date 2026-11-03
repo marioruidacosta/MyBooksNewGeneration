@@ -12,6 +12,7 @@ import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ChallengeProgress
 import com.mcosta.mybooks.domain.Pace
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.ui.components.CoverRef
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
@@ -53,10 +54,10 @@ class HomeViewModelTest : MainDispatcherTest() {
         val shelves = vm.state.value.shelves
         assertEquals(listOf(ReadingStatus.TO_READ, ReadingStatus.WISHLIST, ReadingStatus.READ, null), shelves.map { it.status })
         assertEquals(listOf(7, 1, 1, 9), shelves.map { it.count })
-        // Same dateAdded in this test (clock), so the newest are the last inserted; T6 has no cover.
+        // The newest books, with or without a cover picture (those get a generated cover).
         assertEquals(SHELF_COVERS, shelves[0].covers.size)
-        assertEquals(false, "c6" in shelves[0].covers)
-        assertEquals(emptyList(), shelves[1].covers)
+        assertEquals(listOf(CoverRef(null, "Buy", "")), shelves[1].covers)
+        assertEquals(CoverRef("r", "R", ""), shelves[2].covers.single())
     }
 
     @Test

@@ -18,20 +18,27 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.SubcomposeAsyncImage
 import com.mcosta.mybooks.ui.LocalCoverStore
 
-/** Book cover image (web URL or a `cover:` photo), with a book icon while loading or when there is no cover. */
+/**
+ * Book cover image (web URL or a `cover:` photo). Without one, or while it loads or when it fails, a cover drawn
+ * from [title] and [authors] (a book icon when the title isn't known).
+ */
 @Composable
-fun BookCover(url: String?, modifier: Modifier = Modifier) {
-    val placeholder = @Composable {
-        Box(
-            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Outlined.MenuBook,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(4.dp),
-            )
+fun BookCover(url: String?, modifier: Modifier = Modifier, title: String? = null, authors: String = "") {
+    val placeholder: @Composable () -> Unit = if (title != null) {
+        { GeneratedCover(title, authors, Modifier.fillMaxSize()) }
+    } else {
+        {
+            Box(
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.MenuBook,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(4.dp),
+                )
+            }
         }
     }
     Box(modifier.clip(RoundedCornerShape(4.dp))) {

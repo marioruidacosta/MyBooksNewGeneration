@@ -47,7 +47,8 @@ import kotlin.time.Instant
 @Composable
 fun ReleasesScreen(
     viewModel: ReleasesViewModel,
-    onBack: () -> Unit,
+    /** Null when opened from the bottom bar: no back arrow. */
+    onBack: (() -> Unit)?,
     onOpenGenre: (month: String, genre: ReleaseGenre) -> Unit,
     /** An author's or publisher's books: the month, the view (Author or Publisher) and the name. */
     onOpenName: (month: String, view: ReleaseView, name: NameCount) -> Unit,
@@ -58,7 +59,7 @@ fun ReleasesScreen(
         topBar = {
             TopAppBar(
                 title = { Text("New in Portugal") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = { IconButton(onClick = onSearch) { Icon(Icons.Filled.Search, "Search all months") } },
             )
         },

@@ -2,6 +2,7 @@ package com.mcosta.mybooks.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mcosta.mybooks.data.Appearance
 import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.CoverFinder
 import com.mcosta.mybooks.platform.DocumentPicker
@@ -18,7 +19,15 @@ class SettingsViewModel(
     private val today: () -> String = { currentDate().toString() },
     /** Looks up missing covers in the background; null in tests that don't involve it. */
     private val covers: CoverFinder? = null,
+    /** Book or wallpaper colours; null in tests that don't involve it. */
+    private val appearance: Appearance? = null,
 ) : ViewModel() {
+    /** Whether the app takes its colours from the wallpaper. */
+    val followWallpaper: StateFlow<Boolean> = appearance?.followWallpaper ?: MutableStateFlow(false)
+
+    fun setFollowWallpaper(follow: Boolean) {
+        appearance?.setFollowWallpaper(follow)
+    }
     /** The current or last cover search. */
     val coverProgress: StateFlow<CoverFinder.Progress?> = covers?.progress ?: MutableStateFlow(null)
 

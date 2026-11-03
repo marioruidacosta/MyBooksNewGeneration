@@ -1,10 +1,12 @@
 package com.mcosta.mybooks.ui.detail
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,12 +14,15 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -25,6 +30,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,6 +43,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -112,71 +122,71 @@ fun BookDetailScreen(
                 .padding(padding)
                 .fillMaxSize()
                 .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .verticalScroll(rememberScrollState()),
         ) {
             Header(b, onAddPhoto = takePhoto)
-            StatusSelector(b.status, viewModel::setStatus, Modifier.fillMaxWidth())
-            if (b.status == ReadingStatus.READ) {
-                val read = b.dateRead
-                val text = when {
-                    read == null -> "Read date not set: it counts toward no year's challenge"
-                    b.dateStarted != null -> "Read from ${formatDate(b.dateStarted)} to ${formatDate(read)}"
-                    else -> "Read on ${formatDate(read)}"
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                StatusSelector(b.status, viewModel::setStatus, Modifier.fillMaxWidth())
+                SectionCard("Your score") { RatingStars(b.rating, onRate = viewModel::rate, size = 32.dp) }
+                if (b.status == ReadingStatus.READ) SectionCard("Reading dates") {
+                    val read = b.dateRead
+                    val text = when {
+                        read == null -> "Read date not set: it counts toward no year's challenge"
+                        b.dateStarted != null -> "Read from ${formatDate(b.dateStarted)} to ${formatDate(read)}"
+                        else -> "Read on ${formatDate(read)}"
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { pickingReadDate = true }) { Text(if (read == null) "Set" else "Change") }
+                    }
+                    if (pickingReadDate) {
+                        DayPicker(
+                            initial = read ?: Clock.System.now().toEpochMilliseconds(),
+                            onPicked = { viewModel.setDateRead(it); pickingReadDate = false },
+                            onDismiss = { pickingReadDate = false },
+                        )
+                    }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { pickingReadDate = true }) { Text(if (read == null) "Set" else "Change") }
-                }
-                if (pickingReadDate) {
-                    DayPicker(
-                        initial = read ?: Clock.System.now().toEpochMilliseconds(),
-                        onPicked = { viewModel.setDateRead(it); pickingReadDate = false },
-                        onDismiss = { pickingReadDate = false },
+                if (b.status == ReadingStatus.READING) SectionCard("Reading") { ReadingSection(b, viewModel) }
+                b.description?.takeIf { it.isNotBlank() }?.let { SectionCard("Description") { Description(it) } }
+                SectionCard("Notes") {
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = viewModel::editNotes,
+                        placeholder = { Text("Private: only you see them") },
+                        minLines = 4,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { if (!it.isFocused) viewModel.saveNotes() },
                     )
                 }
-            }
-            if (b.status == ReadingStatus.READING) {
-                ReadingSection(b, viewModel)
-            }
-            Column {
-                Text("Your score", style = MaterialTheme.typography.labelLarge)
-                RatingStars(b.rating, onRate = viewModel::rate, size = 32.dp)
-            }
-            OutlinedTextField(
-                value = notes,
-                onValueChange = viewModel::editNotes,
-                label = { Text("Notes (private)") },
-                minLines = 4,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { if (!it.isFocused) viewModel.saveNotes() },
-            )
-            if (sharing.hasProfile) {
-                OutlinedTextField(
-                    value = review,
-                    onValueChange = viewModel::editReview,
-                    label = { Text("Review (shared with friends)") },
-                    supportingText = { Text("${review.length} / $MAX_REVIEW_LENGTH") },
-                    minLines = 3,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onFocusChanged { if (!it.isFocused) viewModel.saveReview() },
+                if (sharing.hasProfile || sharing.activeOwner != null) SectionCard("Sharing") {
+                    if (sharing.hasProfile) {
+                        OutlinedTextField(
+                            value = review,
+                            onValueChange = viewModel::editReview,
+                            label = { Text("Review (shared with friends)") },
+                            supportingText = { Text("${review.length} / $MAX_REVIEW_LENGTH") },
+                            minLines = 3,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged { if (!it.isFocused) viewModel.saveReview() },
+                        )
+                    }
+                    if (sharing.activeOwner != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Don't share this book", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            Switch(checked = shareExcluded, onCheckedChange = viewModel::setShareExcluded)
+                        }
+                    }
+                }
+                Text(
+                    "Added ${formatDate(b.dateAdded)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 16.dp),
                 )
             }
-            if (sharing.activeOwner != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Don't share this book", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Switch(checked = shareExcluded, onCheckedChange = viewModel::setShareExcluded)
-                }
-            }
-            b.description?.takeIf { it.isNotBlank() }?.let { Description(it) }
-            Text(
-                "Added ${formatDate(b.dateAdded)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 
@@ -193,27 +203,39 @@ fun BookDetailScreen(
     }
 }
 
+/**
+ * A large cover over a softly blurred copy of it, fading into the page (Android blurs from version 12; earlier
+ * it's a shaded wash), then the title, authors and facts.
+ */
 @Composable
 private fun Header(b: Book, onAddPhoto: () -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        if (b.coverUrl.isNullOrBlank()) {
-            // No cover found: tap the placeholder to photograph the book.
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                BookCover(null, Modifier.width(110.dp).height(165.dp).clickable(onClickLabel = "Take cover photo", onClick = onAddPhoto))
-                Text("Tap to add a photo", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+    Box(Modifier.fillMaxWidth()) {
+        BookCover(b.coverUrl, Modifier.matchParentSize().blur(28.dp).alpha(0.5f), title = b.title, authors = b.authors)
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface.copy(alpha = 0.2f), MaterialTheme.colorScheme.surface)),
+            ),
+        )
+        Column(
+            Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 10.dp) {
+                BookCover(b.coverUrl, Modifier.width(150.dp).height(225.dp), title = b.title, authors = b.authors)
             }
-        } else {
-            BookCover(b.coverUrl, Modifier.width(110.dp).height(165.dp))
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(b.title, style = MaterialTheme.typography.headlineSmall)
-            if (b.authors.isNotBlank()) Text(b.authors, style = MaterialTheme.typography.titleMedium)
+            // No cover found: photograph the book.
+            if (b.coverUrl.isNullOrBlank()) TextButton(onClick = onAddPhoto) { Text("Add a cover photo") }
+            Spacer(Modifier.height(4.dp))
+            Text(b.title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+            if (b.authors.isNotBlank()) Text(b.authors, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
             val facts = listOfNotNull(b.publisher, b.publishedYear?.toString(), b.pageCount?.let { "$it pages" })
             if (facts.isNotEmpty()) {
                 Text(
                     facts.joinToString(" · "),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
                 )
             }
             b.isbn?.let {
@@ -223,11 +245,24 @@ private fun Header(b: Book, onAddPhoto: () -> Unit) {
     }
 }
 
+/** A titled card holding one part of the book page. */
+@Composable
+private fun SectionCard(title: String, content: @Composable () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            content()
+        }
+    }
+}
+
 @Composable
 private fun Description(text: String) {
     var expanded by remember { mutableStateOf(false) }
     Column(Modifier.clickable { expanded = !expanded }) {
-        Text("Description", style = MaterialTheme.typography.labelLarge)
         Text(
             text,
             style = MaterialTheme.typography.bodyMedium,

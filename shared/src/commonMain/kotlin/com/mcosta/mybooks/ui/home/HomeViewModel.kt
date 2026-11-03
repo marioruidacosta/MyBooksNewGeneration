@@ -9,6 +9,7 @@ import com.mcosta.mybooks.domain.ChallengeProgress
 import com.mcosta.mybooks.domain.Pace
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.pace
+import com.mcosta.mybooks.ui.components.CoverRef
 import com.mcosta.mybooks.domain.readIn
 import com.mcosta.mybooks.ui.today as currentDate
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,8 +22,8 @@ import kotlinx.datetime.TimeZone
 /** The most covers a shelf row fans out. */
 const val SHELF_COVERS = 5
 
-/** A shelf row on the home screen ([status] null is All books); [covers] are its most recently added covers. */
-data class Shelf(val status: ReadingStatus?, val count: Int, val covers: List<String>)
+/** A shelf row on the home screen ([status] null is All books); [covers] are its most recently added books'. */
+data class Shelf(val status: ReadingStatus?, val count: Int, val covers: List<CoverRef>)
 
 data class HomeState(
     val loaded: Boolean = false,
@@ -53,7 +54,11 @@ class HomeViewModel(
                 .sortedWith(compareByDescending<Book> { it.dateStarted ?: Long.MIN_VALUE }.thenByDescending { it.dateAdded }),
             shelves = SHELVES.map { status ->
                 val shelf = if (status == null) books else books.filter { it.status == status }
-                Shelf(status, shelf.size, shelf.filter { it.coverUrl != null }.sortedByDescending { it.dateAdded }.take(SHELF_COVERS).map { it.coverUrl!! })
+                Shelf(
+                    status,
+                    shelf.size,
+                    shelf.sortedByDescending { it.dateAdded }.take(SHELF_COVERS).map { CoverRef(it.coverUrl, it.title, it.authors) },
+                )
             },
             year = date.year,
             challenge = progress,
