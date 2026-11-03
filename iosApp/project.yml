@@ -17,7 +17,7 @@ targets:
     info:
       path: MyBooks/Info.plist
       properties:
-        CFBundleDisplayName: MyBooks
+        CFBundleDisplayName: MyBooks NG
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
@@ -32,7 +32,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: MyBooks
-        PRODUCT_BUNDLE_IDENTIFIER: com.mcosta.mybooks
+        PRODUCT_BUNDLE_IDENTIFIER: com.mcosta.mybooks.ng
         MARKETING_VERSION: "2.0"
         CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1"

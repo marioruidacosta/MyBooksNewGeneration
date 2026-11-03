@@ -15,7 +15,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.mcosta.mybooks"
+        applicationId = "com.mcosta.mybooks.ng"
         minSdk = 26
         targetSdk = 37
         versionCode = 3
