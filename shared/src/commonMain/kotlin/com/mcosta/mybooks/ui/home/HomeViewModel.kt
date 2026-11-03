@@ -10,12 +10,17 @@ import com.mcosta.mybooks.domain.Pace
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.pace
 import com.mcosta.mybooks.ui.components.CoverRef
+import com.mcosta.mybooks.ui.detail.ProgressInput
+import com.mcosta.mybooks.ui.detail.parseProgress
 import com.mcosta.mybooks.domain.readIn
 import com.mcosta.mybooks.ui.today as currentDate
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 
@@ -39,7 +44,7 @@ data class HomeState(
 
 /** The home screen: what's being read, this year's challenge, and a row per shelf. */
 class HomeViewModel(
-    repo: BookRepository,
+    private val repo: BookRepository,
     challenges: ChallengeRepository,
     today: () -> LocalDate = { currentDate() },
     timeZone: TimeZone = TimeZone.currentSystemDefault(),
@@ -65,6 +70,52 @@ class HomeViewModel(
             pace = progress?.pace(date),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeState())
+
+    private val _progressError = MutableStateFlow<String?>(null)
+    /** What's wrong with the progress typed in the quick-update sheet. */
+    val progressError: StateFlow<String?> = _progressError.asStateFlow()
+
+    private val _finishPrompt = MutableStateFlow<Book?>(null)
+    /** A book whose progress just reached the end: "Finished? Mark as Read". */
+    val finishPrompt: StateFlow<Book?> = _finishPrompt.asStateFlow()
+
+    /**
+     * Quick update from the Reading strip: a page, or a percentage when [byPages] is false. Returns whether it was
+     * saved (the sheet closes); reaching the last page or 100% asks whether the book is finished.
+     */
+    fun updateProgress(id: Long, input: String, byPages: Boolean): Boolean {
+        val progress = parseProgress(input, byPages)
+        if (progress is ProgressInput.Invalid) {
+            _progressError.value = progress.message
+            return false
+        }
+        _progressError.value = null
+        viewModelScope.launch {
+            when (progress) {
+                is ProgressInput.Page -> repo.setProgressPages(id, progress.page)
+                is ProgressInput.Percent -> repo.setProgressPercent(id, progress.percent)
+                is ProgressInput.Invalid -> Unit
+            }
+            val book = repo.getBook(id)
+            if (book != null && book.status == ReadingStatus.READING && book.progressPercent == 100) _finishPrompt.value = book
+        }
+        return true
+    }
+
+    fun clearProgressError() {
+        _progressError.value = null
+    }
+
+    /** "Mark as Read": the read date is today, and the celebration follows. */
+    fun markFinished() {
+        val book = _finishPrompt.value ?: return
+        _finishPrompt.value = null
+        viewModelScope.launch { repo.setStatus(book.id, ReadingStatus.READ) }
+    }
+
+    fun dismissFinish() {
+        _finishPrompt.value = null
+    }
 
     private companion object {
         val SHELVES = listOf(ReadingStatus.TO_READ, ReadingStatus.WISHLIST, ReadingStatus.READ, null)

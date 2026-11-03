@@ -1,6 +1,7 @@
 package com.mcosta.mybooks.ui.home
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,17 +17,27 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +57,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -55,6 +68,7 @@ import com.mcosta.mybooks.ui.activity.countText
 import com.mcosta.mybooks.ui.activity.text
 import com.mcosta.mybooks.ui.components.BookCover
 import com.mcosta.mybooks.ui.components.CoverFan
+import com.mcosta.mybooks.ui.detail.progressText
 import com.mcosta.mybooks.ui.library.label
 
 /** A shelf's name on the home screen. */
@@ -74,6 +88,9 @@ fun HomeScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var addMenuOpen by remember { mutableStateOf(false) }
+    var updating by remember { mutableStateOf<Book?>(null) }
+    val progressError by viewModel.progressError.collectAsStateWithLifecycle()
+    val finishPrompt by viewModel.finishPrompt.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -124,7 +141,7 @@ fun HomeScreen(
                     }
                 } else {
                     LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        items(state.reading, key = { it.id }) { book -> ReadingCard(book, onClick = { onOpenBook(book.id) }) }
+                        items(state.reading, key = { it.id }) { book -> ReadingCard(book, onClick = { onOpenBook(book.id) }, onUpdate = { updating = book }) }
                     }
                 }
             }
@@ -138,6 +155,24 @@ fun HomeScreen(
             }
             item { Spacer(Modifier.height(88.dp)) }
         }
+    }
+
+    updating?.let { book ->
+        ProgressSheet(
+            book,
+            error = progressError,
+            onSave = { input, byPages -> if (viewModel.updateProgress(book.id, input, byPages)) updating = null },
+            onDismiss = { updating = null; viewModel.clearProgressError() },
+        )
+    }
+    finishPrompt?.let { book ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissFinish,
+            title = { Text("Finished?") },
+            text = { Text("You're at the end of 201c${book.title}201d. Mark it as Read, finished today?") },
+            confirmButton = { TextButton(onClick = viewModel::markFinished) { Text("Mark as Read") } },
+            dismissButton = { TextButton(onClick = viewModel::dismissFinish) { Text("Not yet") } },
+        )
     }
 }
 
@@ -156,8 +191,12 @@ private fun SectionTitle(text: String, onClick: (() -> Unit)? = null) {
 
 /** A book being read: a large cover, its title and progress. */
 @Composable
-private fun ReadingCard(book: Book, onClick: () -> Unit) {
-    Column(Modifier.width(112.dp).clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun ReadingCard(book: Book, onClick: () -> Unit, onUpdate: () -> Unit) {
+    // A tap opens the book; a long press updates its progress.
+    Column(
+        Modifier.width(112.dp).combinedClickable(onClick = onClick, onLongClick = onUpdate, onLongClickLabel = "Update progress"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 4.dp, modifier = Modifier.width(112.dp).height(168.dp)) {
             BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
         }
@@ -167,6 +206,42 @@ private fun ReadingCard(book: Book, onClick: () -> Unit) {
             Text("$progress%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(book.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** Quick progress update: a page or a percentage, as on the book page. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProgressSheet(book: Book, error: String?, onSave: (input: String, byPages: Boolean) -> Unit, onDismiss: () -> Unit) {
+    var byPages by remember(book.id) { mutableStateOf(book.pageCount != null) }
+    var input by remember(book.id) { mutableStateOf("") }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                progressText(book) ?: "No progress yet",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it.filter(Char::isDigit).take(5) },
+                    label = { Text(if (byPages) "Page" else "%") },
+                    singleLine = true,
+                    isError = error != null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onSave(input, byPages) }),
+                    modifier = Modifier.width(110.dp),
+                )
+                SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
+                    SegmentedButton(selected = byPages, onClick = { byPages = true }, shape = SegmentedButtonDefaults.itemShape(0, 2), label = { Text("Pages") })
+                    SegmentedButton(selected = !byPages, onClick = { byPages = false }, shape = SegmentedButtonDefaults.itemShape(1, 2), label = { Text("%") })
+                }
+            }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            Button(onClick = { onSave(input, byPages) }, enabled = input.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Save") }
+        }
     }
 }
 

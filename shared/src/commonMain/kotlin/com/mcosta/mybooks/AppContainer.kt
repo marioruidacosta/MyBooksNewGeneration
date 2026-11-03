@@ -7,6 +7,7 @@ import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.ChallengeRepository
 import com.mcosta.mybooks.data.CoverFinder
 import com.mcosta.mybooks.data.Preferences
+import com.mcosta.mybooks.data.ReadingEvents
 import com.mcosta.mybooks.data.SettingsPreferences
 import com.mcosta.mybooks.data.covers.CoverStore
 import com.mcosta.mybooks.data.db.AppDatabase
@@ -67,6 +68,9 @@ class AppContainer(
     /** Whether the signed-in user shares their reading activity; null without the community. */
     val sharingStatus: SharingStatus? = sharing?.status
 
+    /** Books just finished, for the celebration. */
+    val events = ReadingEvents()
+
     /** Yearly reading challenges. */
     val challenges = ChallengeRepository(database.challengeDao())
 
@@ -83,6 +87,7 @@ class AppContainer(
         coverStore = coverStore,
         shareTracker = sharing?.tracker,
         challenges = challenges,
+        events = events,
     )
 
     val preferences: Preferences? = appSettings?.let(::SettingsPreferences)

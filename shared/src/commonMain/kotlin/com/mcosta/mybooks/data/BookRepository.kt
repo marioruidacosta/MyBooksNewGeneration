@@ -55,6 +55,8 @@ class BookRepository(
     private val shareTracker: ShareTracker? = null,
     /** Reading challenges, kept in backups; null in tests that don't involve them. */
     private val challenges: ChallengeRepository? = null,
+    /** Told when a book is marked as Read (to celebrate); null in tests that don't involve it. */
+    private val events: ReadingEvents? = null,
 ) {
     fun observeBooks(status: ReadingStatus?, query: String): Flow<List<Book>> =
         dao.observe(status, searchPattern(query)).map { list -> list.map { it.toBook() } }
@@ -95,12 +97,21 @@ class BookRepository(
             dao.update(updated.toEntity())
             shareTracker?.changed(stored?.toBook(), updated)
             if (stored != null && stored.coverUrl != merged.coverUrl) coverStore?.delete(stored.coverUrl)
+            if (stored != null) announceIfFinished(stored.status, updated)
             SaveResult.Saved(validated.id)
         }
     }
 
-    suspend fun setStatus(id: Long, status: ReadingStatus) =
+    suspend fun setStatus(id: Long, status: ReadingStatus) {
+        val before = dao.getById(id)?.status ?: return
         modify(id) { withStatusDates(it.copy(status = status), it.status) }
+        dao.getById(id)?.toBook()?.let { announceIfFinished(before, it) }
+    }
+
+    /** A book that just became Read is worth celebrating (new, imported and restored books aren't). */
+    private fun announceIfFinished(before: ReadingStatus, after: Book) {
+        if (before != ReadingStatus.READ && after.status == ReadingStatus.READ) events?.bookFinished(after.id)
+    }
 
     suspend fun setRating(id: Long, rating: Int?) {
         require(rating == null || rating in 1..5) { "rating must be 1..5 or null" }

@@ -58,6 +58,8 @@ import com.mcosta.mybooks.ui.detail.BookDetailViewModel
 import com.mcosta.mybooks.ui.edit.EditBookScreen
 import com.mcosta.mybooks.ui.edit.EditBookViewModel
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.ui.celebrate.CelebrationDialog
+import com.mcosta.mybooks.ui.celebrate.CelebrationViewModel
 import com.mcosta.mybooks.ui.activity.ReadYearScreen
 import com.mcosta.mybooks.ui.activity.ReadYearViewModel
 import com.mcosta.mybooks.ui.activity.ReadingActivityScreen
@@ -124,6 +126,8 @@ fun MyBooksNavHost(container: AppContainer) {
     val scope = rememberCoroutineScope()
     val services = LocalPlatformServices.current
 
+    val celebrations = viewModel { CelebrationViewModel(container.repository, container.challenges, container.events) }
+    val celebration by celebrations.celebration.collectAsStateWithLifecycle()
     val current by nav.currentBackStackEntryAsState()
     val route = current?.destination?.route
     val tabs = bottomTabs(community = social != null)
@@ -184,7 +188,7 @@ fun MyBooksNavHost(container: AppContainer) {
             ) { entry ->
                 val section = ReadingStatus.entries.firstOrNull { it.name == entry.savedStateHandle.get<String>("section") }
                 LibraryScreen(
-                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, section) },
+                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, section, container.applicationScope) },
                     title = section.shelfLabel(),
                     onBack = { nav.popBackStack() },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
@@ -193,7 +197,7 @@ fun MyBooksNavHost(container: AppContainer) {
             }
             composable(Routes.SEARCH) {
                 LibraryScreen(
-                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, section = null) },
+                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, section = null, appScope = container.applicationScope) },
                     title = "Search",
                     onBack = null,
                     onOpenBook = { nav.navigate(Routes.book(it)) },
@@ -361,6 +365,16 @@ fun MyBooksNavHost(container: AppContainer) {
                 )
             }
         }
+    }
+
+    // Marking a book as Read, from any screen, is celebrated here.
+    celebration?.let { c ->
+        CelebrationDialog(
+            c,
+            onRate = celebrations::rate,
+            onSetGoal = { celebrations.dismiss(); nav.navigate(Routes.READING_ACTIVITY) },
+            onDismiss = celebrations::dismiss,
+        )
     }
 }
 
