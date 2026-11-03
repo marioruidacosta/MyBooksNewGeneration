@@ -11,7 +11,11 @@ import com.mcosta.mybooks.domain.Pace
 import com.mcosta.mybooks.domain.pace
 import com.mcosta.mybooks.domain.readIn
 import com.mcosta.mybooks.domain.readWithoutDate
+import com.mcosta.mybooks.domain.YearStats
+import com.mcosta.mybooks.domain.readingStats
+import com.mcosta.mybooks.domain.statsYears
 import com.mcosta.mybooks.ui.today as currentDate
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -35,6 +39,10 @@ data class ReadingActivityState(
     val others: List<YearChallenge> = emptyList(),
     /** Read books without a read date (they count toward no year). */
     val withoutDate: Int = 0,
+    /** The years the statistics can show (with books read, and this year), newest first. */
+    val statsYears: List<Int> = emptyList(),
+    /** Statistics of the chosen year. */
+    val stats: YearStats? = null,
 )
 
 /** "Your reading activity": yearly challenges and the books read toward them. */
@@ -44,7 +52,10 @@ class ReadingActivityViewModel(
     today: () -> LocalDate = { currentDate() },
     timeZone: TimeZone = TimeZone.currentSystemDefault(),
 ) : ViewModel() {
-    val state: StateFlow<ReadingActivityState> = combine(repo.observeBooks(null, ""), challenges.observe()) { books, goals ->
+    /** The statistics' year; null is this year. */
+    private val statsYear = MutableStateFlow<Int?>(null)
+
+    val state: StateFlow<ReadingActivityState> = combine(repo.observeBooks(null, ""), challenges.observe(), statsYear) { books, goals, chosen ->
         val date = today()
         fun challenge(year: Int, goal: Int): YearChallenge {
             val progress = ChallengeProgress(year, goal, books.readIn(year, timeZone).size)
@@ -57,8 +68,14 @@ class ReadingActivityViewModel(
             readThisYear = books.readIn(date.year, timeZone),
             others = goals.filter { it.year != date.year }.map { challenge(it.year, it.goal) },
             withoutDate = books.readWithoutDate().size,
+            statsYears = statsYears(books, date.year, timeZone),
+            stats = readingStats(books, chosen ?: date.year, timeZone),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReadingActivityState())
+
+    fun showStats(year: Int) {
+        statsYear.value = year
+    }
 
     /**
      * Sets [year]'s goal from what was typed; returns the problem to show, or null when saved. Years from 1900
