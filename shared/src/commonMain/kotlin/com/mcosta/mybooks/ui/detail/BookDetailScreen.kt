@@ -7,12 +7,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.focus.onFocusChanged
@@ -205,10 +212,11 @@ fun BookDetailScreen(
 
 /**
  * A large cover over a softly blurred copy of it, fading into the page (Android blurs from version 12; earlier
- * it's a shaded wash), then the title, authors and facts.
+ * it's a shaded wash), then the title and authors. Swiping the cover shows the book's details in its place.
  */
 @Composable
 private fun Header(b: Book, onAddPhoto: () -> Unit) {
+    val pages = rememberPagerState { 2 }
     Box(Modifier.fillMaxWidth()) {
         BookCover(b.coverUrl, Modifier.matchParentSize().blur(28.dp).alpha(0.5f), title = b.title, authors = b.authors)
         Box(
@@ -221,26 +229,61 @@ private fun Header(b: Book, onAddPhoto: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 10.dp) {
-                BookCover(b.coverUrl, Modifier.width(150.dp).height(225.dp), title = b.title, authors = b.authors)
+            HorizontalPager(pages, modifier = Modifier.fillMaxWidth().height(COVER_HEIGHT)) { page ->
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    if (page == 0) {
+                        Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 10.dp) {
+                            BookCover(b.coverUrl, Modifier.width(COVER_HEIGHT * 2 / 3).height(COVER_HEIGHT), title = b.title, authors = b.authors)
+                        }
+                    } else {
+                        DetailsPanel(b)
+                    }
+                }
             }
+            PageDots(current = pages.currentPage, count = pages.pageCount)
             // No cover found: photograph the book.
             if (b.coverUrl.isNullOrBlank()) TextButton(onClick = onAddPhoto) { Text("Add a cover photo") }
-            Spacer(Modifier.height(4.dp))
             Text(b.title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
             if (b.authors.isNotBlank()) Text(b.authors, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-            val facts = listOfNotNull(b.publisher, b.publishedYear?.toString(), b.pageCount?.let { "$it pages" })
-            if (facts.isNotEmpty()) {
-                Text(
-                    facts.joinToString(" · "),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
+        }
+    }
+}
+
+private val COVER_HEIGHT = 225.dp
+
+/** The book's details, the size of the cover: label and value per line. */
+@Composable
+private fun DetailsPanel(b: Book) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        shadowElevation = 10.dp,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxHeight().widthIn(max = 300.dp).fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Details", style = MaterialTheme.typography.titleMedium)
+            for ((label, value) in bookDetails(b)) {
+                Row {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(84.dp),
+                    )
+                    Text(value, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
             }
-            b.isbn?.let {
-                Text("ISBN $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        }
+    }
+}
+
+/** Which of the header's panels is showing. */
+@Composable
+private fun PageDots(current: Int, count: Int) {
+    Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        repeat(count) { i ->
+            val color = if (i == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+            Box(Modifier.size(7.dp).clip(CircleShape).background(color))
         }
     }
 }
