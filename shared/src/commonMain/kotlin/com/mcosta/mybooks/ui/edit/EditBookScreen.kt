@@ -104,7 +104,7 @@ fun EditBookScreen(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    BookCover(f.coverUrl, Modifier.width(80.dp).height(120.dp))
+                    BookCover(f.coverUrl, Modifier.width(80.dp).height(120.dp), title = f.title.ifBlank { null }, authors = f.authors)
                     TextButton(onClick = takePhoto) { Text("Take photo") }
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {

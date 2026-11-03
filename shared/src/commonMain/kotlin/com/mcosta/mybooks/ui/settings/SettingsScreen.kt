@@ -2,6 +2,7 @@ package com.mcosta.mybooks.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -12,6 +13,7 @@ import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Switch
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.rememberScrollState
@@ -26,9 +28,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mcosta.mybooks.ui.theme.supportsWallpaperColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,19 +42,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  */
 fun SettingsScreen(
     viewModel: SettingsViewModel,
-    onBack: () -> Unit,
+    /** Null when opened from the bottom bar: no back arrow. */
+    onBack: (() -> Unit)?,
     accountLabel: String? = null,
     onOpenAccount: (() -> Unit)? = null,
 ) {
     val message by viewModel.message.collectAsStateWithLifecycle()
     val coverProgress by viewModel.coverProgress.collectAsStateWithLifecycle()
+    val followWallpaper by viewModel.followWallpaper.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Settings") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                    if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
             )
         },
@@ -64,6 +70,21 @@ fun SettingsScreen(
                 OutlinedButton(onClick = onOpenAccount, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Filled.Person, null)
                     Text("  $accountLabel")
+                }
+                HorizontalDivider()
+            }
+            if (supportsWallpaperColors) {
+                Text("Appearance", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Follow my wallpaper's colours", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Off: the book colours (cream paper, dark ink, teal).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = followWallpaper, onCheckedChange = viewModel::setFollowWallpaper)
                 }
                 HorizontalDivider()
             }

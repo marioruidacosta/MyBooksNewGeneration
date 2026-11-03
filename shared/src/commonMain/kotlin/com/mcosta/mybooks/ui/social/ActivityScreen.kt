@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,10 +44,13 @@ import com.mcosta.mybooks.social.model.FeedScope
 @Composable
 fun ActivityScreen(
     viewModel: ActivityViewModel,
-    onBack: () -> Unit,
+    /** Null when opened from the bottom bar: no back arrow. */
+    onBack: (() -> Unit)?,
     onJoin: () -> Unit,
     onFindPeople: () -> Unit,
     onOpenPerson: (String) -> Unit,
+    /** Friends and requests (the Community tab's second screen). */
+    onOpenFriends: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -60,8 +64,9 @@ fun ActivityScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Activity") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                title = { Text("Community") },
+                navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = { if (onOpenFriends != null) IconButton(onClick = onOpenFriends) { Icon(Icons.Filled.Group, "Friends") } },
             )
         },
     ) { padding ->

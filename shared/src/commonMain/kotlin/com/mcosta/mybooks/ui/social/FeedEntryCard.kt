@@ -83,7 +83,7 @@ fun FeedEntryCard(
             }
         }
         Row(Modifier.fillMaxWidth().clickable(onClick = onBook), verticalAlignment = Alignment.CenterVertically) {
-            BookCover(entry.book.coverUrl, Modifier.width(48.dp).height(72.dp))
+            BookCover(entry.book.coverUrl, Modifier.width(48.dp).height(72.dp), title = entry.book.title, authors = entry.book.authors)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(entry.book.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)

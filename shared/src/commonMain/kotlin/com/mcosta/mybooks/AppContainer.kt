@@ -2,6 +2,7 @@ package com.mcosta.mybooks
 
 import androidx.room.immediateTransaction
 import androidx.room.useWriterConnection
+import com.mcosta.mybooks.data.Appearance
 import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.ChallengeRepository
 import com.mcosta.mybooks.data.CoverFinder
@@ -85,6 +86,9 @@ class AppContainer(
     )
 
     val preferences: Preferences? = appSettings?.let(::SettingsPreferences)
+
+    /** Book colours or the wallpaper's, remembered. */
+    val appearance = Appearance(preferences)
 
     /** Looks up missing covers (e.g. after a Goodreads import) in the background. */
     val coverFinder = CoverFinder(repository, applicationScope)

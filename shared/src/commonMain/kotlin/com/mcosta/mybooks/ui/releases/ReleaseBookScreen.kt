@@ -74,7 +74,7 @@ fun ReleaseBookScreen(viewModel: ReleaseBookViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                BookCover(state.coverUrl, Modifier.width(100.dp).height(150.dp))
+                BookCover(state.coverUrl, Modifier.width(100.dp).height(150.dp), title = book.title, authors = book.authors.joinToString(", "))
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(book.title, style = MaterialTheme.typography.titleLarge)
                     if (book.authors.isNotEmpty()) Text(book.authors.joinToString(", "), style = MaterialTheme.typography.bodyLarge)

@@ -13,3 +13,5 @@ actual fun platformColorScheme(dark: Boolean): ColorScheme? {
     val context = LocalContext.current
     return if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
 }
+
+actual val supportsWallpaperColors: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S

@@ -45,7 +45,7 @@ fun FeedBookSheet(book: FeedBook, inLibrary: Boolean, onAdd: (ReadingStatus) -> 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                BookCover(book.coverUrl, Modifier.width(80.dp).height(120.dp))
+                BookCover(book.coverUrl, Modifier.width(80.dp).height(120.dp), title = book.title, authors = book.authors)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(book.title, style = MaterialTheme.typography.titleMedium)
                     if (book.authors.isNotBlank()) Text(book.authors, style = MaterialTheme.typography.bodyMedium)

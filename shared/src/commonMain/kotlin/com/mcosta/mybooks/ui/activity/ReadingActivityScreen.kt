@@ -243,7 +243,7 @@ internal fun CoverRow(books: List<Book>, onOpenBook: (Long) -> Unit) {
                 shadowElevation = 3.dp,
                 modifier = Modifier.weight(1f).aspectRatio(2f / 3f).clickable { onOpenBook(book.id) },
             ) {
-                BookCover(book.coverUrl, Modifier.fillMaxSize())
+                BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
             }
         }
         repeat(GRID_COLUMNS - books.size) { Spacer(Modifier.weight(1f)) }

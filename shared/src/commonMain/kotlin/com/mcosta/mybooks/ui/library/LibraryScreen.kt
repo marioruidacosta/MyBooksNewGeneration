@@ -65,7 +65,8 @@ fun ReadingStatus?.label() = when (this) {
 fun LibraryScreen(
     viewModel: LibraryViewModel,
     title: String,
-    onBack: () -> Unit,
+    /** Null when opened from the bottom bar: no back arrow. */
+    onBack: (() -> Unit)?,
     onOpenBook: (Long) -> Unit,
     /** Opened from the home screen's search: the search box takes the keyboard. */
     focusSearch: Boolean = false,
@@ -98,7 +99,7 @@ fun LibraryScreen(
         topBar = {
             TopAppBar(
                 title = { Text(title) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
                     Box {
                         IconButton(onClick = { sortMenuOpen = true }) { Icon(Icons.AutoMirrored.Filled.Sort, "Sort") }
@@ -157,7 +158,7 @@ private fun BookRow(book: Book, onClick: () -> Unit) {
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BookCover(book.coverUrl, Modifier.width(48.dp).height(72.dp))
+        BookCover(book.coverUrl, Modifier.width(48.dp).height(72.dp), title = book.title, authors = book.authors)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
