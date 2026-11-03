@@ -1,4 +1,7 @@
-# MyBooks
+# MyBooks NG
+
+The new generation of [MyBooks](https://github.com/marioruidacosta/MyBooks): the same app with a reworked look and reading flow, installed side by side with MyBooks (app id `com.mcosta.mybooks.ng`). "New in Portugal" reads the lists published by the MyBooks repository.
+
 
 A personal book library for Android and iPhone. Scan a book's barcode to add it, give it a 1–5 star score,
 keep notes, and track every book as **Reading** (with start date and progress), **To read** (you own it),
