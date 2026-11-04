@@ -83,6 +83,8 @@ fun BookDetailScreen(
     onEdit: () -> Unit,
     /** Community sharing: the Review field needs a profile, "Don't share this book" needs sharing on. */
     sharing: SharingState = SharingState(),
+    /** Another book (from the author panel). */
+    onOpenBook: (Long) -> Unit = {},
 ) {
     val book by viewModel.book.collectAsStateWithLifecycle()
     val notes by viewModel.notesDraft.collectAsStateWithLifecycle()
@@ -131,7 +133,8 @@ fun BookDetailScreen(
                 .imePadding()
                 .verticalScroll(rememberScrollState()),
         ) {
-            Header(b, onAddPhoto = takePhoto)
+            val author by viewModel.author.collectAsStateWithLifecycle()
+            Header(b, onAddPhoto = takePhoto, author = author, onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook)
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatusSelector(b.status, viewModel::setStatus, Modifier.fillMaxWidth())
                 SectionCard("Your score") { RatingStars(b.rating, onRate = viewModel::rate, size = 32.dp) }
@@ -212,11 +215,13 @@ fun BookDetailScreen(
 
 /**
  * A large cover over a softly blurred copy of it, fading into the page (Android blurs from version 12; earlier
- * it's a shaded wash), then the title and authors. Swiping the cover shows the book's details in its place.
+ * it's a shaded wash), then the title and authors. Swiping the cover shows the book's details, then its author, in its place.
  */
 @Composable
-private fun Header(b: Book, onAddPhoto: () -> Unit) {
-    val pages = rememberPagerState { 2 }
+private fun Header(b: Book, onAddPhoto: () -> Unit, author: AuthorPanel?, onAuthorShown: () -> Unit, onOpenBook: (Long) -> Unit) {
+    val pages = rememberPagerState { 3 }
+    // The author's biography is fetched only when their panel is first shown.
+    LaunchedEffect(pages.currentPage) { if (pages.currentPage == 2) onAuthorShown() }
     Box(Modifier.fillMaxWidth()) {
         BookCover(b.coverUrl, Modifier.matchParentSize().blur(28.dp).alpha(0.5f), title = b.title, authors = b.authors)
         Box(
@@ -236,7 +241,7 @@ private fun Header(b: Book, onAddPhoto: () -> Unit) {
                             BookCover(b.coverUrl, Modifier.width(COVER_HEIGHT * 2 / 3).height(COVER_HEIGHT), title = b.title, authors = b.authors)
                         }
                     } else {
-                        DetailsPanel(b)
+                        if (page == 1) DetailsPanel(b) else AuthorPanelView(author, onOpenBook)
                     }
                 }
             }

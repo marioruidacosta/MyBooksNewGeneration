@@ -238,10 +238,11 @@ fun MyBooksNavHost(container: AppContainer) {
             composable(Routes.BOOK, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.savedStateHandle.get<Long>("id")!!
                 BookDetailScreen(
-                    viewModel = viewModel { BookDetailViewModel(container.repository, id, container.applicationScope) },
+                    viewModel = viewModel { BookDetailViewModel(container.repository, id, container.applicationScope, container.authors) },
                     onBack = { nav.popBackStack() },
                     onEdit = { nav.navigate(Routes.edit(id)) },
                     sharing = sharing,
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
             composable(Routes.RELEASES) {

@@ -1,5 +1,6 @@
 package com.mcosta.mybooks.ui.detail
 
+import com.mcosta.mybooks.ui.components.ProgressField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -70,16 +71,7 @@ fun ReadingSection(book: Book, viewModel: BookDetailViewModel) {
         book.progressPercent?.let { LinearProgressIndicator(progress = { it / 100f }, modifier = Modifier.fillMaxWidth()) }
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it.filter(Char::isDigit).take(5) },
-                label = { Text(if (byPages) "Page" else "%") },
-                singleLine = true,
-                isError = error != null,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { submit() }),
-                modifier = Modifier.width(110.dp),
-            )
+            ProgressField(input, { input = it }, hint = if (byPages) "Page" else "%", isError = error != null, onDone = { submit() })
             SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
                 SegmentedButton(
                     selected = byPages,
