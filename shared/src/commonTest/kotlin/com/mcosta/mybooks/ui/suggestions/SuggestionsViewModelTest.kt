@@ -23,6 +23,7 @@ class SuggestionsViewModelTest : MainDispatcherTest() {
     private val engine = SuggestionEngine(
         library = { listOf(Book(title = "Memorial", authors = "José Saramago", rating = 5, status = ReadingStatus.READ)) },
         authorBooks = { others },
+        dispatcher = kotlinx.coroutines.Dispatchers.Unconfined,
     )
 
     @Test

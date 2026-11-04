@@ -134,4 +134,19 @@ class SuggestionEngineTest {
         assertEquals(listOf("AUTHORS0", "COMMUNITY0", "AUTHORS1", "AUTHORS2"), all.mix().map { it.title })
         assertEquals(2, all.mix(max = 2).size)
     }
+
+    /** About the real sizes: ~300 library books and 7 months of New in Portugal (~7000 books). It took seconds. */
+    @Test
+    fun aLargeLibraryAndManyNewBooksAreQuick() = runTest {
+        val big = List(300) { i -> Book(id = 1000L + i, title = "Livro $i", authors = "Autor ${i % 60}", publisher = "Editora ${i % 20}", isbn = "97897200${(10000 + i)}", status = ReadingStatus.READ, rating = 4, dateRead = i.toLong()) }
+        val months = List(7) { m ->
+            MonthBooks("2026-0${m + 1}", true, List(1000) { i -> ReleaseBook(id = "$m-$i", isbn = "97897211${m}${(1000 + i)}", title = "Novo $m $i", authors = listOf("Autor ${i % 90}"), publisher = "Editora ${i % 40}", genre = "novel") })
+        }
+        val engine = SuggestionEngine(library = { big }, releases = { months })
+        val started = kotlin.time.TimeSource.Monotonic.markNow()
+        val s = engine.suggestions()
+        val took = started.elapsedNow()
+        assertEquals(true, s.sections.single().second.isNotEmpty())
+        kotlin.test.assertTrue(took.inWholeMilliseconds < 2000, "took $took")
+    }
 }
