@@ -229,32 +229,3 @@ fun MoreByRow(state: MoreByState, onOpenBook: (Long) -> Unit, onShow: (AuthorBoo
     }
 }
 
-/** A book by the author that isn't in the library: what it is, and Add to To read / To buy. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AuthorBookSheet(book: AuthorBook, onAdd: (ReadingStatus) -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Surface(shape = RoundedCornerShape(4.dp), shadowElevation = 3.dp, modifier = Modifier.width(80.dp).height(120.dp)) {
-                    BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(book.title, style = MaterialTheme.typography.titleMedium)
-                    Text(book.authors, style = MaterialTheme.typography.bodyMedium)
-                    val facts = listOfNotNull(book.publisher, book.year?.toString(), book.pageCount?.let { "$it pages" })
-                    if (facts.isNotEmpty()) {
-                        Text(facts.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            book.description?.takeIf { it.isNotBlank() }?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.height(160.dp).verticalScroll(rememberScrollState()))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onAdd(ReadingStatus.TO_READ) }, modifier = Modifier.weight(1f)) { Text("Add to To read") }
-                OutlinedButton(onClick = { onAdd(ReadingStatus.WISHLIST) }, modifier = Modifier.weight(1f)) { Text("Add to To buy") }
-            }
-        }
-    }
-}

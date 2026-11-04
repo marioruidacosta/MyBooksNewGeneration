@@ -8,6 +8,7 @@ import com.mcosta.mybooks.data.ChallengeRepository
 import com.mcosta.mybooks.data.CoverFinder
 import com.mcosta.mybooks.data.Preferences
 import com.mcosta.mybooks.data.ReadingEvents
+import com.mcosta.mybooks.data.authors.CatalogBooks
 import com.mcosta.mybooks.data.authors.GoogleBooksAuthorSearch
 import com.mcosta.mybooks.data.authors.WikipediaAuthors
 import com.mcosta.mybooks.data.SettingsPreferences
@@ -75,6 +76,9 @@ class AppContainer(
 
     /** "More by …" on the book page (Google Books, by author). */
     val authorBooks = GoogleBooksAuthorSearch(http, apiKey = googleBooksApiKey)
+
+    /** Catalogue books opened on their own page (from "More by …"), while the app runs. */
+    val catalogBooks = CatalogBooks()
 
     /** Books just finished, for the celebration. */
     val events = ReadingEvents()

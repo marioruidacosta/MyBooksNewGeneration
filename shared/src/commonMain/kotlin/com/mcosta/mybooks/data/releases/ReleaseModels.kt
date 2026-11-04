@@ -1,6 +1,8 @@
 package com.mcosta.mybooks.data.releases
 
 import kotlinx.datetime.LocalDate
+import io.ktor.http.encodeURLParameter
+import io.ktor.http.encodeURLPathPart
 import kotlinx.serialization.Serializable
 
 /** Where the nightly releases job publishes its files (GitHub Pages). */
@@ -70,13 +72,18 @@ fun openLibraryCover(isbn: String) = "https://covers.openlibrary.org/b/isbn/$isb
 
 data class StoreLink(val name: String, val url: String)
 
-/** The bookshops of "Where to buy", each opening its own search for [isbn]. */
-fun storeLinks(isbn: String): List<StoreLink> = listOf(
-    StoreLink("Bertrand", "https://www.bertrand.pt/pesquisa/$isbn"),
-    StoreLink("Almedina", "https://www.almedina.net/catalogsearch/result/?q=$isbn"),
-    StoreLink("Wook", "https://www.wook.pt/pesquisa?keyword=$isbn"),
-    StoreLink("Fnac", "https://www.fnac.pt/SearchResult/ResultList.aspx?Search=$isbn"),
-)
+/** The bookshops of "Where to buy", each opening its own search for [query]: an ISBN, or a title and author. */
+fun storeLinks(query: String): List<StoreLink> {
+    // An ISBN goes through unchanged; a title and author are encoded for each shop's search.
+    val path = query.trim().encodeURLPathPart()
+    val param = query.trim().encodeURLParameter(spaceToPlus = true)
+    return listOf(
+        StoreLink("Bertrand", "https://www.bertrand.pt/pesquisa/$path"),
+        StoreLink("Almedina", "https://www.almedina.net/catalogsearch/result/?q=$param"),
+        StoreLink("Wook", "https://www.wook.pt/pesquisa?keyword=$param"),
+        StoreLink("Fnac", "https://www.fnac.pt/SearchResult/ResultList.aspx?Search=$param"),
+    )
+}
 
 /** "November 2026 (so far)" for the month in progress, "October 2026" otherwise. [month] is `YYYY-MM`. */
 fun monthLabel(month: String, complete: Boolean): String {

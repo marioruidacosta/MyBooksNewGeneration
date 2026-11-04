@@ -307,4 +307,35 @@ class ReleasesViewModelsTest : MainDispatcherTest() {
         assertEquals(listOf("2026-10"), vm.state.value.groups.map { it.month })
         assertEquals(listOf("Marés"), vm.state.value.books.map { it.title })
     }
+
+    private class MemoryPreferences : com.mcosta.mybooks.data.Preferences {
+        val values = mutableMapOf<String, String>()
+        override fun get(key: String) = values[key]
+        override fun set(key: String, value: String) { values[key] = value }
+    }
+
+    @Test
+    fun listsSortAndRememberTheChoice() = runTest {
+        val prefs = MemoryPreferences()
+        val vm = ReleaseGenreViewModel(releases, "2026-10", ReleaseFilter.Genre(ReleaseGenre.NOVEL), prefs).loaded()
+        assertEquals(listOf("A casa de cal", "A frágil luz do mundo"), vm.state.value.books.map { it.title })
+        vm.setSort(com.mcosta.mybooks.ui.library.LibrarySort.AUTHOR)                  // Bernhard, Vareille
+        vm.setDescending(true)
+        assertEquals(listOf("A frágil luz do mundo", "A casa de cal"), vm.state.value.books.map { it.title })
+        vm.setSort(com.mcosta.mybooks.ui.library.LibrarySort.SCORE)                   // not offered: ignored
+        assertEquals(com.mcosta.mybooks.ui.library.LibrarySort.AUTHOR, vm.state.value.sort.order)
+        val again = ReleaseGenreViewModel(releases, "2026-10", ReleaseFilter.Genre(ReleaseGenre.NOVEL), prefs).loaded()
+        assertEquals(com.mcosta.mybooks.ui.library.SortChoice(com.mcosta.mybooks.ui.library.LibrarySort.AUTHOR, descending = true), again.state.value.sort)
+        assertEquals(listOf("A frágil luz do mundo", "A casa de cal"), again.state.value.books.map { it.title })
+    }
+
+    @Test
+    fun allMonthsListsSortWithinEachMonth() = runTest {
+        files["2026-11.json"] = november
+        val vm = ReleaseGenreViewModel(releases, null, ReleaseFilter.Publisher("Presença")).loaded()
+        vm.setDescending(true)                         // Z to A by title, articles ignored: "mais breve…" then "ickabog"
+        val groups = vm.state.value.groups
+        assertEquals(listOf("2026-11", "2026-10"), groups.map { it.month })
+        assertEquals(listOf(listOf("Contos"), listOf("A mais breve história do Japão", "O ickabog")), groups.map { g -> g.books.map { it.title } })
+    }
 }

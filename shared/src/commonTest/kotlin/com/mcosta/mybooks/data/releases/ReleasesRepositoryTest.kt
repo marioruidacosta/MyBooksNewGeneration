@@ -141,6 +141,19 @@ class ReleasesRepositoryTest {
     }
 
     @Test
+    fun storeLinksSearchByTitleAndAuthorWithoutIsbn() {
+        assertEquals(
+            listOf(
+                StoreLink("Bertrand", "https://www.bertrand.pt/pesquisa/Memorial%20do%20Convento%20Jos%C3%A9%20Saramago"),
+                StoreLink("Almedina", "https://www.almedina.net/catalogsearch/result/?q=Memorial+do+Convento+Jos%C3%A9+Saramago"),
+                StoreLink("Wook", "https://www.wook.pt/pesquisa?keyword=Memorial+do+Convento+Jos%C3%A9+Saramago"),
+                StoreLink("Fnac", "https://www.fnac.pt/SearchResult/ResultList.aspx?Search=Memorial+do+Convento+Jos%C3%A9+Saramago"),
+            ),
+            storeLinks("Memorial do Convento José Saramago"),
+        )
+    }
+
+    @Test
     fun monthLabelSoFar() {
         assertEquals("November 2026 (so far)", monthLabel("2026-11", complete = false))
         assertEquals("October 2026", monthLabel("2026-10", complete = true))
