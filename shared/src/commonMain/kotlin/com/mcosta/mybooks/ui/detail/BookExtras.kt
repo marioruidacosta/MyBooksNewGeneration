@@ -20,10 +20,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -37,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
@@ -45,6 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mcosta.mybooks.data.authors.AuthorBook
+import com.mcosta.mybooks.data.releases.StoreLink
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
@@ -53,6 +58,7 @@ import com.mcosta.mybooks.ui.components.RatingStars
 import com.mcosta.mybooks.ui.formatDate
 import com.mcosta.mybooks.ui.library.label
 import com.mcosta.mybooks.ui.social.PersonAvatar
+import com.mcosta.mybooks.ui.releases.tryOpen
 import kotlin.math.roundToInt
 
 /** The score bars' colour: the chart teal, validated for each surface (as the statistics chart). */
@@ -229,3 +235,23 @@ fun MoreByRow(state: MoreByState, onOpenBook: (Long) -> Unit, onShow: (AuthorBoo
     }
 }
 
+
+/** "Where to buy": a button per shop, each opening its search for the book (by ISBN, or title and author). */
+@Composable
+fun WhereToBuy(stores: List<StoreLink>, byIsbn: Boolean, onCantOpen: () -> Unit) {
+    val uri = LocalUriHandler.current
+    SectionCard("Where to buy") {
+        Text(
+            if (byIsbn) "Opens each shop’s search for this book’s ISBN."
+            else "This book has no ISBN: each shop is searched by title and author.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        for (store in stores) {
+            OutlinedButton(onClick = { if (!uri.tryOpen(store.url)) onCantOpen() }, modifier = Modifier.fillMaxWidth()) {
+                Text(store.name, modifier = Modifier.weight(1f))
+                Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
+            }
+        }
+    }
+}

@@ -141,6 +141,14 @@ class ReleasesRepositoryTest {
     }
 
     @Test
+    fun storeLinksForABookUseTheIsbnElseTitleAndFirstAuthor() {
+        assertEquals(storeLinks("9789722120005"), storeLinksFor("9789722120005", "Caim", "José Saramago"))
+        assertEquals(storeLinks("Caim José Saramago"), storeLinksFor(null, "Caim", "José Saramago, Tradutor"))
+        assertEquals(storeLinks("Caim José Saramago"), storeLinksFor(" ", "Caim", "José Saramago"))
+        assertEquals(storeLinks("Anónimo"), storeLinksFor(null, "Anónimo", ""))
+    }
+
+    @Test
     fun storeLinksSearchByTitleAndAuthorWithoutIsbn() {
         assertEquals(
             listOf(

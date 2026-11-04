@@ -70,6 +70,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.data.MAX_REVIEW_LENGTH
 import com.mcosta.mybooks.data.authors.AuthorBook
+import com.mcosta.mybooks.data.releases.storeLinksFor
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.share.SharingState
@@ -169,6 +170,10 @@ fun BookDetailScreen(
                     }
                 }
                 if (b.status == ReadingStatus.READING) SectionCard("Reading") { ReadingSection(b, viewModel) }
+                if (b.status == ReadingStatus.WISHLIST) {
+                    val stores = remember(b.isbn, b.title, b.authors) { storeLinksFor(b.isbn, b.title, b.authors) }
+                    WhereToBuy(stores, byIsbn = b.isbn != null, onCantOpen = { scope.launch { snackbar.showSnackbar("No app can open this link") } })
+                }
                 b.description?.takeIf { it.isNotBlank() }?.let { SectionCard("Description") { Description(it) } }
                 if (community != CommunityState.Hidden && extras != null) {
                     SectionCard("Community reviews") {

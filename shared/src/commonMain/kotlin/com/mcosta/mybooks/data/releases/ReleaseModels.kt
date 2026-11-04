@@ -105,3 +105,7 @@ internal fun IndexMonthJson.toMonth(): ReleaseMonth {
     val counts = genres.entries.groupBy({ ReleaseGenre.of(it.key) }, { it.value }).mapValues { it.value.sum() }
     return ReleaseMonth(month, complete, total, ReleaseGenre.entries.mapNotNull { g -> counts[g]?.takeIf { it > 0 }?.let { g to it } })
 }
+
+/** "Where to buy" for a book: the shops searched by its ISBN, or by its title and first author when it has none. */
+fun storeLinksFor(isbn: String?, title: String, authors: String): List<StoreLink> =
+    storeLinks(isbn?.takeIf { it.isNotBlank() } ?: "$title ${authors.substringBefore(',').trim()}".trim())
