@@ -4,16 +4,28 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.MAX_REVIEW_LENGTH
+import com.mcosta.mybooks.data.authors.AuthorInfo
+import com.mcosta.mybooks.data.authors.AuthorInfoSource
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.domain.searchKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+/** The header's author panel: [name] (blank without an author), their biography if found, the library's other books by them. */
+data class AuthorPanel(
+    val name: String,
+    val info: AuthorInfo? = null,
+    val otherBooks: List<Book> = emptyList(),
+    val loading: Boolean = true,
+)
 
 /**
  * Book detail: status, rating and notes edits are saved immediately; the notes and review drafts are also
@@ -23,7 +35,33 @@ class BookDetailViewModel(
     private val repo: BookRepository,
     private val id: Long,
     private val saveScope: CoroutineScope,
+    /** Author biographies for the header's third panel; null shows only the library's books by them. */
+    private val authors: AuthorInfoSource? = null,
 ) : ViewModel() {
+    private val _author = MutableStateFlow<AuthorPanel?>(null)
+    /** The header's author panel, loaded when first shown ([loadAuthor]). */
+    val author: StateFlow<AuthorPanel?> = _author.asStateFlow()
+
+    /** Loads the author panel once: the library's other books by the first author, then their biography. */
+    fun loadAuthor() {
+        if (_author.value != null) return
+        viewModelScope.launch {
+            val book = repo.getBook(id) ?: return@launch
+            val name = book.authors.substringBefore(',').trim()
+            if (name.isEmpty()) {
+                _author.value = AuthorPanel(name = "", loading = false)
+                return@launch
+            }
+            val key = searchKey(name)
+            val theirs = repo.observeBooks(null, "").first()
+                .filter { it.id != id && searchKey(it.authors.substringBefore(',').trim()) == key }
+                .sortedWith(compareBy({ it.status != ReadingStatus.READ }, { searchKey(it.title) }))
+            _author.value = AuthorPanel(name, otherBooks = theirs, loading = authors != null)
+            val info = authors?.author(name)
+            _author.value = _author.value?.copy(info = info, loading = false)
+        }
+    }
+
     private val _notesDraft = MutableStateFlow("")
     val notesDraft: StateFlow<String> = _notesDraft.asStateFlow()
 

@@ -12,6 +12,7 @@ import com.mcosta.mybooks.data.FakeBookDao
 import com.mcosta.mybooks.data.FakeShareStateDao
 import com.mcosta.mybooks.share.ShareTracker
 import com.mcosta.mybooks.data.SaveResult
+import com.mcosta.mybooks.data.authors.AuthorInfo
 import com.mcosta.mybooks.data.lookup.BookLookupService
 import com.mcosta.mybooks.data.lookup.LookupResult
 import com.mcosta.mybooks.domain.Book
@@ -214,5 +215,36 @@ class BookDetailViewModelTest : MainDispatcherTest() {
         assertEquals(true, vm.shareExcluded.value)
         vm.setShareExcluded(false)
         assertEquals(false, vm.shareExcluded.value)
+    }
+
+    @Test
+    fun authorPanelShowsTheBiographyAndTheirOtherBooks() = runTest {
+        val id = (repo.save(Book(title = "Ensaio sobre a Cegueira", authors = "José Saramago, Tradutor X", status = ReadingStatus.READ)) as SaveResult.Saved).id
+        repo.save(Book(title = "Memorial do Convento", authors = "Jose Saramago", status = ReadingStatus.TO_READ))
+        repo.save(Book(title = "Caim", authors = "José Saramago", status = ReadingStatus.READ))
+        repo.save(Book(title = "Other", authors = "Someone Else"))
+        val asked = mutableListOf<String>()
+        val bio = AuthorInfo("José Saramago", "escritor português", "Foi um escritor.", null, null)
+        val vm = BookDetailViewModel(repo, id, backgroundScope, authors = { name -> asked += name; bio })
+        assertNull(vm.author.value)
+        vm.loadAuthor()
+        advanceUntilIdle()
+        val panel = vm.author.value!!
+        assertEquals("José Saramago", panel.name)
+        assertEquals(bio, panel.info)
+        assertEquals(listOf("Caim", "Memorial do Convento"), panel.otherBooks.map { it.title })   // read first, then A–Z
+        assertEquals(false, panel.loading)
+        vm.loadAuthor()
+        advanceUntilIdle()
+        assertEquals(listOf("José Saramago"), asked)                                              // loaded once
+    }
+
+    @Test
+    fun authorPanelWithoutBiography() = runTest {
+        val id = (repo.save(Book(title = "Anon", authors = "Jade Khoo")) as SaveResult.Saved).id
+        val vm = BookDetailViewModel(repo, id, backgroundScope, authors = { null })
+        vm.loadAuthor()
+        advanceUntilIdle()
+        assertEquals(AuthorPanel("Jade Khoo", info = null, otherBooks = emptyList(), loading = false), vm.author.value)
     }
 }

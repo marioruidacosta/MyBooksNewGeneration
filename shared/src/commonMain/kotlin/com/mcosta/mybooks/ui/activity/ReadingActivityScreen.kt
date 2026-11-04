@@ -105,6 +105,10 @@ fun ReadingActivityScreen(
                     }
                 }
             }
+            state.stats?.let { stats ->
+                item { Heading("Statistics") }
+                item { StatsSection(state.statsYears, stats, onYear = viewModel::showStats, modifier = Modifier.padding(top = 4.dp)) }
+            }
             item { Heading("Read in ${state.year} · ${state.readThisYear.size}") }
             if (state.readThisYear.isEmpty()) {
                 item { Hint("No books finished this year yet.") }

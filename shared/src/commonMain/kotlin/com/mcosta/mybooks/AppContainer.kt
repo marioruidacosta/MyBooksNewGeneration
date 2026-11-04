@@ -8,6 +8,7 @@ import com.mcosta.mybooks.data.ChallengeRepository
 import com.mcosta.mybooks.data.CoverFinder
 import com.mcosta.mybooks.data.Preferences
 import com.mcosta.mybooks.data.ReadingEvents
+import com.mcosta.mybooks.data.authors.WikipediaAuthors
 import com.mcosta.mybooks.data.SettingsPreferences
 import com.mcosta.mybooks.data.covers.CoverStore
 import com.mcosta.mybooks.data.db.AppDatabase
@@ -67,6 +68,9 @@ class AppContainer(
 
     /** Whether the signed-in user shares their reading activity; null without the community. */
     val sharingStatus: SharingStatus? = sharing?.status
+
+    /** Author biographies (Wikipedia) for the book page. */
+    val authors = WikipediaAuthors(http)
 
     /** Books just finished, for the celebration. */
     val events = ReadingEvents()

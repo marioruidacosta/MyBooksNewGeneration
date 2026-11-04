@@ -67,6 +67,7 @@ import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.ui.activity.countText
 import com.mcosta.mybooks.ui.activity.text
 import com.mcosta.mybooks.ui.components.BookCover
+import com.mcosta.mybooks.ui.components.ProgressField
 import com.mcosta.mybooks.ui.components.CoverFan
 import com.mcosta.mybooks.ui.detail.progressText
 import com.mcosta.mybooks.ui.library.label
@@ -224,16 +225,7 @@ private fun ProgressSheet(book: Book, error: String?, onSave: (input: String, by
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it.filter(Char::isDigit).take(5) },
-                    label = { Text(if (byPages) "Page" else "%") },
-                    singleLine = true,
-                    isError = error != null,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { onSave(input, byPages) }),
-                    modifier = Modifier.width(110.dp),
-                )
+                ProgressField(input, { input = it }, hint = if (byPages) "Page" else "%", isError = error != null, onDone = { onSave(input, byPages) })
                 SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
                     SegmentedButton(selected = byPages, onClick = { byPages = true }, shape = SegmentedButtonDefaults.itemShape(0, 2), label = { Text("Pages") })
                     SegmentedButton(selected = !byPages, onClick = { byPages = false }, shape = SegmentedButtonDefaults.itemShape(1, 2), label = { Text("%") })

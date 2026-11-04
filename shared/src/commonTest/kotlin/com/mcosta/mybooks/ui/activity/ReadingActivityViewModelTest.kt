@@ -105,4 +105,19 @@ class ReadingActivityViewModelTest : MainDispatcherTest() {
         assertEquals("Starts on 1 January", Pace.Upcoming.text())
         assertEquals("18 of 30 books", ChallengeProgress(2026, 30, 18).countText())
     }
+
+    @Test
+    fun statisticsForThisYearOrAChosenOne() = runTest {
+        read("Oct", "2026-10-24")
+        read("Old", "2025-06-01")
+        val vm = vm()
+        backgroundScope.launch(mainDispatcher) { vm.state.collect {} }
+        assertEquals(listOf(2026, 2025), vm.state.value.statsYears)
+        assertEquals(2026, vm.state.value.stats?.year)
+        assertEquals(1, vm.state.value.stats?.books)
+        assertEquals(1, vm.state.value.stats?.previousYearBooks)
+        vm.showStats(2025)
+        assertEquals(2025, vm.state.value.stats?.year)
+        assertEquals(1, vm.state.value.stats?.perMonth?.get(5))
+    }
 }
