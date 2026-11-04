@@ -6,7 +6,7 @@ import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.authors.AuthorBook
 import com.mcosta.mybooks.data.authors.findInLibrary
 import com.mcosta.mybooks.data.releases.StoreLink
-import com.mcosta.mybooks.data.releases.storeLinks
+import com.mcosta.mybooks.data.releases.storeLinksFor
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,7 +32,7 @@ class CatalogBookViewModel(private val repo: BookRepository, val book: AuthorBoo
         .map { library ->
             val copy = book?.let { findInLibrary(it, library) }
             val shopping = book != null && (copy == null || copy.status == ReadingStatus.WISHLIST)
-            CatalogBookState(loaded = true, inLibrary = copy, stores = if (shopping) storeLinks(shopQuery(book!!)) else emptyList())
+            CatalogBookState(loaded = true, inLibrary = copy, stores = if (shopping) storeLinksFor(book!!.isbn, book.title, book.authors) else emptyList())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CatalogBookState())
 
@@ -49,8 +49,4 @@ class CatalogBookViewModel(private val repo: BookRepository, val book: AuthorBoo
         }
     }
 
-    private companion object {
-        /** The shops search by ISBN, or by title and first author for a book without one. */
-        fun shopQuery(book: AuthorBook) = book.isbn ?: "${book.title} ${book.authors.substringBefore(',').trim()}".trim()
-    }
 }

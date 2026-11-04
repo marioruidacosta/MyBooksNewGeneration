@@ -118,23 +118,7 @@ fun CatalogBookScreen(
                 }
                 book.description?.takeIf { it.isNotBlank() }?.let { SectionCard("Description") { Description(it) } }
                 if (state.stores.isNotEmpty()) {
-                    SectionCard("Where to buy") {
-                        Text(
-                            if (book.isbn != null) "Opens each shop’s search for this book’s ISBN."
-                            else "This edition has no ISBN: each shop is searched by title and author.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        for (store in state.stores) {
-                            OutlinedButton(
-                                onClick = { if (!uri.tryOpen(store.url)) scope.launch { snackbar.showSnackbar("No app can open this link") } },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                Text(store.name, modifier = Modifier.weight(1f))
-                                Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
-                            }
-                        }
-                    }
+                    WhereToBuy(state.stores, byIsbn = book.isbn != null, onCantOpen = { scope.launch { snackbar.showSnackbar("No app can open this link") } })
                 }
             }
         }
