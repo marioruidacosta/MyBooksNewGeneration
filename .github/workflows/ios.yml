@@ -7,6 +7,9 @@ on:
   push:
     branches: [main, "feature/ios-*", "feature/social-*"]
     tags: ["v*"]
+  # Every pull request too, so an iPhone-breaking change shows before it's merged (GitHub's Macs are
+  # sometimes all busy: then the job fails without starting and can be re-run).
+  pull_request:
 
 jobs:
   ios:
