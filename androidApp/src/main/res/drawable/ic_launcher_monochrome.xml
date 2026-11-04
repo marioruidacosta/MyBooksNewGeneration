@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The shelf icon in one colour, for Android 13+ themed icons (the launcher tints it). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M33,37 L41,37 Q43,37 43,39 L43,75 L31,75 L31,39 Q31,37 33,37 Z M46.5,31 L55.5,31 Q57.5,31 57.5,33 L57.5,75 L44.5,75 L44.5,33 Q44.5,31 46.5,31 Z M28.5,75 L79.5,75 Q81,75 81,76.5 L81,77 Q81,78.5 79.5,78.5 L28.5,78.5 Q27,78.5 27,77 L27,76.5 Q27,75 28.5,75 Z" />
+    <group
+        android:pivotX="71"
+        android:pivotY="75"
+        android:rotation="-14">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M62,38 L69,38 Q71,38 71,40 L71,75 L60,75 L60,40 Q60,38 62,38 Z" />
+    </group>
+</vector>
