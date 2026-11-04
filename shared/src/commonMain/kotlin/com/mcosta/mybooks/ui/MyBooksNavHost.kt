@@ -58,6 +58,10 @@ import com.mcosta.mybooks.ui.detail.BookDetailViewModel
 import com.mcosta.mybooks.ui.detail.BookExtrasViewModel
 import com.mcosta.mybooks.ui.detail.CatalogBookScreen
 import com.mcosta.mybooks.ui.detail.CatalogBookViewModel
+import com.mcosta.mybooks.data.suggestions.Suggestion
+import com.mcosta.mybooks.data.suggestions.suggestionKey
+import com.mcosta.mybooks.ui.suggestions.SuggestionsScreen
+import com.mcosta.mybooks.ui.suggestions.SuggestionsViewModel
 import com.mcosta.mybooks.ui.edit.EditBookScreen
 import com.mcosta.mybooks.ui.edit.EditBookViewModel
 import com.mcosta.mybooks.domain.ReadingStatus
@@ -86,6 +90,7 @@ object Routes {
     const val READING_ACTIVITY = "reading-activity"
     /** A catalogue book (from "More by …"); {key} finds it in [com.mcosta.mybooks.AppContainer.catalogBooks]. */
     const val CATALOG_BOOK = "catalog/{key}"
+    const val SUGGESTIONS = "suggestions"
     /** The books read in {year}, or "undated" for read books without a read date. */
     const val READ_YEAR = "reading-activity/{year}"
     const val ADD = "add?isbn={isbn}"
@@ -133,6 +138,13 @@ fun MyBooksNavHost(container: AppContainer) {
 
     val celebrations = viewModel { CelebrationViewModel(container.repository, container.challenges, container.events) }
     val celebration by celebrations.celebration.collectAsStateWithLifecycle()
+    /** A suggestion opens as a New in Portugal book or a catalogue book. */
+    val openSuggestion: (Suggestion) -> Unit = { s ->
+        val release = s.release
+        val catalog = s.catalog
+        if (release != null) nav.navigate(Routes.releaseBook(release.month, release.id))
+        else if (catalog != null) nav.navigate("catalog/${container.catalogBooks.put(catalog)}")
+    }
     val current by nav.currentBackStackEntryAsState()
     val route = current?.destination?.route
     val tabs = bottomTabs(community = social != null)
@@ -162,12 +174,18 @@ fun MyBooksNavHost(container: AppContainer) {
     ) { bars ->
         NavHost(nav, startDestination = Routes.LIBRARY, modifier = Modifier.padding(bars).consumeWindowInsets(bars)) {
             composable(Routes.LIBRARY) {
+                val suggestionsVm = viewModel { SuggestionsViewModel(container.suggestions, container.hiddenSuggestions) }
+                val suggestions by suggestionsVm.state.collectAsStateWithLifecycle()
                 HomeScreen(
                     viewModel = viewModel { HomeViewModel(container.repository, container.challenges) },
                     snackbarHostState = snackbar,
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     onOpenShelf = { nav.navigate(Routes.shelf(it)) },
                     onOpenReadingActivity = { nav.navigate(Routes.READING_ACTIVITY) },
+                    suggestions = suggestions,
+                    onOpenSuggestion = openSuggestion,
+                    onNotInterested = suggestionsVm::hide,
+                    onSeeAllSuggestions = { nav.navigate(Routes.SUGGESTIONS) },
                     onAddManually = { nav.navigate(Routes.add()) },
                     onScan = {
                         scope.launch {
@@ -207,6 +225,13 @@ fun MyBooksNavHost(container: AppContainer) {
                     onBack = null,
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     focusSearch = true,
+                )
+            }
+            composable(Routes.SUGGESTIONS) {
+                SuggestionsScreen(
+                    viewModel = viewModel { SuggestionsViewModel(container.suggestions, container.hiddenSuggestions) },
+                    onBack = { nav.popBackStack() },
+                    onOpen = openSuggestion,
                 )
             }
             composable(Routes.READING_ACTIVITY) {
@@ -260,6 +285,9 @@ fun MyBooksNavHost(container: AppContainer) {
                     viewModel = viewModel { CatalogBookViewModel(container.repository, container.catalogBooks.get(key)) },
                     onBack = { nav.popBackStack() },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
+                    onNotInterested = container.catalogBooks.get(key)?.let { book ->
+                        { container.hiddenSuggestions.hide(suggestionKey(book.isbn, book.title, book.authors)); nav.popBackStack() }
+                    },
                 )
             }
             composable(Routes.RELEASES) {

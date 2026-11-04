@@ -51,7 +51,13 @@ import kotlinx.coroutines.launch
 /** A catalogue book's page (from "More by …"): what it is, add it to the library, and where to buy it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CatalogBookScreen(viewModel: CatalogBookViewModel, onBack: () -> Unit, onOpenBook: (Long) -> Unit) {
+fun CatalogBookScreen(
+    viewModel: CatalogBookViewModel,
+    onBack: () -> Unit,
+    onOpenBook: (Long) -> Unit,
+    /** "Not interested": never suggested again (then back). */
+    onNotInterested: (() -> Unit)? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val book = viewModel.book
     val uri = LocalUriHandler.current
@@ -105,6 +111,9 @@ fun CatalogBookScreen(viewModel: CatalogBookViewModel, onBack: () -> Unit, onOpe
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { viewModel.add(ReadingStatus.TO_READ) }, modifier = Modifier.weight(1f)) { Text("Add to To read") }
                         OutlinedButton(onClick = { viewModel.add(ReadingStatus.WISHLIST) }, modifier = Modifier.weight(1f)) { Text("Add to To buy") }
+                    }
+                    if (onNotInterested != null) {
+                        TextButton(onClick = onNotInterested) { Text("Not interested") }
                     }
                 }
                 book.description?.takeIf { it.isNotBlank() }?.let { SectionCard("Description") { Description(it) } }

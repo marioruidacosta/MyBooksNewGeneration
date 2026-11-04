@@ -71,6 +71,9 @@ import com.mcosta.mybooks.ui.components.ProgressField
 import com.mcosta.mybooks.ui.components.CoverFan
 import com.mcosta.mybooks.ui.detail.progressText
 import com.mcosta.mybooks.ui.library.label
+import com.mcosta.mybooks.data.suggestions.Suggestion
+import com.mcosta.mybooks.ui.suggestions.SuggestedForYou
+import com.mcosta.mybooks.ui.suggestions.SuggestionsState
 
 /** A shelf's name on the home screen. */
 fun ReadingStatus?.shelfLabel(): String = if (this == null) "All books" else label()
@@ -84,6 +87,11 @@ fun HomeScreen(
     /** A shelf's list ([ReadingStatus] null is All books). */
     onOpenShelf: (ReadingStatus?) -> Unit,
     onOpenReadingActivity: () -> Unit,
+    /** "Suggested for you" (state from [com.mcosta.mybooks.ui.suggestions.SuggestionsViewModel]). */
+    suggestions: SuggestionsState = SuggestionsState(loading = false),
+    onOpenSuggestion: (Suggestion) -> Unit = {},
+    onNotInterested: (String) -> Unit = {},
+    onSeeAllSuggestions: () -> Unit = {},
     onAddManually: () -> Unit,
     onScan: () -> Unit,
 ) {
@@ -149,6 +157,7 @@ fun HomeScreen(
             item {
                 ChallengeCard(state, onClick = onOpenReadingActivity, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp))
             }
+            item { SuggestedForYou(suggestions, onOpenSuggestion, onNotInterested, onSeeAllSuggestions) }
             item { SectionTitle("Shelves") }
             items(state.shelves, key = { it.status?.name ?: "ALL" }) { shelf ->
                 ShelfRow(shelf, onClick = { onOpenShelf(shelf.status) })

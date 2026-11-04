@@ -77,4 +77,20 @@ class ChallengeRepositoryTest {
         assertEquals(100L, repo.getBook(id)!!.dateRead)
         assertNull(repo.getBook(id)!!.dateStarted)
     }
+
+    @Test
+    fun backupKeepsNotInterestedSuggestions() = runTest {
+        val hidden = com.mcosta.mybooks.data.suggestions.HiddenSuggestions(null)
+        hidden.hide("9789722120005")
+        val source = BookRepository(FakeBookDao(), object : BookLookupService {
+            override suspend fun lookup(isbn: String): LookupResult = LookupResult.NotFound
+        }, hiddenSuggestions = hidden)
+        val restoredHidden = com.mcosta.mybooks.data.suggestions.HiddenSuggestions(null)
+        restoredHidden.hide("other")
+        val target = BookRepository(FakeBookDao(), object : BookLookupService {
+            override suspend fun lookup(isbn: String): LookupResult = LookupResult.NotFound
+        }, hiddenSuggestions = restoredHidden)
+        target.importJson(source.exportJson())
+        assertEquals(setOf("9789722120005", "other"), restoredHidden.keys.value)
+    }
 }

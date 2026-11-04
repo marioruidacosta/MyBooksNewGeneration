@@ -26,8 +26,12 @@ object BackupSerializer {
         exportedAt: Long,
         shares: Map<Long, BackupShare> = emptyMap(),
         challenges: List<Challenge> = emptyList(),
+        hiddenSuggestions: Collection<String> = emptyList(),
     ): String = json.encodeToString(
-        BackupFile(VERSION, exportedAt, books.map { it.toBackup(shares[it.id]) }, challenges.map { BackupChallenge(it.year, it.goal) }),
+        BackupFile(
+            VERSION, exportedAt, books.map { it.toBackup(shares[it.id]) }, challenges.map { BackupChallenge(it.year, it.goal) },
+            hiddenSuggestions.sorted(),
+        ),
     )
 
     /** Throws [BackupFormatException] if [text] is not a valid version-1 backup. */
@@ -39,6 +43,9 @@ object BackupSerializer {
 
     /** The reading challenges (none in backups made before them). Throws like [decode]. */
     fun decodeChallenges(text: String): List<Challenge> = file(text).challenges.map { Challenge(it.year, it.goal) }
+
+    /** Books marked "Not interested" in suggestions (none in older backups). Throws like [decode]. */
+    fun decodeHiddenSuggestions(text: String): List<String> = file(text).hiddenSuggestions
 
     private fun file(text: String): BackupFile {
         val file = try {
@@ -58,6 +65,7 @@ object BackupSerializer {
         val exportedAt: Long = 0,
         val books: List<BackupBook> = emptyList(),
         val challenges: List<BackupChallenge> = emptyList(),
+        val hiddenSuggestions: List<String> = emptyList(),
     )
 
     @Serializable

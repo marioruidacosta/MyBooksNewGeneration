@@ -12,6 +12,7 @@ import com.mcosta.mybooks.data.goodreads.GoodreadsCsv
 import com.mcosta.mybooks.data.goodreads.GoodreadsFormatException
 import com.mcosta.mybooks.data.lookup.BookLookupService
 import com.mcosta.mybooks.data.lookup.LookupResult
+import com.mcosta.mybooks.data.suggestions.HiddenSuggestions
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.Isbn
 import com.mcosta.mybooks.domain.MAX_GOAL
@@ -57,6 +58,8 @@ class BookRepository(
     private val challenges: ChallengeRepository? = null,
     /** Told when a book is marked as Read (to celebrate); null in tests that don't involve it. */
     private val events: ReadingEvents? = null,
+    /** Suggestions marked "Not interested", kept in backups; null in tests that don't involve them. */
+    private val hiddenSuggestions: HiddenSuggestions? = null,
 ) {
     fun observeBooks(status: ReadingStatus?, query: String): Flow<List<Book>> =
         dao.observe(status, searchPattern(query)).map { list -> list.map { it.toBook() } }
@@ -177,7 +180,7 @@ class BookRepository(
             val bytes = coverStore.read(ref) ?: return@mapNotNull null
             (BACKUP_COVERS + name) to bytes
         }
-        val library = BackupSerializer.encode(books, clock(), shares(), challenges?.all().orEmpty())
+        val library = BackupSerializer.encode(books, clock(), shares(), challenges?.all().orEmpty(), hiddenSuggestions?.keys?.value.orEmpty())
         return Zip.write(listOf(BACKUP_LIBRARY to library.encodeToByteArray()) + photos)
     }
 
@@ -196,7 +199,7 @@ class BookRepository(
     }
 
     suspend fun exportJson(): String =
-        BackupSerializer.encode(dao.getAll().map { it.toBook() }, clock(), shares(), challenges?.all().orEmpty())
+        BackupSerializer.encode(dao.getAll().map { it.toBook() }, clock(), shares(), challenges?.all().orEmpty(), hiddenSuggestions?.keys?.value.orEmpty())
 
     private suspend fun shares() = shareTracker?.exportShares() ?: emptyMap()
 
@@ -209,6 +212,7 @@ class BookRepository(
     suspend fun importJson(json: String): ImportSummary {
         val books = BackupSerializer.decodeWithShares(json)
         val goals = BackupSerializer.decodeChallenges(json).filter { it.goal in 1..MAX_GOAL }
+        val hidden = BackupSerializer.decodeHiddenSuggestions(json)
         var added = 0
         var updated = 0
         var failed = 0
@@ -239,6 +243,7 @@ class BookRepository(
             }
         }
         for (goal in goals) challenges?.setGoal(goal.year, goal.goal)
+        hiddenSuggestions?.addAll(hidden)
         return ImportSummary(added, updated, failed)
     }
 
