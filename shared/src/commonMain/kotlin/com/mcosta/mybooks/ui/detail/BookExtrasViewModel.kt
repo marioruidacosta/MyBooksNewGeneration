@@ -3,12 +3,11 @@ package com.mcosta.mybooks.ui.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mcosta.mybooks.data.BookRepository
-import com.mcosta.mybooks.data.SaveResult
 import com.mcosta.mybooks.data.authors.AuthorBook
 import com.mcosta.mybooks.data.authors.AuthorBooksSource
+import com.mcosta.mybooks.data.authors.catalogTitleKey
+import com.mcosta.mybooks.data.authors.findInLibrary
 import com.mcosta.mybooks.domain.Book
-import com.mcosta.mybooks.domain.ReadingStatus
-import com.mcosta.mybooks.domain.searchKey
 import com.mcosta.mybooks.social.SocialException
 import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.social.model.BOOK_REVIEWS_PAGE
@@ -121,41 +120,12 @@ class BookExtrasViewModel(
         val source = authorBooks ?: return
         if (author.isEmpty()) return
         _moreBy.value = MoreByState(author)
-        val library = repo.observeBooks(null, "").first()
-        val thisTitle = titleKey(book.title)
+        val thisTitle = catalogTitleKey(book.title)
         val found = source.booksBy(author)
-            .filter { (it.isbn == null || it.isbn != book.isbn) && titleKey(it.title) != thisTitle }
-            .map { MoreByBook(it, inLibrary(it, library)) }
-        _moreBy.value = MoreByState(author, found, loading = false)
-    }
-
-    /** Adds a book from "More by …" to To read or To buy. */
-    fun add(book: AuthorBook, status: ReadingStatus) {
-        viewModelScope.launch {
-            val result = repo.save(
-                Book(
-                    title = book.title, authors = book.authors, isbn = book.isbn, publisher = book.publisher,
-                    publishedYear = book.year, pageCount = book.pageCount, coverUrl = book.coverUrl,
-                    description = book.description, status = status,
-                ),
-            )
-            val saved = when (result) {
-                is SaveResult.Saved -> repo.getBook(result.id)
-                SaveResult.DuplicateIsbn -> book.isbn?.let { repo.findByIsbn(it) }
-                else -> null
-            } ?: return@launch
-            _moreBy.value = _moreBy.value?.let { s ->
-                s.copy(books = s.books.map { if (it.book == book) it.copy(inLibrary = saved) else it })
-            }
+            .filter { (it.isbn == null || it.isbn != book.isbn) && catalogTitleKey(it.title) != thisTitle }
+        // Follows the library, so a book added from its own page shows as in the library on return.
+        repo.observeBooks(null, "").collect { library ->
+            _moreBy.value = MoreByState(author, found.map { MoreByBook(it, findInLibrary(it, library)) }, loading = false)
         }
     }
-
-    /** The library's copy: same ISBN, or the same title (before any subtitle) by the same first author. */
-    private fun inLibrary(book: AuthorBook, library: List<Book>): Book? {
-        val author = searchKey(book.authors.substringBefore(',').trim())
-        return library.firstOrNull { book.isbn != null && it.isbn == book.isbn }
-            ?: library.firstOrNull { titleKey(it.title) == titleKey(book.title) && searchKey(it.authors.substringBefore(',').trim()) == author }
-    }
-
-    private fun titleKey(title: String) = searchKey(title.substringBefore(':').trim())
 }

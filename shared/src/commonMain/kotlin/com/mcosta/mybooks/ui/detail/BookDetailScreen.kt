@@ -91,11 +91,12 @@ fun BookDetailScreen(
     extras: BookExtrasViewModel? = null,
     /** Sign in to the community (from the reviews' "Join"). */
     onJoin: () -> Unit = {},
+    /** A book from "More by …" that isn't in the library, on its own page. */
+    onOpenCatalogBook: (AuthorBook) -> Unit = {},
     onOpenPerson: (String) -> Unit = {},
 ) {
     val community by (extras?.community ?: remember { MutableStateFlow<CommunityState>(CommunityState.Hidden) }).collectAsStateWithLifecycle()
     val moreBy by (extras?.moreBy ?: remember { MutableStateFlow<MoreByState?>(null) }).collectAsStateWithLifecycle()
-    var showing by remember { mutableStateOf<AuthorBook?>(null) }
     val book by viewModel.book.collectAsStateWithLifecycle()
     val notes by viewModel.notesDraft.collectAsStateWithLifecycle()
     val review by viewModel.reviewDraft.collectAsStateWithLifecycle()
@@ -205,7 +206,7 @@ fun BookDetailScreen(
                         }
                     }
                 }
-                moreBy?.let { MoreByRow(it, onOpenBook, onShow = { book -> showing = book }, edgePadding = 0.dp) }
+                moreBy?.let { MoreByRow(it, onOpenBook, onShow = onOpenCatalogBook, edgePadding = 0.dp) }
                 Text(
                     "Added ${formatDate(b.dateAdded)}",
                     style = MaterialTheme.typography.bodySmall,
@@ -214,10 +215,6 @@ fun BookDetailScreen(
                 )
             }
         }
-    }
-
-    showing?.let { book ->
-        AuthorBookSheet(book, onAdd = { status -> extras?.add(book, status); showing = null }, onDismiss = { showing = null })
     }
 
     if (confirmDelete) {
@@ -310,7 +307,7 @@ private fun PageDots(current: Int, count: Int) {
 
 /** A titled card holding one part of the book page. */
 @Composable
-private fun SectionCard(title: String, content: @Composable () -> Unit) {
+internal fun SectionCard(title: String, content: @Composable () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         modifier = Modifier.fillMaxWidth(),
@@ -323,7 +320,7 @@ private fun SectionCard(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Description(text: String) {
+internal fun Description(text: String) {
     var expanded by remember { mutableStateOf(false) }
     Column(Modifier.clickable { expanded = !expanded }) {
         Text(

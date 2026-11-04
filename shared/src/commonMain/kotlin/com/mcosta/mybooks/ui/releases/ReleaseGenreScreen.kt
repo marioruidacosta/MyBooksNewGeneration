@@ -1,5 +1,15 @@
 package com.mcosta.mybooks.ui.releases
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +58,17 @@ fun ReleaseGenreScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     // Completeness from the saved month list; the clock only until that is known.
     val subtitle = if (month == null) "All months" else monthLabel(month, state.monthComplete ?: (month < currentMonth()))
+    var sortMenuOpen by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    // A new order starts at the top (otherwise the list keeps the book that was on top in view).
+    val shown = state.sort.encode()
+    var lastShown by rememberSaveable { mutableStateOf(shown) }
+    LaunchedEffect(shown) {
+        if (shown != lastShown) {
+            lastShown = shown
+            listState.scrollToItem(0)
+        }
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -58,6 +79,29 @@ fun ReleaseGenreScreen(
                     }
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    Box {
+                        IconButton(onClick = { sortMenuOpen = true }) { Icon(Icons.AutoMirrored.Filled.Sort, "Sort") }
+                        DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                            for (order in RELEASE_SORTS) {
+                                DropdownMenuItem(
+                                    text = { Text(order.label) },
+                                    leadingIcon = { if (order == state.sort.order) Icon(Icons.Filled.Check, "Selected") },
+                                    onClick = { sortMenuOpen = false; viewModel.setSort(order) },
+                                )
+                            }
+                            HorizontalDivider()
+                            for (descending in listOf(false, true)) {
+                                val order = state.sort.order
+                                DropdownMenuItem(
+                                    text = { Text(if (descending) order.descending else order.ascending) },
+                                    leadingIcon = { if (descending == state.sort.descending) Icon(Icons.Filled.Check, "Selected") },
+                                    onClick = { sortMenuOpen = false; viewModel.setDescending(descending) },
+                                )
+                            }
+                        }
+                    }
+                },
             )
         },
     ) { padding ->
@@ -68,7 +112,7 @@ fun ReleaseGenreScreen(
                 else -> Column(Modifier.fillMaxSize()) {
                     SavedNote(state.savedAt)
                     if (state.missing.isNotEmpty()) MissingNote(state.missing, onRetry = viewModel::retry)
-                    LazyColumn(Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize(), state = listState) {
                         for (group in state.groups) {
                             if (month == null) {
                                 item(key = group.month) {

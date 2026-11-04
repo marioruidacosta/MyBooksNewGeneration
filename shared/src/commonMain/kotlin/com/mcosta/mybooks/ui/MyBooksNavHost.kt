@@ -56,6 +56,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.ui.detail.BookDetailScreen
 import com.mcosta.mybooks.ui.detail.BookDetailViewModel
 import com.mcosta.mybooks.ui.detail.BookExtrasViewModel
+import com.mcosta.mybooks.ui.detail.CatalogBookScreen
+import com.mcosta.mybooks.ui.detail.CatalogBookViewModel
 import com.mcosta.mybooks.ui.edit.EditBookScreen
 import com.mcosta.mybooks.ui.edit.EditBookViewModel
 import com.mcosta.mybooks.domain.ReadingStatus
@@ -82,6 +84,8 @@ object Routes {
     /** All books with the search box ready (the bottom bar's Search). */
     const val SEARCH = "search"
     const val READING_ACTIVITY = "reading-activity"
+    /** A catalogue book (from "More by …"); {key} finds it in [com.mcosta.mybooks.AppContainer.catalogBooks]. */
+    const val CATALOG_BOOK = "catalog/{key}"
     /** The books read in {year}, or "undated" for read books without a read date. */
     const val READ_YEAR = "reading-activity/{year}"
     const val ADD = "add?isbn={isbn}"
@@ -247,6 +251,15 @@ fun MyBooksNavHost(container: AppContainer) {
                     extras = viewModel { BookExtrasViewModel(container.repository, id, social, container.authorBooks) },
                     onJoin = { nav.navigate(Routes.ACCOUNT) },
                     onOpenPerson = { nav.navigate(Routes.profile(it)) },
+                    onOpenCatalogBook = { nav.navigate("catalog/${container.catalogBooks.put(it)}") },
+                )
+            }
+            composable(Routes.CATALOG_BOOK, arguments = listOf(navArgument("key") { type = NavType.StringType })) { entry ->
+                val key = entry.savedStateHandle.get<String>("key").orEmpty()
+                CatalogBookScreen(
+                    viewModel = viewModel { CatalogBookViewModel(container.repository, container.catalogBooks.get(key)) },
+                    onBack = { nav.popBackStack() },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
             composable(Routes.RELEASES) {
@@ -265,7 +278,7 @@ fun MyBooksNavHost(container: AppContainer) {
                 val month = entry.savedStateHandle.get<String>("month")!!.takeUnless { it == Routes.ALL_MONTHS }
                 val genre = ReleaseGenre.of(entry.savedStateHandle.get<String>("genre")!!)
                 ReleaseGenreScreen(
-                    viewModel = viewModel { ReleaseGenreViewModel(container.releases, month, ReleaseFilter.Genre(genre)) },
+                    viewModel = viewModel { ReleaseGenreViewModel(container.releases, month, ReleaseFilter.Genre(genre), container.preferences) },
                     title = genre.label,
                     month = month,
                     onBack = { nav.popBackStack() },
@@ -286,7 +299,7 @@ fun MyBooksNavHost(container: AppContainer) {
                         else -> "Publisher not stated"
                     }
                     ReleaseGenreScreen(
-                        viewModel = viewModel { ReleaseGenreViewModel(container.releases, month, filter) },
+                        viewModel = viewModel { ReleaseGenreViewModel(container.releases, month, filter, container.preferences) },
                         title = title,
                         month = month,
                         onBack = { nav.popBackStack() },

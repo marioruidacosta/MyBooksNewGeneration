@@ -100,7 +100,7 @@ class BookExtrasViewModelTest : MainDispatcherTest() {
     }
 
     @Test
-    fun moreByTheAuthorMarksLibraryBooksAndAddsOthers() = runTest {
+    fun moreByTheAuthorMarksLibraryBooksAndFollowsTheLibrary() = runTest {
         val id = saved(Book(title = "Ensaio sobre a Cegueira", authors = "José Saramago, Translator", isbn = isbn))
         saved(Book(title = "Memorial do Convento", authors = "Jose Saramago", status = ReadingStatus.READ))
         val found = listOf(
@@ -118,12 +118,9 @@ class BookExtrasViewModelTest : MainDispatcherTest() {
         assertEquals(ReadingStatus.READ, more.books[0].inLibrary?.status)
         assertEquals(null, more.books[1].inLibrary)
 
-        vm.add(more.books[1].book, ReadingStatus.WISHLIST)
+        // Added from its own page: the row follows the library.
+        repo.save(Book(title = "Caim", authors = "José Saramago", isbn = "9789722120005", status = ReadingStatus.WISHLIST))
         advanceUntilIdle()
-        val caim = vm.moreBy.value!!.books[1].inLibrary!!
-        assertEquals(ReadingStatus.WISHLIST, caim.status)
-        assertEquals("Sobre Caim.", caim.description)
-        assertEquals("https://c/caim.jpg", caim.coverUrl)
-        assertEquals(2009, caim.publishedYear)
+        assertEquals(ReadingStatus.WISHLIST, vm.moreBy.value!!.books[1].inLibrary?.status)
     }
 }
