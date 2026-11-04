@@ -58,3 +58,13 @@ data class BookScore(val ratings: Int, val average: Double?, val perScore: List<
 
 /** A reader's score and review of a book. */
 data class BookReview(val person: Person, val rating: Int?, val review: String, val updatedAt: Instant)
+
+/** A book community readers loved: [readers] of them who also loved the reader's favourite [because] (an ISBN). */
+data class CommunitySuggestion(
+    val isbn: String,
+    val title: String,
+    val authors: String,
+    val coverUrl: String?,
+    val readers: Int,
+    val because: String,
+)

@@ -11,6 +11,7 @@ import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.social.model.FEED_PAGE_SIZE
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
+import com.mcosta.mybooks.social.model.CommunitySuggestion
 import com.mcosta.mybooks.social.model.FeedCursor
 import com.mcosta.mybooks.social.model.FeedPage
 import com.mcosta.mybooks.social.model.FeedScope
@@ -56,7 +57,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.io.IOException
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -397,6 +400,13 @@ internal class SupabaseSocial(
                 put("isbn", isbn)
                 put("skip", skip)
             }).decodeList<BookReviewRow>().map { it.toReview(::avatarUrl) }
+        }
+
+        override suspend fun communitySuggestions(likedIsbns: List<String>): List<CommunitySuggestion> = call {
+            if (likedIsbns.isEmpty()) return@call emptyList()
+            client.postgrest.rpc("community_suggestions", buildJsonObject {
+                put("liked", JsonArray(likedIsbns.take(50).map { JsonPrimitive(it) }))
+            }).decodeList<CommunitySuggestionRow>().map { it.toSuggestion() }
         }
     }
 

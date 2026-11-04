@@ -17,6 +17,7 @@ import kotlinx.serialization.json.put
 import kotlin.time.Instant
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
+import com.mcosta.mybooks.social.model.CommunitySuggestion
 
 /** A row of the feed / person_activity functions. */
 @Serializable
@@ -159,4 +160,17 @@ internal data class BookReviewRow(
 ) {
     fun toReview(avatarUrl: (String?) -> String?) =
         BookReview(Person(personId, username, displayName, avatarUrl(avatarPath)), rating, review, Instant.parse(updatedAt))
+}
+
+/** A row of the community_suggestions function. */
+@Serializable
+internal data class CommunitySuggestionRow(
+    val isbn: String,
+    val title: String,
+    val authors: String = "",
+    @SerialName("cover_url") val coverUrl: String? = null,
+    val readers: Int = 0,
+    val because: String = "",
+) {
+    fun toSuggestion() = CommunitySuggestion(isbn, title, authors, coverUrl, readers, because)
 }

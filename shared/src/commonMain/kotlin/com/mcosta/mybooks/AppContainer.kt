@@ -9,6 +9,11 @@ import com.mcosta.mybooks.data.CoverFinder
 import com.mcosta.mybooks.data.Preferences
 import com.mcosta.mybooks.data.ReadingEvents
 import com.mcosta.mybooks.data.authors.CatalogBooks
+import com.mcosta.mybooks.data.suggestions.HiddenSuggestions
+import com.mcosta.mybooks.data.suggestions.SubjectSearch
+import com.mcosta.mybooks.data.suggestions.SuggestionEngine
+import com.mcosta.mybooks.social.model.SessionState
+import kotlinx.coroutines.flow.first
 import com.mcosta.mybooks.data.authors.GoogleBooksAuthorSearch
 import com.mcosta.mybooks.data.authors.WikipediaAuthors
 import com.mcosta.mybooks.data.SettingsPreferences
@@ -83,6 +88,11 @@ class AppContainer(
     /** Books just finished, for the celebration. */
     val events = ReadingEvents()
 
+    val preferences: Preferences? = appSettings?.let(::SettingsPreferences)
+
+    /** Books marked "Not interested" in suggestions. */
+    val hiddenSuggestions = HiddenSuggestions(preferences)
+
     /** Yearly reading challenges. */
     val challenges = ChallengeRepository(database.challengeDao())
 
@@ -100,9 +110,20 @@ class AppContainer(
         shareTracker = sharing?.tracker,
         challenges = challenges,
         events = events,
+        hiddenSuggestions = hiddenSuggestions,
     )
 
-    val preferences: Preferences? = appSettings?.let(::SettingsPreferences)
+    /** Book suggestions from the library (worked out once per session, or on refresh). */
+    val suggestions = SuggestionEngine(
+        library = { repository.observeBooks(null, "").first() },
+        authorBooks = authorBooks,
+        subjects = SubjectSearch(http, apiKey = googleBooksApiKey),
+        community = social?.let { s ->
+            { liked: List<String> -> if (s.auth.session.value is SessionState.SignedIn) s.activity.communitySuggestions(liked) else emptyList() }
+        },
+        releases = { releases.allMonths().months },
+    )
+
 
     /** Book colours or the wallpaper's, remembered. */
     val appearance = Appearance(preferences)

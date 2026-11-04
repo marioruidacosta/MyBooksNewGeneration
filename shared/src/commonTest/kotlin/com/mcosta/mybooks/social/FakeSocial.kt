@@ -4,6 +4,7 @@ import com.mcosta.mybooks.social.model.ActivityKind
 import com.mcosta.mybooks.social.model.BOOK_REVIEWS_PAGE
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
+import com.mcosta.mybooks.social.model.CommunitySuggestion
 import com.mcosta.mybooks.social.model.FEED_PAGE_SIZE
 import com.mcosta.mybooks.social.model.FeedBook
 import com.mcosta.mybooks.social.model.FeedCursor
@@ -49,6 +50,9 @@ class FakeSocial {
     /** Readers' scores and reviews per ISBN (already only those the signed-in user may see). */
     val bookReviewsByIsbn = mutableMapOf<String, List<BookReview>>()
     var bookReviewCalls = 0
+    /** Community suggestions to answer with, and the favourites asked about. */
+    var communitySuggestions = emptyList<CommunitySuggestion>()
+    var likedAskedAbout = emptyList<String>()
     /** Runs inside publish, before it succeeds (e.g. to change the book mid-upload). */
     var onPublish: suspend () -> Unit = {}
     /** Runs inside like and unlike before they take effect (e.g. to hold the call in flight). */
@@ -257,6 +261,11 @@ class FakeSocial {
             val all = bookReviewsByIsbn[isbn].orEmpty()
             val rated = all.mapNotNull { it.rating }
             return BookScore(rated.size, rated.takeIf { it.isNotEmpty() }?.average(), (5 downTo 1).map { s -> rated.count { it == s } }, all.count { it.review.isNotEmpty() })
+        }
+        override suspend fun communitySuggestions(likedIsbns: List<String>): List<CommunitySuggestion> {
+            check()
+            likedAskedAbout = likedIsbns
+            return communitySuggestions
         }
         override suspend fun bookReviews(isbn: String, skip: Int): List<BookReview> {
             check()
