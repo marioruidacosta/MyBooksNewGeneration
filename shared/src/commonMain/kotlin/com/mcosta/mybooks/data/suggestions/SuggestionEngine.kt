@@ -2,7 +2,7 @@ package com.mcosta.mybooks.data.suggestions
 
 import com.mcosta.mybooks.data.authors.AuthorBook
 import com.mcosta.mybooks.data.authors.AuthorBooksSource
-import com.mcosta.mybooks.data.authors.findInLibrary
+import com.mcosta.mybooks.data.authors.LibraryIndex
 import com.mcosta.mybooks.data.releases.MonthBooks
 import com.mcosta.mybooks.data.releases.NOT_STATED
 import com.mcosta.mybooks.data.releases.ReleaseBook
@@ -10,11 +10,15 @@ import com.mcosta.mybooks.data.releases.publisherKey
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.searchKey
 import com.mcosta.mybooks.social.model.CommunitySuggestion
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** Where suggestions come from, in the order they're shown. */
 enum class SuggestionSource(val title: String) {
@@ -84,22 +88,25 @@ class SuggestionEngine(
     private val subjects: SubjectSource? = null,
     private val community: (suspend (List<String>) -> List<CommunitySuggestion>)? = null,
     private val releases: (suspend () -> List<MonthBooks>)? = null,
+    /** Where the work runs: off the main thread (thousands of New in Portugal books are checked). */
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val lock = Mutex()
     private var cached: Suggestions? = null
 
     suspend fun suggestions(refresh: Boolean = false): Suggestions = lock.withLock {
         if (!refresh) cached?.let { return it }
-        compute().also { cached = it }
+        withContext(dispatcher) { compute() }.also { cached = it }
     }
 
     private suspend fun compute(): Suggestions = coroutineScope {
         val books = library()
         val taste = tasteProfile(books)
-        val authors = async { quietly { fromAuthors(taste, books) } }
-        val newBooks = async { quietly { fromNewInPortugal(taste, books) } }
-        val fans = async { quietly { fromCommunity(taste, books) } }
-        val similar = async { quietly { fromSubjects(taste, books) } }
+        val owned = LibraryIndex(books)
+        val authors = async { quietly { fromAuthors(taste, owned) } }
+        val newBooks = async { quietly { fromNewInPortugal(taste, books, owned) } }
+        val fans = async { quietly { fromCommunity(taste, books, owned) } }
+        val similar = async { quietly { fromSubjects(taste, owned) } }
         val seen = mutableSetOf<String>()
         val sections = listOf(
             SuggestionSource.AUTHORS to authors.await(),
@@ -110,16 +117,19 @@ class SuggestionEngine(
         Suggestions(sections.filter { it.second.isNotEmpty() })
     }
 
-    private suspend fun fromAuthors(taste: TasteProfile, books: List<Book>): List<Suggestion> {
-        val source = authorBooks ?: return emptyList()
-        return taste.authors.flatMap { author ->
-            source.booksBy(author.name).filter { findInLibrary(it, books) == null }.take(PER_AUTHOR).map {
-                catalogSuggestion(SuggestionSource.AUTHORS, it, "Because you loved ${author.because.title}")
+    private suspend fun fromAuthors(taste: TasteProfile, owned: LibraryIndex): List<Suggestion> = coroutineScope {
+        val source = authorBooks ?: return@coroutineScope emptyList()
+        // The authors' searches at once; their order is kept.
+        taste.authors.map { author ->
+            async {
+                quietly { source.booksBy(author.name) }.filter { !owned.contains(it) }.take(PER_AUTHOR).map {
+                    catalogSuggestion(SuggestionSource.AUTHORS, it, "Because you loved ${author.because.title}")
+                }
             }
-        }
+        }.awaitAll().flatten()
     }
 
-    private suspend fun fromSubjects(taste: TasteProfile, books: List<Book>): List<Suggestion> = coroutineScope {
+    private suspend fun fromSubjects(taste: TasteProfile, owned: LibraryIndex): List<Suggestion> = coroutineScope {
         val source = subjects ?: return@coroutineScope emptyList()
         val favourites = taste.favourites.filter { it.isbn != null }.take(SUBJECT_FAVOURITES)
         val perBook = favourites.map { b -> async { b to quietly { source.subjectsOf(b.isbn!!, b.authors) } } }.map { it.await() }
@@ -132,34 +142,33 @@ class SuggestionEngine(
         chosen.map { (subject, book) -> async { subject to book to quietly { source.booksOn(subject) } } }.map { it.await() }
             .flatMap { (pair, found) ->
                 val (subject, book) = pair
-                found.filter { findInLibrary(it, books) == null }.take(PER_SUBJECT).map {
+                found.filter { !owned.contains(it) }.take(PER_SUBJECT).map {
                     catalogSuggestion(SuggestionSource.SUBJECTS, it, "Like ${book.title} · $subject")
                 }
             }
     }
 
-    private suspend fun fromCommunity(taste: TasteProfile, books: List<Book>): List<Suggestion> {
+    private suspend fun fromCommunity(taste: TasteProfile, books: List<Book>, owned: LibraryIndex): List<Suggestion> {
         val source = community ?: return emptyList()
         val liked = taste.favourites.mapNotNull { it.isbn }.distinct().take(50)
         if (liked.isEmpty()) return emptyList()
         val titles = books.filter { it.isbn != null }.associate { it.isbn!! to it.title }
         return source(liked).map { s ->
             AuthorBook(s.title, s.authors, null, null, s.isbn, s.coverUrl, null, null) to s
-        }.filter { findInLibrary(it.first, books) == null }.map { (book, s) ->
+        }.filter { !owned.contains(it.first) }.map { (book, s) ->
             val readers = if (s.readers == 1) "1 reader" else "${s.readers} readers"
             catalogSuggestion(SuggestionSource.COMMUNITY, book, "$readers who loved ${titles[s.because] ?: "your favourite"} loved this")
         }
     }
 
-    private suspend fun fromNewInPortugal(taste: TasteProfile, books: List<Book>): List<Suggestion> {
+    private suspend fun fromNewInPortugal(taste: TasteProfile, books: List<Book>, owned: LibraryIndex): List<Suggestion> {
         val months = releases?.invoke() ?: return emptyList()
         val byAuthor = books.groupBy { searchKey(firstAuthor(it)) }.filterKeys { it.isNotEmpty() }
         val publishers = taste.publishers.associateBy { searchKey(it.name) }
         fun ReleaseBook.firstAuthor() = authors.firstOrNull().orEmpty().trim()
-        fun ReleaseBook.inLibrary() = books.any { b -> (isbn.isNotBlank() && b.isbn == isbn) } ||
-            findInLibrary(AuthorBook(title, authors.joinToString(", "), null, null, null, null, null, null), books) != null
+        fun ReleaseBook.inLibrary() = owned.contains(isbn.takeIf { it.isNotBlank() }, title, authors.joinToString(", "))
+        // Cheap author and publisher matches first; only those are checked against the library.
         val matches = months.flatMap { month -> month.books.map { month.month to it } }
-            .filter { (_, b) -> !b.inLibrary() }
             .mapNotNull { (month, b) ->
                 val theirs = byAuthor[searchKey(b.firstAuthor())]
                 val publisher = b.publisherKey().takeIf { it != NOT_STATED }?.let { publishers[searchKey(it)] }
@@ -168,6 +177,7 @@ class SuggestionEngine(
                     publisher != null -> "New from ${publisher.name} · you have ${count(publisher.books)} of their books"
                     else -> return@mapNotNull null
                 }
+                if (b.inLibrary()) return@mapNotNull null
                 Triple(theirs != null, month, Suggestion(
                     SuggestionSource.NEW_IN_PORTUGAL, suggestionKey(b.isbn, b.title, b.authors.joinToString(", ")),
                     b.title, b.authors.joinToString(", "), b.listCover, reason, release = ReleaseRef(month, b.id),
