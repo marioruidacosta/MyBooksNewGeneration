@@ -1,5 +1,7 @@
 package com.mcosta.mybooks.social
 
+import com.mcosta.mybooks.social.model.BookReview
+import com.mcosta.mybooks.social.model.BookScore
 import com.mcosta.mybooks.social.model.FeedCursor
 import com.mcosta.mybooks.social.model.FeedPage
 import com.mcosta.mybooks.social.model.FeedScope
@@ -77,6 +79,10 @@ interface ActivityService {
     suspend fun like(activityId: Long)
     suspend fun unlike(activityId: Long)
     suspend fun likers(activityId: Long): List<Person>
+    /** The community's scores for the book with [isbn] (readers the caller may see, not the caller). */
+    suspend fun bookScore(isbn: String): BookScore
+    /** Readers' scores and reviews of the book, written reviews first, newest first; [skip] pages. */
+    suspend fun bookReviews(isbn: String, skip: Int = 0): List<BookReview>
 }
 
 class SocialServices(

@@ -1,6 +1,9 @@
 package com.mcosta.mybooks.social
 
 import com.mcosta.mybooks.social.model.ActivityKind
+import com.mcosta.mybooks.social.model.BOOK_REVIEWS_PAGE
+import com.mcosta.mybooks.social.model.BookReview
+import com.mcosta.mybooks.social.model.BookScore
 import com.mcosta.mybooks.social.model.FEED_PAGE_SIZE
 import com.mcosta.mybooks.social.model.FeedBook
 import com.mcosta.mybooks.social.model.FeedCursor
@@ -43,6 +46,9 @@ class FakeSocial {
     val rejectedShareIds = mutableSetOf<String>()
     var publishAttempts = 0
     var personActivityCalls = 0
+    /** Readers' scores and reviews per ISBN (already only those the signed-in user may see). */
+    val bookReviewsByIsbn = mutableMapOf<String, List<BookReview>>()
+    var bookReviewCalls = 0
     /** Runs inside publish, before it succeeds (e.g. to change the book mid-upload). */
     var onPublish: suspend () -> Unit = {}
     /** Runs inside like and unlike before they take effect (e.g. to hold the call in flight). */
@@ -246,6 +252,17 @@ class FakeSocial {
     }
 
     val activityService = object : ActivityService {
+        override suspend fun bookScore(isbn: String): BookScore {
+            check()
+            val all = bookReviewsByIsbn[isbn].orEmpty()
+            val rated = all.mapNotNull { it.rating }
+            return BookScore(rated.size, rated.takeIf { it.isNotEmpty() }?.average(), (5 downTo 1).map { s -> rated.count { it == s } }, all.count { it.review.isNotEmpty() })
+        }
+        override suspend fun bookReviews(isbn: String, skip: Int): List<BookReview> {
+            check()
+            bookReviewCalls++
+            return bookReviewsByIsbn[isbn].orEmpty().drop(skip).take(BOOK_REVIEWS_PAGE)
+        }
         override suspend fun publish(book: PublicBookState, before: PublicBookState?) {
             check()
             publishAttempts++

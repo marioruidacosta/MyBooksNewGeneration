@@ -15,6 +15,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.time.Instant
+import com.mcosta.mybooks.social.model.BookReview
+import com.mcosta.mybooks.social.model.BookScore
 
 /** A row of the feed / person_activity functions. */
 @Serializable
@@ -127,4 +129,34 @@ internal fun relationshipFrom(rows: List<FriendshipRow>, me: String, other: Stri
         row.requester == me -> Relationship.REQUEST_SENT
         else -> Relationship.REQUEST_RECEIVED
     }
+}
+
+/** The book_score function's row. */
+@Serializable
+internal data class BookScoreRow(
+    val ratings: Int = 0,
+    val average: Double? = null,
+    val five: Int = 0,
+    val four: Int = 0,
+    val three: Int = 0,
+    val two: Int = 0,
+    val one: Int = 0,
+    val reviews: Int = 0,
+) {
+    fun toScore() = BookScore(ratings, average, listOf(five, four, three, two, one), reviews)
+}
+
+/** A row of the book_reviews function. */
+@Serializable
+internal data class BookReviewRow(
+    @SerialName("person_id") val personId: String,
+    val username: String,
+    @SerialName("display_name") val displayName: String,
+    @SerialName("avatar_path") val avatarPath: String? = null,
+    val rating: Int? = null,
+    val review: String = "",
+    @SerialName("updated_at") val updatedAt: String,
+) {
+    fun toReview(avatarUrl: (String?) -> String?) =
+        BookReview(Person(personId, username, displayName, avatarUrl(avatarPath)), rating, review, Instant.parse(updatedAt))
 }

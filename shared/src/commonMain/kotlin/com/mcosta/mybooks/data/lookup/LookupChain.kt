@@ -14,6 +14,18 @@ class LookupChain(private val sources: List<BookLookupService>) : BookLookupServ
      * Asks every source at once (a book takes as long as the slowest source, not the sum) and keeps the
      * earliest source's cover; once an earlier source has one, later ones aren't waited for.
      */
+    /** Asks every source at once and keeps the earliest source's description (the National Library has none). */
+    override suspend fun lookupDescription(isbn: String): String? = coroutineScope {
+        val answers = sources.map { async { it.lookupDescription(isbn) } }
+        var found: String? = null
+        for (answer in answers) {
+            found = answer.await()
+            if (found != null) break
+        }
+        answers.forEach { it.cancel() }
+        found
+    }
+
     override suspend fun lookupCover(isbn: String): Book? = coroutineScope {
         val answers = sources.map { async { it.lookupCover(isbn) } }
         var found: Book? = null

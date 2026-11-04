@@ -107,4 +107,13 @@ class LookupChainTest {
     fun noCoverAnywhere() = runTest {
         assertEquals(null, LookupChain(listOf(Fixed(noCover), Fixed(miss), Fixed(error))).lookupCover("x"))
     }
+
+    @Test
+    fun descriptionFromTheFirstSourceThatHasOne() = runTest {
+        val bnp = Fixed(LookupResult.Found(Book(title = "Dune", coverUrl = "https://bnp/cover.jpg")))
+        val google = Fixed(LookupResult.Found(Book(title = "Dune", description = "Desert planet.")))
+        val openLibrary = Fixed(LookupResult.Found(Book(title = "Dune", description = "Other text.")))
+        assertEquals("Desert planet.", LookupChain(listOf(bnp, google, openLibrary)).lookupDescription("x"))
+        assertEquals(null, LookupChain(listOf(Fixed(miss), Fixed(error), Fixed(noCover))).lookupDescription("x"))
+    }
 }

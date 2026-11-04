@@ -45,3 +45,16 @@ data class FeedCursor(val createdAt: Instant, val id: Long)
 data class FeedPage(val entries: List<FeedEntry>, val next: FeedCursor?)
 
 const val FEED_PAGE_SIZE = 20
+
+/** Reviews per page of [ActivityService.bookReviews] (the server function's default). */
+const val BOOK_REVIEWS_PAGE = 10
+
+/** The community's scores for a book: [perScore] is how many gave 5, 4, 3, 2 and 1 stars, in that order. */
+data class BookScore(val ratings: Int, val average: Double?, val perScore: List<Int>, val reviews: Int) {
+    companion object {
+        val NONE = BookScore(0, null, List(5) { 0 }, 0)
+    }
+}
+
+/** A reader's score and review of a book. */
+data class BookReview(val person: Person, val rating: Int?, val review: String, val updatedAt: Instant)

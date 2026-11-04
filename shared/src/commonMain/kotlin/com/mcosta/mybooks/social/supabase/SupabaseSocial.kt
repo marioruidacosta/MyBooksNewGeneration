@@ -9,6 +9,8 @@ import com.mcosta.mybooks.social.SocialConfig
 import com.mcosta.mybooks.social.SocialException
 import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.social.model.FEED_PAGE_SIZE
+import com.mcosta.mybooks.social.model.BookReview
+import com.mcosta.mybooks.social.model.BookScore
 import com.mcosta.mybooks.social.model.FeedCursor
 import com.mcosta.mybooks.social.model.FeedPage
 import com.mcosta.mybooks.social.model.FeedScope
@@ -383,6 +385,18 @@ internal class SupabaseSocial(
         override suspend fun likers(activityId: Long): List<Person> = call {
             client.postgrest.rpc("likers", buildJsonObject { put("activity", activityId) })
                 .decodeList<ProfileRow>().map { it.toPerson(::avatarUrl) }
+        }
+
+        override suspend fun bookScore(isbn: String): BookScore = call {
+            client.postgrest.rpc("book_score", buildJsonObject { put("isbn", isbn) })
+                .decodeList<BookScoreRow>().firstOrNull()?.toScore() ?: BookScore.NONE
+        }
+
+        override suspend fun bookReviews(isbn: String, skip: Int): List<BookReview> = call {
+            client.postgrest.rpc("book_reviews", buildJsonObject {
+                put("isbn", isbn)
+                put("skip", skip)
+            }).decodeList<BookReviewRow>().map { it.toReview(::avatarUrl) }
         }
     }
 
