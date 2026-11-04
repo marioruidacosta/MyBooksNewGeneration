@@ -8,6 +8,7 @@ import com.mcosta.mybooks.data.ChallengeRepository
 import com.mcosta.mybooks.data.CoverFinder
 import com.mcosta.mybooks.data.Preferences
 import com.mcosta.mybooks.data.ReadingEvents
+import com.mcosta.mybooks.data.authors.GoogleBooksAuthorSearch
 import com.mcosta.mybooks.data.authors.WikipediaAuthors
 import com.mcosta.mybooks.data.SettingsPreferences
 import com.mcosta.mybooks.data.covers.CoverStore
@@ -71,6 +72,9 @@ class AppContainer(
 
     /** Author biographies (Wikipedia) for the book page. */
     val authors = WikipediaAuthors(http)
+
+    /** "More by …" on the book page (Google Books, by author). */
+    val authorBooks = GoogleBooksAuthorSearch(http, apiKey = googleBooksApiKey)
 
     /** Books just finished, for the celebration. */
     val events = ReadingEvents()

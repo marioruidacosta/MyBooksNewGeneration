@@ -335,6 +335,19 @@ class BookRepository(
         return found
     }
 
+    /**
+     * Looks up and keeps a description for a book that has none (it needs an ISBN); returns whether one was
+     * found. Like the cover search, this isn't posted to the community.
+     */
+    suspend fun fillDescription(id: Long): Boolean {
+        val isbn = dao.getById(id)?.toBook()?.takeIf { it.description.isNullOrBlank() }?.isbn ?: return false
+        val text = lookupService.lookupDescription(isbn) ?: return false
+        // Read again: the book may have been edited or deleted during the lookup.
+        val book = dao.getById(id)?.toBook()?.takeIf { it.description.isNullOrBlank() } ?: return false
+        dao.update(book.copy(description = text).toEntity())
+        return true
+    }
+
     private suspend fun modify(id: Long, change: (Book) -> Book) {
         val book = dao.getById(id)?.toBook() ?: return
         val changed = change(book)

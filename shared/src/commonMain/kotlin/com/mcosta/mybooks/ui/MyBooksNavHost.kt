@@ -55,6 +55,7 @@ import com.mcosta.mybooks.ui.social.ProfileViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.ui.detail.BookDetailScreen
 import com.mcosta.mybooks.ui.detail.BookDetailViewModel
+import com.mcosta.mybooks.ui.detail.BookExtrasViewModel
 import com.mcosta.mybooks.ui.edit.EditBookScreen
 import com.mcosta.mybooks.ui.edit.EditBookViewModel
 import com.mcosta.mybooks.domain.ReadingStatus
@@ -243,6 +244,9 @@ fun MyBooksNavHost(container: AppContainer) {
                     onEdit = { nav.navigate(Routes.edit(id)) },
                     sharing = sharing,
                     onOpenBook = { nav.navigate(Routes.book(it)) },
+                    extras = viewModel { BookExtrasViewModel(container.repository, id, social, container.authorBooks) },
+                    onJoin = { nav.navigate(Routes.ACCOUNT) },
+                    onOpenPerson = { nav.navigate(Routes.profile(it)) },
                 )
             }
             composable(Routes.RELEASES) {

@@ -61,6 +61,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.rememberCoroutineScope
 import com.mcosta.mybooks.ui.formatDate
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlin.time.Clock
 import com.mcosta.mybooks.ui.components.rememberCoverPhotoTaker
@@ -68,6 +69,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.data.MAX_REVIEW_LENGTH
+import com.mcosta.mybooks.data.authors.AuthorBook
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.share.SharingState
@@ -83,9 +85,17 @@ fun BookDetailScreen(
     onEdit: () -> Unit,
     /** Community sharing: the Review field needs a profile, "Don't share this book" needs sharing on. */
     sharing: SharingState = SharingState(),
-    /** Another book (from the author panel). */
+    /** Another book (from the author panel and "More by"). */
     onOpenBook: (Long) -> Unit = {},
+    /** Description, community reviews and more books by the author; null shows none of them. */
+    extras: BookExtrasViewModel? = null,
+    /** Sign in to the community (from the reviews' "Join"). */
+    onJoin: () -> Unit = {},
+    onOpenPerson: (String) -> Unit = {},
 ) {
+    val community by (extras?.community ?: remember { MutableStateFlow<CommunityState>(CommunityState.Hidden) }).collectAsStateWithLifecycle()
+    val moreBy by (extras?.moreBy ?: remember { MutableStateFlow<MoreByState?>(null) }).collectAsStateWithLifecycle()
+    var showing by remember { mutableStateOf<AuthorBook?>(null) }
     val book by viewModel.book.collectAsStateWithLifecycle()
     val notes by viewModel.notesDraft.collectAsStateWithLifecycle()
     val review by viewModel.reviewDraft.collectAsStateWithLifecycle()
@@ -159,6 +169,11 @@ fun BookDetailScreen(
                 }
                 if (b.status == ReadingStatus.READING) SectionCard("Reading") { ReadingSection(b, viewModel) }
                 b.description?.takeIf { it.isNotBlank() }?.let { SectionCard("Description") { Description(it) } }
+                if (community != CommunityState.Hidden && extras != null) {
+                    SectionCard("Community reviews") {
+                        CommunityReviews(community, extras::retryCommunity, extras::moreReviews, onJoin, onOpenPerson)
+                    }
+                }
                 SectionCard("Notes") {
                     OutlinedTextField(
                         value = notes,
@@ -190,6 +205,7 @@ fun BookDetailScreen(
                         }
                     }
                 }
+                moreBy?.let { MoreByRow(it, onOpenBook, onShow = { book -> showing = book }, edgePadding = 0.dp) }
                 Text(
                     "Added ${formatDate(b.dateAdded)}",
                     style = MaterialTheme.typography.bodySmall,
@@ -198,6 +214,10 @@ fun BookDetailScreen(
                 )
             }
         }
+    }
+
+    showing?.let { book ->
+        AuthorBookSheet(book, onAdd = { status -> extras?.add(book, status); showing = null }, onDismiss = { showing = null })
     }
 
     if (confirmDelete) {

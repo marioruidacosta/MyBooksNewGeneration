@@ -8,6 +8,10 @@ interface BookLookupService {
 
     /** The book only if this source has a cover for it (the cover search needs nothing else); null otherwise. */
     suspend fun lookupCover(isbn: String): Book? = (lookup(isbn) as? LookupResult.Found)?.book?.takeIf { it.coverUrl != null }
+
+    /** The book's description, if this source has one. */
+    suspend fun lookupDescription(isbn: String): String? =
+        (lookup(isbn) as? LookupResult.Found)?.book?.description?.takeIf { it.isNotBlank() }
 }
 
 sealed interface LookupResult {
