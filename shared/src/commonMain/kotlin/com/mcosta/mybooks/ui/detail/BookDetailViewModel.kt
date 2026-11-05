@@ -9,6 +9,8 @@ import com.mcosta.mybooks.data.authors.AuthorInfoSource
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.BookFilter
+import com.mcosta.mybooks.domain.Quote
+import com.mcosta.mybooks.data.QuoteRepository
 import com.mcosta.mybooks.domain.searchKey
 import com.mcosta.mybooks.domain.seriesOrder
 import kotlinx.coroutines.CoroutineScope
@@ -44,6 +46,8 @@ class BookDetailViewModel(
     private val saveScope: CoroutineScope,
     /** Author biographies for the header's third panel; null shows only the library's books by them. */
     private val authors: AuthorInfoSource? = null,
+    /** The book's quotes; null shows none (tests that don't involve them). */
+    private val quoteRepo: QuoteRepository? = null,
 ) : ViewModel() {
     private val _author = MutableStateFlow<AuthorPanel?>(null)
     /** The header's author panel, loaded when first shown ([loadAuthor]). */
@@ -146,6 +150,32 @@ class BookDetailViewModel(
 
     fun returned() {
         viewModelScope.launch { repo.returned(id) }
+    }
+
+    /** The book's quotes in page order. */
+    val quotes: StateFlow<List<Quote>> = (quoteRepo?.observe(id) ?: flowOf(emptyList()))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Saves a new quote; [page] as typed (blank or not a number means none). */
+    fun addQuote(text: String, page: String) {
+        val quotes = quoteRepo ?: return
+        saveScope.launch { quotes.add(id, text, page.trim().toIntOrNull()) }
+    }
+
+    fun updateQuote(quote: Quote, text: String, page: String) {
+        val quotes = quoteRepo ?: return
+        saveScope.launch { quotes.update(quote.copy(text = text, page = page.trim().toIntOrNull())) }
+    }
+
+    /** Deletes a quote; [restoreQuote] with the same quote puts it back (Undo). */
+    fun deleteQuote(quote: Quote) {
+        val quotes = quoteRepo ?: return
+        viewModelScope.launch { quotes.delete(quote.id) }
+    }
+
+    fun restoreQuote(quote: Quote) {
+        val quotes = quoteRepo ?: return
+        viewModelScope.launch { quotes.add(id, quote.text, quote.page) }
     }
 
     private val _progressError = MutableStateFlow<String?>(null)

@@ -80,5 +80,6 @@ fun androidPlatformServices(activity: ComponentActivity): PlatformServices {
         camera = AndroidCoverCamera(activity, results),
         shrinker = AndroidPhotoShrinker,
         documents = AndroidDocumentPicker(activity, results),
+        pageReader = AndroidPageReader(),
     )
 }

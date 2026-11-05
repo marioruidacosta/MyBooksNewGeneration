@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -99,6 +100,8 @@ fun HomeScreen(
     onOpenTag: (String) -> Unit = {},
     /** The books lent out. */
     onOpenLent: () -> Unit = {},
+    /** Scan several books in a row. */
+    onScanSeveral: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var addMenuOpen by remember { mutableStateOf(false) }
@@ -119,6 +122,11 @@ fun HomeScreen(
                         text = { Text("Scan barcode") },
                         leadingIcon = { Icon(Icons.Filled.QrCodeScanner, null) },
                         onClick = { addMenuOpen = false; onScan() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Scan several") },
+                        leadingIcon = { Icon(Icons.Filled.DocumentScanner, null) },
+                        onClick = { addMenuOpen = false; onScanSeveral() },
                     )
                     DropdownMenuItem(
                         text = { Text("Enter manually") },

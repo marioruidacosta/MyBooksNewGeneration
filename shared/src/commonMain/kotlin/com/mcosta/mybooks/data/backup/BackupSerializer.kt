@@ -3,6 +3,7 @@ package com.mcosta.mybooks.data.backup
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.Challenge
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.domain.Quote
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -27,9 +28,11 @@ object BackupSerializer {
         shares: Map<Long, BackupShare> = emptyMap(),
         challenges: List<Challenge> = emptyList(),
         hiddenSuggestions: Collection<String> = emptyList(),
+        /** Quotes keyed by [Book.id]. */
+        quotes: Map<Long, List<Quote>> = emptyMap(),
     ): String = json.encodeToString(
         BackupFile(
-            VERSION, exportedAt, books.map { it.toBackup(shares[it.id]) }, challenges.map { BackupChallenge(it.year, it.goal) },
+            VERSION, exportedAt, books.map { it.toBackup(shares[it.id], quotes[it.id].orEmpty()) }, challenges.map { BackupChallenge(it.year, it.goal) },
             hiddenSuggestions.sorted(),
         ),
     )
@@ -46,6 +49,10 @@ object BackupSerializer {
 
     /** Books marked "Not interested" in suggestions (none in older backups). Throws like [decode]. */
     fun decodeHiddenSuggestions(text: String): List<String> = file(text).hiddenSuggestions
+
+    /** Each book's quotes, in the order of [decode]'s books (none in older backups); their bookId is 0. Throws like [decode]. */
+    fun decodeQuotes(text: String): List<List<Quote>> =
+        file(text).books.map { b -> b.quotes.map { Quote(bookId = 0, text = it.text, page = it.page, dateAdded = it.dateAdded) } }
 
     private fun file(text: String): BackupFile {
         val file = try {
@@ -70,6 +77,9 @@ object BackupSerializer {
 
     @Serializable
     private data class BackupChallenge(val year: Int, val goal: Int)
+
+    @Serializable
+    private data class BackupQuote(val text: String = "", val page: Int? = null, val dateAdded: Long = 0)
 
     @Serializable
     private data class BackupBook(
@@ -97,6 +107,7 @@ object BackupSerializer {
         val seriesNumber: String? = null,
         val lentTo: String? = null,
         val lentOn: Long? = null,
+        val quotes: List<BackupQuote> = emptyList(),
     ) {
         fun toBook() = Book(
             isbn = isbn, title = title, authors = authors, publisher = publisher, publishedYear = publishedYear,
@@ -107,12 +118,13 @@ object BackupSerializer {
         )
     }
 
-    private fun Book.toBackup(share: BackupShare?) = BackupBook(
+    private fun Book.toBackup(share: BackupShare?, quotes: List<Quote>) = BackupBook(
         isbn = isbn, title = title, authors = authors, publisher = publisher, publishedYear = publishedYear,
         pageCount = pageCount, coverUrl = coverUrl, description = description, status = status,
         rating = rating, notes = notes, dateAdded = dateAdded, dateRead = dateRead,
         dateStarted = dateStarted, currentPage = currentPage, progressPercent = progressPercent, review = review,
         shareId = share?.shareId, shareExcluded = share?.excluded ?: false,
+        quotes = quotes.map { BackupQuote(it.text, it.page, it.dateAdded) },
         tags = tags, series = series, seriesNumber = seriesNumber, lentTo = lentTo, lentOn = lentOn,
     )
 }

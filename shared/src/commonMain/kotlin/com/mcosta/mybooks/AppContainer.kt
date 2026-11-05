@@ -99,6 +99,9 @@ class AppContainer(
     /** Yearly reading challenges. */
     val challenges = ChallengeRepository(database.challengeDao())
 
+    /** Quotes saved from books. */
+    val quotes = com.mcosta.mybooks.data.QuoteRepository(database.quoteDao())
+
     val repository = BookRepository(
         dao = database.bookDao(),
         lookupService = LookupChain(
@@ -114,6 +117,7 @@ class AppContainer(
         challenges = challenges,
         events = events,
         hiddenSuggestions = hiddenSuggestions,
+        quotes = database.quoteDao(),
     )
 
     /** Book suggestions from the library (worked out once per session, or on refresh). */

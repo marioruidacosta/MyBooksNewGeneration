@@ -135,3 +135,34 @@ class CollectionsViewModelTest : MainDispatcherTest() {
         assertNull(repo.getBook(id)!!.lentTo)
     }
 }
+
+/** Quotes on the book page: added, changed, deleted and put back. */
+class BookQuotesViewModelTest : MainDispatcherTest() {
+    private val quoteDao = com.mcosta.mybooks.data.FakeQuoteDao()
+    private val repo = BookRepository(FakeBookDao(), object : BookLookupService {
+        override suspend fun lookup(isbn: String): LookupResult = LookupResult.NotFound
+    }, quotes = quoteDao)
+
+    @Test
+    fun quotesOnTheBookPage() = runTest {
+        val id = (repo.save(Book(title = "Dune")) as SaveResult.Saved).id
+        val vm = BookDetailViewModel(repo, id, backgroundScope, quoteRepo = com.mcosta.mybooks.data.QuoteRepository(quoteDao))
+        backgroundScope.launch(mainDispatcher) { vm.quotes.collect {} }
+
+        vm.addQuote("Fear is the mind-killer.", " 8 ")
+        vm.addQuote("The spice must flow.", "")
+        testScheduler.runCurrent()
+        assertEquals(listOf("Fear is the mind-killer." to 8, "The spice must flow." to null), vm.quotes.value.map { it.text to it.page })
+
+        val fear = vm.quotes.value.first()
+        vm.updateQuote(fear, "Fear is the little-death.", "9")
+        testScheduler.runCurrent()
+        assertEquals("Fear is the little-death." to 9, vm.quotes.value.first().let { it.text to it.page })
+
+        val changed = vm.quotes.value.first()
+        vm.deleteQuote(changed)
+        assertEquals(listOf("The spice must flow."), vm.quotes.value.map { it.text })
+        vm.restoreQuote(changed)
+        assertEquals(listOf("Fear is the little-death." to 9, "The spice must flow." to null), vm.quotes.value.map { it.text to it.page })
+    }
+}

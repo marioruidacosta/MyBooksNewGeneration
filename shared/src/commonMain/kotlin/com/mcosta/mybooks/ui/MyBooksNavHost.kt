@@ -65,6 +65,8 @@ import com.mcosta.mybooks.ui.suggestions.SuggestionsViewModel
 import com.mcosta.mybooks.ui.edit.EditBookScreen
 import com.mcosta.mybooks.ui.edit.EditBookViewModel
 import com.mcosta.mybooks.domain.BookFilter
+import com.mcosta.mybooks.ui.scan.BatchScanScreen
+import com.mcosta.mybooks.ui.scan.BatchScanViewModel
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.ui.celebrate.CelebrationDialog
 import com.mcosta.mybooks.ui.celebrate.CelebrationViewModel
@@ -92,6 +94,8 @@ object Routes {
     const val TAG = "tag/{name}"
     const val SERIES = "series/{name}"
     const val LENT = "lent"
+    /** Scanning several books in a row. */
+    const val SCAN_SEVERAL = "scan-several"
     const val READING_ACTIVITY = "reading-activity"
     /** A catalogue book (from "More by …"); {key} finds it in [com.mcosta.mybooks.AppContainer.catalogBooks]. */
     const val CATALOG_BOOK = "catalog/{key}"
@@ -196,6 +200,7 @@ fun MyBooksNavHost(container: AppContainer) {
                     onSeeAllSuggestions = { nav.navigate(Routes.SUGGESTIONS) },
                     onOpenTag = { nav.navigate(Routes.tag(it)) },
                     onOpenLent = { nav.navigate(Routes.LENT) },
+                    onScanSeveral = { nav.navigate(Routes.SCAN_SEVERAL) },
                     onAddManually = { nav.navigate(Routes.add()) },
                     onScan = {
                         scope.launch {
@@ -239,6 +244,14 @@ fun MyBooksNavHost(container: AppContainer) {
                         onOpenBook = { nav.navigate(Routes.book(it)) },
                     )
                 }
+            }
+            composable(Routes.SCAN_SEVERAL) {
+                BatchScanScreen(
+                    viewModel = viewModel { BatchScanViewModel(container.repository) },
+                    onBack = { nav.popBackStack() },
+                    onAddManually = { nav.navigate(Routes.add(it)) },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
+                )
             }
             composable(Routes.LENT) {
                 LibraryScreen(
@@ -298,7 +311,7 @@ fun MyBooksNavHost(container: AppContainer) {
             composable(Routes.BOOK, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.savedStateHandle.get<Long>("id")!!
                 BookDetailScreen(
-                    viewModel = viewModel { BookDetailViewModel(container.repository, id, container.applicationScope, container.authors) },
+                    viewModel = viewModel { BookDetailViewModel(container.repository, id, container.applicationScope, container.authors, container.quotes) },
                     onBack = { nav.popBackStack() },
                     onEdit = { nav.navigate(Routes.edit(id)) },
                     sharing = sharing,
