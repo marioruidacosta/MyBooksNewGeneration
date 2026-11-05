@@ -32,4 +32,12 @@ data class Book(
     val progressPercent: Int? = null,
     /** Public review, shared with the community when sharing is on (Notes stay private). */
     val review: String = "",
+    /** Your own labels ("classics", "gift from Ana"), in the order added; Goodreads shelves become tags. */
+    val tags: List<String> = emptyList(),
+    /** The series the book belongs to, and its place in it as written ("1", "2.5", "1-3"). */
+    val series: String? = null,
+    val seriesNumber: String? = null,
+    /** Who has the book, and since when; null when it is at home. */
+    val lentTo: String? = null,
+    val lentOn: Long? = null,
 )

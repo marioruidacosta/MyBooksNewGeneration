@@ -13,6 +13,8 @@ import androidx.compose.ui.test.onRoot
 import androidx.test.core.app.ApplicationProvider
 import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.ChallengeRepository
+import com.mcosta.mybooks.data.PinnedTags
+import com.mcosta.mybooks.domain.BookFilter
 import com.mcosta.mybooks.data.backup.BackupSerializer
 import com.mcosta.mybooks.data.covers.CoverStore
 import com.mcosta.mybooks.data.covers.PhotoShrinker
@@ -96,8 +98,11 @@ class ScreenshotTest {
         val books = listOf(
             Book(title = "Princípio, meio, fim", authors = "Valeria Luiselli", status = ReadingStatus.READING, progressPercent = 26, pageCount = 384, publisher = "Alfaguara"),
             Book(title = "Jalan Jalan: Uma Leitura do Mundo", authors = "Afonso Cruz", status = ReadingStatus.READING, progressPercent = 15),
-            Book(title = "Memorial do Convento", authors = "José Saramago", status = ReadingStatus.READ, rating = 5, dateRead = day("2026-10-24"), publisher = "Porto Editora", publishedYear = 1982, pageCount = 352, isbn = "9789720046857", description = "No século XVIII, Baltasar e Blimunda, a construção do convento de Mafra e o sonho da passarola."),
-            Book(title = "Solaris", authors = "Stanisław Lem", status = ReadingStatus.READ, rating = 4, dateRead = day("2026-09-06"), publisher = "Antígona"),
+            Book(title = "Memorial do Convento", authors = "José Saramago", status = ReadingStatus.READ, rating = 5, dateRead = day("2026-10-24"), publisher = "Porto Editora", publishedYear = 1982, pageCount = 352, isbn = "9789720046857", description = "No século XVIII, Baltasar e Blimunda, a construção do convento de Mafra e o sonho da passarola.", tags = listOf("Nobel", "favourites", "clube de leitura")),
+            Book(title = "Solaris", authors = "Stanisław Lem", status = ReadingStatus.READ, rating = 4, dateRead = day("2026-09-06"), publisher = "Antígona", tags = listOf("favourites"), lentTo = "Ana", lentOn = day("2026-10-28")),
+            Book(title = "A Irmandade do Anel", authors = "J.R.R. Tolkien", status = ReadingStatus.READ, rating = 5, dateRead = day("2026-02-01"), series = "O Senhor dos Anéis", seriesNumber = "1", tags = listOf("favourites")),
+            Book(title = "As Duas Torres", authors = "J.R.R. Tolkien", status = ReadingStatus.TO_READ, series = "O Senhor dos Anéis", seriesNumber = "2"),
+            Book(title = "O Regresso do Rei", authors = "J.R.R. Tolkien", status = ReadingStatus.WISHLIST, series = "O Senhor dos Anéis", seriesNumber = "3"),
             Book(title = "O Castelo", authors = "Franz Kafka", status = ReadingStatus.READ, rating = 4, dateRead = day("2026-07-06"), publisher = "Relógio d'Água"),
             Book(title = "Stoner", authors = "John Williams", status = ReadingStatus.READ, rating = 5, dateRead = day("2026-04-12"), publisher = "D. Quixote"),
             Book(title = "Os Maias", authors = "Eça de Queirós", status = ReadingStatus.TO_READ, publisher = "Livros do Brasil"),
@@ -135,7 +140,8 @@ class ScreenshotTest {
 
     private fun home(dark: Boolean) {
         sampleLibrary()
-        val vm = HomeViewModel(repo, challenges, today = { today })
+        val pinned = PinnedTags(null).apply { setPinned("favourites", true) }
+        val vm = HomeViewModel(repo, challenges, pinnedTags = pinned, today = { today })
         shoot("home", dark, ready = { vm.state.value.loaded }) {
             HomeScreen(vm, SnackbarHostState(), onOpenBook = {}, onOpenShelf = {}, onOpenReadingActivity = {}, onAddManually = {}, onScan = {})
         }
@@ -157,6 +163,25 @@ class ScreenshotTest {
         }
     }
 
+    /** A book in a series, with the series card. */
+    private fun seriesBook(dark: Boolean) {
+        sampleLibrary()
+        val id = runBlocking { repo.findByTitleAndAuthors("As Duas Torres", "J.R.R. Tolkien")!!.id }
+        val vm = BookDetailViewModel(repo, id, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+        shoot("book-series", dark, ready = { vm.book.value != null && vm.seriesBooks.value.size == 3 }) {
+            BookDetailScreen(vm, onBack = {}, onEdit = {})
+        }
+    }
+
+    /** A tag's books, across the shelves, with the pin. */
+    private fun tag(dark: Boolean) {
+        sampleLibrary()
+        val vm = LibraryViewModel(repo, filter = BookFilter.Tag("favourites"), pinnedTags = PinnedTags(null))
+        shoot("tag", dark, ready = { vm.state.value.books.size == 3 }) {
+            LibraryScreen(vm, title = "favourites", onBack = {}, onOpenBook = {})
+        }
+    }
+
     private fun readingActivity(dark: Boolean) {
         sampleLibrary()
         val vm = ReadingActivityViewModel(repo, challenges, today = { today })
@@ -165,12 +190,19 @@ class ScreenshotTest {
         }
     }
 
-    @Test fun homeLight() = home(dark = false)
-    @Test fun homeDark() = home(dark = true)
+    // Home and the book page are drawn tall, to show their lower sections.
+    @Config(qualifiers = TALL) @Test fun homeLight() = home(dark = false)
+    @Config(qualifiers = TALL) @Test fun homeDark() = home(dark = true)
     @Test fun shelfLight() = shelf(dark = false)
     @Test fun shelfDark() = shelf(dark = true)
-    @Test fun bookPageLight() = bookPage(dark = false)
-    @Test fun bookPageDark() = bookPage(dark = true)
+    @Config(qualifiers = TALL) @Test fun bookPageLight() = bookPage(dark = false)
+    @Config(qualifiers = TALL) @Test fun bookPageDark() = bookPage(dark = true)
+    @Config(qualifiers = TALL) @Test fun seriesBookLight() = seriesBook(dark = false)
+    @Test fun tagLight() = tag(dark = false)
+
+    private companion object {
+        const val TALL = "w411dp-h1600dp-xxhdpi"
+    }
     @Test fun readingActivityLight() = readingActivity(dark = false)
     @Test fun readingActivityDark() = readingActivity(dark = true)
 }

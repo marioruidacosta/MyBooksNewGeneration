@@ -117,6 +117,39 @@ class MigrationTest {
         db.close()
     }
 
+    /**
+     * Version 5 adds tags, series and loans. A title imported from Goodreads with its series written in has the
+     * series moved out (and is found by its new title); other titles stay as they were.
+     */
+    @Test
+    fun upgradeTo5MovesSeriesOutOfTitles() = runTest {
+        SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { old ->
+            old.execSQL(
+                "INSERT INTO books (isbn, title, authors, status, notes, dateAdded, searchText) VALUES " +
+                    "(NULL, 'The Hobbit (Middle-earth Universe, #0.5)', 'J.R.R. Tolkien', 'READ', '', 40, " +
+                    "'the hobbit (middle-earth universe, #0.5)\nj.r.r. tolkien'), " +
+                    "(NULL, 'Ensaio sobre a Cegueira (Edição Especial)', 'José Saramago', 'TO_READ', '', 50, 'x')"
+            )
+        }
+        val db = createAndroidDatabase(context, name)
+        val books = db.bookDao().getAll().map { it.toBook() }.associateBy { it.authors }
+        val hobbit = books.getValue("J.R.R. Tolkien")
+        assertEquals("The Hobbit", hobbit.title)
+        assertEquals("Middle-earth Universe", hobbit.series)
+        assertEquals("0.5", hobbit.seriesNumber)
+        assertEquals("the hobbit\nj.r.r. tolkien", db.bookDao().getById(hobbit.id)!!.searchText)
+        assertEquals("Ensaio sobre a Cegueira (Edição Especial)", books.getValue("José Saramago").title)
+        assertNull(books.getValue("José Saramago").series)
+        assertEquals(listOf<String>(), books.getValue("Frank Herbert").tags)
+
+        db.bookDao().update(books.getValue("Frank Herbert").copy(tags = listOf("Sci-fi", "gift from Ana"), lentTo = "Ana", lentOn = 7).toEntity())
+        val dune = db.bookDao().findByIsbn("9780441013593")!!.toBook()
+        assertEquals(listOf("Sci-fi", "gift from Ana"), dune.tags)
+        assertEquals("Ana", dune.lentTo)
+        assertEquals(7L, dune.lentOn)
+        db.close()
+    }
+
     /** Version 4 adds reading challenges: the library survives and the new table starts empty and works. */
     @Test
     fun upgradeAddsEmptyChallenges() = runTest {

@@ -9,6 +9,9 @@ import com.mcosta.mybooks.domain.ChallengeProgress
 import com.mcosta.mybooks.domain.Pace
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.pace
+import com.mcosta.mybooks.domain.hasTag
+import com.mcosta.mybooks.data.PinnedTags
+import kotlinx.coroutines.flow.flowOf
 import com.mcosta.mybooks.ui.components.CoverRef
 import com.mcosta.mybooks.ui.detail.ProgressInput
 import com.mcosta.mybooks.ui.detail.parseProgress
@@ -30,6 +33,9 @@ const val SHELF_COVERS = 5
 /** A shelf row on the home screen ([status] null is All books); [covers] are its most recently added books'. */
 data class Shelf(val status: ReadingStatus?, val count: Int, val covers: List<CoverRef>)
 
+/** A row of books on the home screen that is not a shelf: a pinned tag, or the books lent out. */
+data class BookGroup(val name: String, val count: Int, val covers: List<CoverRef>)
+
 data class HomeState(
     val loaded: Boolean = false,
     /** Books being read, most recently started first. */
@@ -40,16 +46,22 @@ data class HomeState(
     /** This year's challenge, or null when it has no goal. */
     val challenge: ChallengeProgress? = null,
     val pace: Pace? = null,
+    /** Tags pinned to the home screen, in the order pinned. */
+    val tags: List<BookGroup> = emptyList(),
+    /** Books lent to someone; null when every book is at home. */
+    val lent: BookGroup? = null,
 )
 
 /** The home screen: what's being read, this year's challenge, and a row per shelf. */
 class HomeViewModel(
     private val repo: BookRepository,
     challenges: ChallengeRepository,
+    /** Tags pinned to the home screen; null shows none. */
+    pinnedTags: PinnedTags? = null,
     today: () -> LocalDate = { currentDate() },
     timeZone: TimeZone = TimeZone.currentSystemDefault(),
 ) : ViewModel() {
-    val state: StateFlow<HomeState> = combine(repo.observeBooks(null, ""), challenges.observe()) { books, goals ->
+    val state: StateFlow<HomeState> = combine(repo.observeBooks(null, ""), challenges.observe(), pinnedTags?.tags ?: flowOf(emptyList())) { books, goals, pins ->
         val date = today()
         val goal = goals.firstOrNull { it.year == date.year }
         val progress = goal?.let { ChallengeProgress(it.year, it.goal, books.readIn(it.year, timeZone).size) }
@@ -68,6 +80,8 @@ class HomeViewModel(
             year = date.year,
             challenge = progress,
             pace = progress?.pace(date),
+            tags = pins.map { tag -> group(tag, books.filter { it.hasTag(tag) }) },
+            lent = books.filter { it.lentTo != null }.takeIf { it.isNotEmpty() }?.let { group("Lent out", it) },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeState())
 
@@ -119,5 +133,10 @@ class HomeViewModel(
 
     private companion object {
         val SHELVES = listOf(ReadingStatus.TO_READ, ReadingStatus.WISHLIST, ReadingStatus.READ, null)
+
+        /** The newest covers first, like the shelves. */
+        fun group(name: String, books: List<Book>) = BookGroup(
+            name, books.size, books.sortedByDescending { it.dateAdded }.take(SHELF_COVERS).map { CoverRef(it.coverUrl, it.title, it.authors) },
+        )
     }
 }

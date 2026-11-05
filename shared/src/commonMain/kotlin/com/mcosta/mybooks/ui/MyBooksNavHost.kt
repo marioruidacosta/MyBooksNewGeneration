@@ -64,6 +64,7 @@ import com.mcosta.mybooks.ui.suggestions.SuggestionsScreen
 import com.mcosta.mybooks.ui.suggestions.SuggestionsViewModel
 import com.mcosta.mybooks.ui.edit.EditBookScreen
 import com.mcosta.mybooks.ui.edit.EditBookViewModel
+import com.mcosta.mybooks.domain.BookFilter
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.ui.celebrate.CelebrationDialog
 import com.mcosta.mybooks.ui.celebrate.CelebrationViewModel
@@ -87,6 +88,10 @@ object Routes {
     const val SHELF = "shelf/{section}?search={search}"
     /** All books with the search box ready (the bottom bar's Search). */
     const val SEARCH = "search"
+    /** The books with a tag, or of a series, across every status; the books lent out. */
+    const val TAG = "tag/{name}"
+    const val SERIES = "series/{name}"
+    const val LENT = "lent"
     const val READING_ACTIVITY = "reading-activity"
     /** A catalogue book (from "More by …"); {key} finds it in [com.mcosta.mybooks.AppContainer.catalogBooks]. */
     const val CATALOG_BOOK = "catalog/{key}"
@@ -118,6 +123,9 @@ object Routes {
     fun add(isbn: String? = null) = if (isbn == null) "add" else "add?isbn=$isbn"
     fun edit(id: Long) = "edit/$id"
     fun book(id: Long) = "book/$id"
+    /** A tag's or a series' books; the name is URL-encoded. */
+    fun tag(name: String) = "tag/${name.encodeURLPathPart()}"
+    fun series(name: String) = "series/${name.encodeURLPathPart()}"
     fun profile(userId: String) = "profile/$userId"
     fun friends(tab: Int = 0) = "friends?tab=$tab"
     fun releaseGenre(month: String, genre: String) = "releases/$month/$genre"
@@ -177,7 +185,7 @@ fun MyBooksNavHost(container: AppContainer) {
                 val suggestionsVm = viewModel { SuggestionsViewModel(container.suggestions, container.hiddenSuggestions) }
                 val suggestions by suggestionsVm.state.collectAsStateWithLifecycle()
                 HomeScreen(
-                    viewModel = viewModel { HomeViewModel(container.repository, container.challenges) },
+                    viewModel = viewModel { HomeViewModel(container.repository, container.challenges, pinnedTags = container.pinnedTags) },
                     snackbarHostState = snackbar,
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     onOpenShelf = { nav.navigate(Routes.shelf(it)) },
@@ -186,6 +194,8 @@ fun MyBooksNavHost(container: AppContainer) {
                     onOpenSuggestion = openSuggestion,
                     onNotInterested = suggestionsVm::hide,
                     onSeeAllSuggestions = { nav.navigate(Routes.SUGGESTIONS) },
+                    onOpenTag = { nav.navigate(Routes.tag(it)) },
+                    onOpenLent = { nav.navigate(Routes.LENT) },
                     onAddManually = { nav.navigate(Routes.add()) },
                     onScan = {
                         scope.launch {
@@ -216,6 +226,26 @@ fun MyBooksNavHost(container: AppContainer) {
                     onBack = { nav.popBackStack() },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     focusSearch = entry.savedStateHandle.get<Boolean>("search") == true,
+                )
+            }
+            for ((route, kind) in listOf(Routes.TAG to "tag", Routes.SERIES to "series")) {
+                composable(route, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
+                    val name = entry.savedStateHandle.get<String>("name")!!
+                    val filter = if (kind == "tag") BookFilter.Tag(name) else BookFilter.Series(name)
+                    LibraryScreen(
+                        viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, null, container.applicationScope, filter, container.pinnedTags) },
+                        title = name,
+                        onBack = { nav.popBackStack() },
+                        onOpenBook = { nav.navigate(Routes.book(it)) },
+                    )
+                }
+            }
+            composable(Routes.LENT) {
+                LibraryScreen(
+                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, null, container.applicationScope, BookFilter.Lent) },
+                    title = "Lent out",
+                    onBack = { nav.popBackStack() },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
             composable(Routes.SEARCH) {
@@ -276,6 +306,8 @@ fun MyBooksNavHost(container: AppContainer) {
                     extras = viewModel { BookExtrasViewModel(container.repository, id, social, container.authorBooks) },
                     onJoin = { nav.navigate(Routes.ACCOUNT) },
                     onOpenPerson = { nav.navigate(Routes.profile(it)) },
+                    onOpenTag = { nav.navigate(Routes.tag(it)) },
+                    onOpenSeries = { nav.navigate(Routes.series(it)) },
                     onOpenCatalogBook = { nav.navigate("catalog/${container.catalogBooks.put(it)}") },
                 )
             }

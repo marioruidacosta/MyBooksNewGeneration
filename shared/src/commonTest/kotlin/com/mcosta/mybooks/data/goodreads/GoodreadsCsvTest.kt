@@ -20,7 +20,23 @@ class GoodreadsCsvTest {
 
     @Test
     fun readsEveryRow() {
-        assertEquals(listOf("Dune (Dune, #1)", "Good Omens", "Emma", "Old Book", ""), books.map { it.title })
+        assertEquals(listOf("Dune", "Good Omens", "Emma", "Old Book", ""), books.map { it.title })
+    }
+
+    /** "Dune (Dune, #1)": the series goes to its own field. */
+    @Test
+    fun seriesComesOutOfTheTitle() {
+        assertEquals("Dune", books[0].series)
+        assertEquals("1", books[0].seriesNumber)
+        assertNull(books[1].series)
+    }
+
+    /** Shelves become tags, except the reading ones and To buy (a status here). */
+    @Test
+    fun shelvesBecomeTags() {
+        assertEquals(listOf("classics"), books[2].tags)
+        assertEquals(listOf("abandoned"), books[3].tags)
+        assertEquals(listOf<String>(), books[0].tags)
     }
 
     @Test
@@ -101,14 +117,22 @@ class GoodreadsCsvTest {
                 title = "Dune, \"the\" novel", authors = "Frank Herbert, Brian Herbert", isbn = "9780441013593", rating = 4,
                 publisher = "Ace", pageCount = 688, publishedYear = 2005, status = ReadingStatus.READ,
                 dateRead = day("2024-03-15"), dateAdded = day("2023-12-01"), review = "Great.\nReally <great> & long.",
-                notes = "private",
+                notes = "private", series = "Dune", seriesNumber = "1",
             ),
-            Book(title = "Emma", authors = "Jane Austen", status = ReadingStatus.WISHLIST, dateAdded = day("2025-02-02")),
+            Book(title = "Emma", authors = "Jane Austen", status = ReadingStatus.WISHLIST, dateAdded = day("2025-02-02"), tags = listOf("classics", "gift")),
             Book(title = "Now", authors = "B", status = ReadingStatus.READING, dateAdded = day("2025-03-03")),
             Book(title = "Later", authors = "C", status = ReadingStatus.TO_READ, dateAdded = day("2025-04-04")),
         )
         val back = GoodreadsCsv.read(GoodreadsCsv.write(mine, utc), utc)
         assertEquals(mine.map { it.copy(notes = "") }, back)        // private notes are not exported
+    }
+
+    /** Goodreads shelf names are lowercase words joined by dashes. */
+    @Test
+    fun tagsAreWrittenAsShelfNames() {
+        val csv = GoodreadsCsv.write(listOf(Book(title = "A", tags = listOf("Gift from Ana", "sci-fi"), status = ReadingStatus.WISHLIST)), utc)
+        val row = Csv.parse(csv)
+        assertEquals("gift-from-ana, sci-fi, to-buy", row[1][row[0].indexOf("Bookshelves")])
     }
 
     @Test

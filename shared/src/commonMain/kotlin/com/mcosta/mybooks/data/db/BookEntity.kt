@@ -31,6 +31,13 @@ data class BookEntity(
     val progressPercent: Int? = null,
     @ColumnInfo(defaultValue = "")
     val review: String = "",
+    /** Tags joined by newlines (a tag never has one). */
+    @ColumnInfo(defaultValue = "")
+    val tags: String = "",
+    val series: String? = null,
+    val seriesNumber: String? = null,
+    val lentTo: String? = null,
+    val lentOn: Long? = null,
 )
 
 fun BookEntity.toBook() = Book(
@@ -38,6 +45,8 @@ fun BookEntity.toBook() = Book(
     publishedYear = publishedYear, pageCount = pageCount, coverUrl = coverUrl, description = description,
     status = status, rating = rating, notes = notes, dateAdded = dateAdded, dateRead = dateRead,
     dateStarted = dateStarted, currentPage = currentPage, progressPercent = progressPercent, review = review,
+    tags = tags.split(TAG_SEPARATOR).filter { it.isNotEmpty() }, series = series, seriesNumber = seriesNumber,
+    lentTo = lentTo, lentOn = lentOn,
 )
 
 fun Book.toEntity() = BookEntity(
@@ -47,4 +56,7 @@ fun Book.toEntity() = BookEntity(
     // Newline separator stops a query from matching across the title/author boundary.
     searchText = searchKey("$title\n$authors"),
     dateStarted = dateStarted, currentPage = currentPage, progressPercent = progressPercent, review = review,
+    tags = tags.joinToString(TAG_SEPARATOR), series = series, seriesNumber = seriesNumber, lentTo = lentTo, lentOn = lentOn,
 )
+
+private const val TAG_SEPARATOR = "\n"
