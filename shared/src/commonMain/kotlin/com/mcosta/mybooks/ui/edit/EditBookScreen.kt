@@ -117,6 +117,10 @@ fun EditBookScreen(
             Field("ISBN", f.isbn, keyboardOptions = isbnKeyboardOptions) { v -> viewModel.update { it.copy(isbn = v) } }
             Field("Publisher", f.publisher) { v -> viewModel.update { it.copy(publisher = v) } }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Field("Series", f.series, modifier = Modifier.weight(1f)) { v -> viewModel.update { it.copy(series = v) } }
+                Field("#", f.seriesNumber, modifier = Modifier.width(88.dp)) { v -> viewModel.update { it.copy(seriesNumber = v) } }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Field("Year", f.year, KeyboardType.Number, Modifier.weight(1f)) { v -> viewModel.update { it.copy(year = v) } }
                 Field("Pages", f.pages, KeyboardType.Number, Modifier.weight(1f)) { v -> viewModel.update { it.copy(pages = v) } }
             }

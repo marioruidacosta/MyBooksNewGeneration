@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -33,6 +34,11 @@ import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material3.FilterChip
+import com.mcosta.mybooks.domain.BookFilter
+import com.mcosta.mybooks.ui.formatDate
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -125,7 +131,7 @@ fun LibraryScreen(
         viewModel.hide(book.id)
         scope.launch {
             snackbar.currentSnackbarData?.dismiss()
-            val result = snackbar.showSnackbar("Deleted 201c${book.title}201d", actionLabel = "Undo", duration = SnackbarDuration.Short)
+            val result = snackbar.showSnackbar("Deleted “${book.title}”", actionLabel = "Undo", duration = SnackbarDuration.Short)
             if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete(book.id) else viewModel.delete(book.id)
         }
         Unit
@@ -150,10 +156,21 @@ fun LibraryScreen(
                 title = { Text(title) },
                 navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
+                    if (state.filter is BookFilter.Tag) {
+                        IconButton(onClick = {
+                            viewModel.setPinned(!state.pinned)
+                            scope.launch {
+                                snackbar.currentSnackbarData?.dismiss()
+                                snackbar.showSnackbar(if (state.pinned) "Removed from Home" else "Shown on Home")
+                            }
+                        }) {
+                            if (state.pinned) Icon(Icons.Filled.PushPin, "Remove from Home") else Icon(Icons.Outlined.PushPin, "Show on Home")
+                        }
+                    }
                     IconButton(onClick = { viewModel.setGrid(!state.grid) }) {
                         if (state.grid) Icon(Icons.AutoMirrored.Filled.ViewList, "Show as list") else Icon(Icons.Filled.GridView, "Show as grid")
                     }
-                    Box {
+                    if (state.sortable) Box {
                         IconButton(onClick = { sortMenuOpen = true }) { Icon(Icons.AutoMirrored.Filled.Sort, "Sort") }
                         DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
                             for (order in state.sorts) {
@@ -187,6 +204,7 @@ fun LibraryScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).focusRequester(searchFocus),
             )
+            if (state.tags.isNotEmpty()) TagChips(state.tags, state.tag, viewModel::chooseTag)
             if (state.books.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(if (query.isBlank()) "No books here yet" else "No books match", style = MaterialTheme.typography.bodyLarge)
@@ -206,7 +224,7 @@ fun LibraryScreen(
                 LazyColumn(Modifier.fillMaxSize(), state = listState) {
                     items(state.books, key = { it.id }) { book ->
                         SwipeRow(book, onSwipeRight = { onSwipeRight(book) }, onSwipeLeft = { onSwipeLeft(book) }) {
-                            BookRow(book, onClick = { onOpenBook(book.id) })
+                            BookRow(book, onClick = { onOpenBook(book.id) }, showSeriesNumber = state.filter is BookFilter.Series)
                         }
                         HorizontalDivider()
                     }
@@ -218,7 +236,7 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun BookRow(book: Book, onClick: () -> Unit) {
+private fun BookRow(book: Book, onClick: () -> Unit, showSeriesNumber: Boolean = false) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -226,7 +244,19 @@ private fun BookRow(book: Book, onClick: () -> Unit) {
         BookCover(book.coverUrl, Modifier.width(48.dp).height(72.dp), title = book.title, authors = book.authors)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            if (showSeriesNumber && book.seriesNumber != null) {
+                Text("#${book.seriesNumber}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
             Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            book.lentTo?.let {
+                Text(
+                    lentText(it, book.lentOn),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             if (book.authors.isNotBlank()) {
                 Text(
                     book.authors,
@@ -252,6 +282,29 @@ private fun BookRow(book: Book, onClick: () -> Unit) {
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 )
             }
+        }
+    }
+}
+
+/** "Lent to Ana since 4 Nov 2026". */
+fun lentText(person: String, since: Long?): String = "Lent to $person" + (since?.let { " since ${formatDate(it)}" } ?: "")
+
+/** A shelf's tags as chips; choosing one shows only its books, choosing it again shows them all. */
+@Composable
+private fun TagChips(tags: List<String>, chosen: String?, onChoose: (String?) -> Unit) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        items(tags, key = { it.lowercase() }) { tag ->
+            val selected = tag.equals(chosen, ignoreCase = true)
+            FilterChip(
+                selected = selected,
+                onClick = { onChoose(if (selected) null else tag) },
+                label = { Text(tag) },
+                leadingIcon = if (selected) ({ Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) }) else null,
+            )
         }
     }
 }

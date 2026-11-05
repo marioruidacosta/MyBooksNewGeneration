@@ -93,6 +93,9 @@ class AppContainer(
     /** Books marked "Not interested" in suggestions. */
     val hiddenSuggestions = HiddenSuggestions(preferences)
 
+    /** Tags shown as rows on the home screen. */
+    val pinnedTags = com.mcosta.mybooks.data.PinnedTags(preferences)
+
     /** Yearly reading challenges. */
     val challenges = ChallengeRepository(database.challengeDao())
 

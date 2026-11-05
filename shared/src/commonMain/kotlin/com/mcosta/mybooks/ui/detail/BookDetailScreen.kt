@@ -95,6 +95,9 @@ fun BookDetailScreen(
     /** A book from "More by …" that isn't in the library, on its own page. */
     onOpenCatalogBook: (AuthorBook) -> Unit = {},
     onOpenPerson: (String) -> Unit = {},
+    /** All the books with a tag, or of a series. */
+    onOpenTag: (String) -> Unit = {},
+    onOpenSeries: (String) -> Unit = {},
 ) {
     val community by (extras?.community ?: remember { MutableStateFlow<CommunityState>(CommunityState.Hidden) }).collectAsStateWithLifecycle()
     val moreBy by (extras?.moreBy ?: remember { MutableStateFlow<MoreByState?>(null) }).collectAsStateWithLifecycle()
@@ -102,6 +105,8 @@ fun BookDetailScreen(
     val notes by viewModel.notesDraft.collectAsStateWithLifecycle()
     val review by viewModel.reviewDraft.collectAsStateWithLifecycle()
     val shareExcluded by viewModel.shareExcluded.collectAsStateWithLifecycle()
+    val allTags by viewModel.allTags.collectAsStateWithLifecycle()
+    val seriesBooks by viewModel.seriesBooks.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
     var pickingReadDate by remember { mutableStateOf(false) }
@@ -174,6 +179,9 @@ fun BookDetailScreen(
                     val stores = remember(b.isbn, b.title, b.authors) { storeLinksFor(b.isbn, b.title, b.authors) }
                     WhereToBuy(stores, byIsbn = b.isbn != null, onCantOpen = { scope.launch { snackbar.showSnackbar("No app can open this link") } })
                 }
+                SeriesSection(b, seriesBooks, onOpenBook, onOpenSeries)
+                TagsSection(b, allTags, onAdd = viewModel::addTag, onRemove = viewModel::removeTag, onOpen = onOpenTag)
+                if (b.status != ReadingStatus.WISHLIST || b.lentTo != null) LoanSection(b, onLend = viewModel::lend, onReturned = viewModel::returned)
                 b.description?.takeIf { it.isNotBlank() }?.let { SectionCard("Description") { Description(it) } }
                 if (community != CommunityState.Hidden && extras != null) {
                     SectionCard("Community reviews") {

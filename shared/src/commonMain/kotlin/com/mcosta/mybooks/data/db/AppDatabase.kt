@@ -8,10 +8,12 @@ import androidx.room.migration.Migration
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.SQLiteDriver
 import androidx.sqlite.execSQL
+import com.mcosta.mybooks.domain.searchKey
+import com.mcosta.mybooks.domain.splitSeries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 
-@Database(entities = [BookEntity::class, ShareStateEntity::class, ChallengeEntity::class], version = 4, exportSchema = true)
+@Database(entities = [BookEntity::class, ShareStateEntity::class, ChallengeEntity::class], version = 5, exportSchema = true)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
@@ -28,7 +30,7 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
 /** Finishes a platform's database builder: migrations, SQLite driver and IO dispatcher. */
 fun createDatabase(builder: RoomDatabase.Builder<AppDatabase>, driver: SQLiteDriver): AppDatabase =
     builder
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
         .setDriver(driver)
         .setQueryCoroutineContext(Dispatchers.IO)
         .build()
@@ -65,5 +67,35 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
     override fun migrate(connection: SQLiteConnection) {
         // Exactly the table Room generates (schemas/…/4.json).
         connection.execSQL("CREATE TABLE IF NOT EXISTS `challenges` (`year` INTEGER NOT NULL, `goal` INTEGER NOT NULL, PRIMARY KEY(`year`))")
+    }
+}
+
+/**
+ * v5: tags, series and loans. Titles imported from Goodreads with their series written in, as in
+ * "The Hobbit (Middle-earth, #0.5)", get the series moved to its own field.
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE books ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+        connection.execSQL("ALTER TABLE books ADD COLUMN series TEXT")
+        connection.execSQL("ALTER TABLE books ADD COLUMN seriesNumber TEXT")
+        connection.execSQL("ALTER TABLE books ADD COLUMN lentTo TEXT")
+        connection.execSQL("ALTER TABLE books ADD COLUMN lentOn INTEGER")
+        val split = mutableListOf<Triple<Long, String, com.mcosta.mybooks.domain.SeriesTitle>>()
+        connection.prepare("SELECT id, title, authors FROM books WHERE title LIKE '%#%)%'").use { row ->
+            while (row.step()) {
+                splitSeries(row.getText(1))?.let { split += Triple(row.getLong(0), row.getText(2), it) }
+            }
+        }
+        for ((id, authors, s) in split) {
+            connection.prepare("UPDATE books SET title = ?, series = ?, seriesNumber = ?, searchText = ? WHERE id = ?").use { st ->
+                st.bindText(1, s.title)
+                st.bindText(2, s.series)
+                if (s.number != null) st.bindText(3, s.number) else st.bindNull(3)
+                st.bindText(4, searchKey("${s.title}\n$authors"))
+                st.bindLong(5, id)
+                st.step()
+            }
+        }
     }
 }

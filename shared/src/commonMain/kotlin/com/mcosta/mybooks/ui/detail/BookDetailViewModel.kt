@@ -8,8 +8,15 @@ import com.mcosta.mybooks.data.authors.AuthorInfo
 import com.mcosta.mybooks.data.authors.AuthorInfoSource
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.domain.BookFilter
 import com.mcosta.mybooks.domain.searchKey
+import com.mcosta.mybooks.domain.seriesOrder
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -105,6 +112,40 @@ class BookDetailViewModel(
 
     fun rate(rating: Int?) {
         viewModelScope.launch { repo.setRating(id, rating) }
+    }
+
+    /** Every tag in the library, most used first: offered when adding one. */
+    val allTags: StateFlow<List<String>> = repo.observeTags().map { tags -> tags.map { it.name } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** The books of this book's series in the library, in series order (this one included); empty without a series. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val seriesBooks: StateFlow<List<Book>> = book.map { it?.series }.distinctUntilChanged()
+        .flatMapLatest { series ->
+            if (series == null) flowOf(emptyList())
+            else repo.observeBooks(null, "").map { all ->
+                all.filter { BookFilter.Series(series).matches(it) }
+                    .sortedWith(compareBy<Book> { seriesOrder(it.seriesNumber) }.thenBy { it.title.lowercase() })
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addTag(tag: String) {
+        val b = book.value ?: return
+        viewModelScope.launch { repo.setTags(id, b.tags + tag) }
+    }
+
+    fun removeTag(tag: String) {
+        val b = book.value ?: return
+        viewModelScope.launch { repo.setTags(id, b.tags.filterNot { it.equals(tag, ignoreCase = true) }) }
+    }
+
+    fun lend(person: String, date: Long) {
+        viewModelScope.launch { repo.lend(id, person, date) }
+    }
+
+    fun returned() {
+        viewModelScope.launch { repo.returned(id) }
     }
 
     private val _progressError = MutableStateFlow<String?>(null)

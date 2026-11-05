@@ -69,6 +69,7 @@ import com.mcosta.mybooks.ui.activity.text
 import com.mcosta.mybooks.ui.components.BookCover
 import com.mcosta.mybooks.ui.components.ProgressField
 import com.mcosta.mybooks.ui.components.CoverFan
+import com.mcosta.mybooks.ui.components.CoverRef
 import com.mcosta.mybooks.ui.detail.progressText
 import com.mcosta.mybooks.ui.library.label
 import com.mcosta.mybooks.data.suggestions.Suggestion
@@ -94,6 +95,10 @@ fun HomeScreen(
     onSeeAllSuggestions: () -> Unit = {},
     onAddManually: () -> Unit,
     onScan: () -> Unit,
+    /** A pinned tag's books. */
+    onOpenTag: (String) -> Unit = {},
+    /** The books lent out. */
+    onOpenLent: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var addMenuOpen by remember { mutableStateOf(false) }
@@ -163,6 +168,13 @@ fun HomeScreen(
                 ShelfRow(shelf, onClick = { onOpenShelf(shelf.status) })
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp))
             }
+            items(state.tags, key = { "tag:" + it.name.lowercase() }) { tag ->
+                ShelfRow(tag.name, tag.count, tag.covers, onClick = { onOpenTag(tag.name) })
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+            }
+            state.lent?.let { lent ->
+                item(key = "lent") { ShelfRow(lent.name, lent.count, lent.covers, onClick = onOpenLent) }
+            }
             item { Spacer(Modifier.height(88.dp)) }
         }
     }
@@ -179,7 +191,7 @@ fun HomeScreen(
         AlertDialog(
             onDismissRequest = viewModel::dismissFinish,
             title = { Text("Finished?") },
-            text = { Text("You're at the end of 201c${book.title}201d. Mark it as Read, finished today?") },
+            text = { Text("You're at the end of “${book.title}”. Mark it as Read, finished today?") },
             confirmButton = { TextButton(onClick = viewModel::markFinished) { Text("Mark as Read") } },
             dismissButton = { TextButton(onClick = viewModel::dismissFinish) { Text("Not yet") } },
         )
@@ -275,20 +287,23 @@ private fun ChallengeCard(state: HomeState, onClick: () -> Unit, modifier: Modif
 
 /** A shelf: its name and size, with its newest covers fanned out. */
 @Composable
-private fun ShelfRow(shelf: Shelf, onClick: () -> Unit) {
+private fun ShelfRow(shelf: Shelf, onClick: () -> Unit) = ShelfRow(shelf.status.shelfLabel(), shelf.count, shelf.covers, onClick)
+
+@Composable
+private fun ShelfRow(name: String, count: Int, covers: List<CoverRef>, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(shelf.status.shelfLabel(), style = MaterialTheme.typography.titleMedium)
+            Text(name, style = MaterialTheme.typography.titleMedium)
             Text(
-                if (shelf.count == 1) "1 book" else "${shelf.count} books",
+                if (count == 1) "1 book" else "$count books",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        CoverFan(shelf.covers)
+        CoverFan(covers)
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.padding(start = 8.dp))
     }
 }

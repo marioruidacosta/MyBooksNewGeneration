@@ -14,7 +14,7 @@ data class BackupShare(val shareId: String, val excluded: Boolean)
 
 /**
  * Library backup file format: `{ "version": 1, "exportedAt": ..., "books": [...], "challenges": [...] }`. The review,
- * sharing and challenge fields are optional, so older backups stay readable and the version stays 1.
+ * sharing, challenge, tag, series and loan fields are optional, so older backups stay readable and the version stays 1.
  */
 object BackupSerializer {
     private const val VERSION = 1
@@ -92,12 +92,18 @@ object BackupSerializer {
         val review: String = "",
         val shareId: String? = null,
         val shareExcluded: Boolean = false,
+        val tags: List<String> = emptyList(),
+        val series: String? = null,
+        val seriesNumber: String? = null,
+        val lentTo: String? = null,
+        val lentOn: Long? = null,
     ) {
         fun toBook() = Book(
             isbn = isbn, title = title, authors = authors, publisher = publisher, publishedYear = publishedYear,
             pageCount = pageCount, coverUrl = coverUrl, description = description, status = status,
             rating = rating, notes = notes, dateAdded = dateAdded, dateRead = dateRead,
             dateStarted = dateStarted, currentPage = currentPage, progressPercent = progressPercent, review = review,
+            tags = tags, series = series, seriesNumber = seriesNumber, lentTo = lentTo, lentOn = lentOn,
         )
     }
 
@@ -107,5 +113,6 @@ object BackupSerializer {
         rating = rating, notes = notes, dateAdded = dateAdded, dateRead = dateRead,
         dateStarted = dateStarted, currentPage = currentPage, progressPercent = progressPercent, review = review,
         shareId = share?.shareId, shareExcluded = share?.excluded ?: false,
+        tags = tags, series = series, seriesNumber = seriesNumber, lentTo = lentTo, lentOn = lentOn,
     )
 }

@@ -4,6 +4,9 @@ import com.mcosta.mybooks.data.MAX_REVIEW_LENGTH
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.Isbn
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.domain.cleanTags
+import com.mcosta.mybooks.domain.splitSeries
+import com.mcosta.mybooks.domain.withSeries
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -21,6 +24,7 @@ class GoodreadsFormatException(message: String) : Exception(message)
 object GoodreadsCsv {
     /** Goodreads' extra shelf for "To buy" (it has no such status). */
     private const val TO_BUY_SHELF = "to-buy"
+    private val STATUS_SHELVES = setOf("read", "currently-reading", "to-read", TO_BUY_SHELF)
     private val COLUMNS = listOf(
         "Title", "Author", "Additional Authors", "ISBN", "ISBN13", "My Rating", "Publisher", "Number of Pages",
         "Year Published", "Date Read", "Date Added", "Bookshelves", "Exclusive Shelf", "My Review",
@@ -35,9 +39,14 @@ object GoodreadsCsv {
         }
         return rows.drop(1).map { cells ->
             val row = { name: String -> header.indexOf(name).takeIf { it >= 0 }?.let { cells.getOrNull(it) }?.trim().orEmpty() }
-            val shelves = row("Bookshelves").split(',').map { it.trim() }
+            val shelves = row("Bookshelves").split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            val series = splitSeries(row("Title"))
             Book(
-                title = row("Title"),
+                title = series?.title ?: row("Title"),
+                series = series?.series,
+                seriesNumber = series?.number,
+                // Shelves other than the reading ones (and To buy, which is a status here) are tags.
+                tags = cleanTags(shelves.filter { it.lowercase() !in STATUS_SHELVES }),
                 authors = (listOf(row("Author")) + row("Additional Authors").split(',')).map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", "),
                 isbn = Isbn.normalize(unquoteIsbn(row("ISBN13"))) ?: Isbn.normalize(unquoteIsbn(row("ISBN"))),
                 // Goodreads writes "5.0" and, for half and quarter stars, "4.5" or "4.25": rounded to whole stars.
@@ -63,7 +72,7 @@ object GoodreadsCsv {
         Csv.write(listOf(COLUMNS) + books.map { b ->
             val authors = b.authors.split(',').map { it.trim() }.filter { it.isNotEmpty() }
             listOf(
-                b.title,
+                withSeries(b.title, b.series, b.seriesNumber),
                 authors.firstOrNull().orEmpty(),
                 authors.drop(1).joinToString(", "),
                 "",
@@ -74,7 +83,7 @@ object GoodreadsCsv {
                 b.publishedYear?.toString().orEmpty(),
                 b.dateRead?.takeIf { b.status == ReadingStatus.READ }?.let { day(it, timeZone) }.orEmpty(),
                 b.dateAdded.takeIf { it > 0 }?.let { day(it, timeZone) }.orEmpty(),
-                if (b.status == ReadingStatus.WISHLIST) TO_BUY_SHELF else "",
+                (b.tags.map { shelfName(it) } + listOfNotNull(TO_BUY_SHELF.takeIf { b.status == ReadingStatus.WISHLIST })).joinToString(", "),
                 when (b.status) {
                     ReadingStatus.READ -> "read"
                     ReadingStatus.READING -> "currently-reading"
@@ -83,6 +92,9 @@ object GoodreadsCsv {
                 html(b.review),
             )
         })
+
+    /** Goodreads shelf names have no commas or spaces: "Gift from Ana" goes as "gift-from-ana". */
+    private fun shelfName(tag: String) = tag.lowercase().replace(Regex("[,\\s]+"), "-")
 
     /** Goodreads writes ISBNs as ="9780441013593" so spreadsheets keep them as text. */
     private fun unquoteIsbn(value: String) = value.removePrefix("=").trim('"')

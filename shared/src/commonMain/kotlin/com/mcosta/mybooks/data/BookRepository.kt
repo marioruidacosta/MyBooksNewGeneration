@@ -17,6 +17,7 @@ import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.Isbn
 import com.mcosta.mybooks.domain.MAX_GOAL
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.domain.cleanTags
 import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -42,6 +43,12 @@ sealed interface SaveResult {
 const val MAX_REVIEW_LENGTH = 2000
 
 data class ImportSummary(val added: Int, val updated: Int, val failed: Int)
+
+/** A tag and how many books have it. */
+data class TagCount(val name: String, val count: Int)
+
+/** The longest series or borrower name kept. */
+const val MAX_NAME_LENGTH = 100
 
 /** Single entry point for the UI to read and change the library. */
 class BookRepository(
@@ -149,6 +156,25 @@ class BookRepository(
     /** When the book was finished (it counts toward that year's challenge); a start date after it is dropped. */
     suspend fun setDateRead(id: Long, date: Long) =
         modify(id) { it.copy(dateRead = date, dateStarted = it.dateStarted?.takeIf { started -> started <= date }) }
+
+    /** The book's tags, tidied by [cleanTags]. */
+    suspend fun setTags(id: Long, tags: List<String>) = modify(id) { it.copy(tags = cleanTags(tags)) }
+
+    /** Lent to [person] on [date]; a blank name is ignored. */
+    suspend fun lend(id: Long, person: String, date: Long) {
+        val name = person.trim().takeIf { it.isNotEmpty() } ?: return
+        modify(id) { it.copy(lentTo = name.take(MAX_NAME_LENGTH), lentOn = date) }
+    }
+
+    /** The lent book is back home. */
+    suspend fun returned(id: Long) = modify(id) { it.copy(lentTo = null, lentOn = null) }
+
+    /** Every tag in the library with how many books have it, most used first, then A to Z. */
+    fun observeTags(): Flow<List<TagCount>> = observeBooks(null, "").map { books ->
+        books.flatMap { it.tags }.groupBy { it.lowercase() }
+            .map { (_, same) -> TagCount(same.first(), same.size) }
+            .sortedWith(compareByDescending<TagCount> { it.count }.thenBy { it.name.lowercase() })
+    }
 
     /** Sets the cover (e.g. a new photo) and removes the previous cover photo, if any. */
     suspend fun setCover(id: Long, coverUrl: String?) {
@@ -286,6 +312,10 @@ class BookRepository(
                         pageCount = mine.pageCount ?: book.pageCount,
                         publishedYear = mine.publishedYear ?: book.publishedYear,
                         notes = mine.notes.ifEmpty { book.notes },
+                        // Shelves added on Goodreads join your tags; none are taken away.
+                        tags = cleanTags(mine.tags + book.tags),
+                        series = mine.series ?: book.series,
+                        seriesNumber = if (mine.series != null) mine.seriesNumber else book.seriesNumber,
                     )
                     dao.update(withStatusDates(merged, book.status).toEntity())
                     updated++
@@ -396,12 +426,20 @@ class BookRepository(
         val isbn = book.isbn?.takeIf { it.isNotBlank() }?.let {
             Isbn.normalize(it) ?: return Validation.Invalid(SaveResult.InvalidIsbn)
         }
+        val series = book.series?.trim()?.take(MAX_NAME_LENGTH)?.takeIf { it.isNotEmpty() }
+        val lentTo = book.lentTo?.trim()?.take(MAX_NAME_LENGTH)?.takeIf { it.isNotEmpty() }
         return Validation.Ok(
             book.copy(
                 title = title,
                 isbn = isbn,
                 currentPage = book.currentPage?.takeIf { it >= 0 },
                 progressPercent = book.progressPercent?.coerceIn(0, 100),
+                tags = cleanTags(book.tags),
+                series = series,
+                // A number only means something within a series ("#2" of nothing is dropped).
+                seriesNumber = book.seriesNumber?.trim()?.removePrefix("#")?.trim()?.take(10)?.takeIf { series != null && it.isNotEmpty() },
+                lentTo = lentTo,
+                lentOn = book.lentOn.takeIf { lentTo != null },
             )
         )
     }
