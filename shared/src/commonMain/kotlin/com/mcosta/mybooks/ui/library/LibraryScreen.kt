@@ -158,10 +158,12 @@ fun LibraryScreen(
                 actions = {
                     if (state.filter is BookFilter.Tag) {
                         IconButton(onClick = {
-                            viewModel.setPinned(!state.pinned)
+                            // Decided before the change: by the time the message shows, the state has already flipped.
+                            val pin = !state.pinned
+                            viewModel.setPinned(pin)
                             scope.launch {
                                 snackbar.currentSnackbarData?.dismiss()
-                                snackbar.showSnackbar(if (state.pinned) "Removed from Home" else "Shown on Home")
+                                snackbar.showSnackbar(if (pin) "Shown on Home" else "Removed from Home")
                             }
                         }) {
                             if (state.pinned) Icon(Icons.Filled.PushPin, "Remove from Home") else Icon(Icons.Outlined.PushPin, "Show on Home")
