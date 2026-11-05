@@ -59,6 +59,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.rememberCoroutineScope
 import com.mcosta.mybooks.ui.formatDate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -107,6 +109,7 @@ fun BookDetailScreen(
     val shareExcluded by viewModel.shareExcluded.collectAsStateWithLifecycle()
     val allTags by viewModel.allTags.collectAsStateWithLifecycle()
     val seriesBooks by viewModel.seriesBooks.collectAsStateWithLifecycle()
+    val quotes by viewModel.quotes.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
     var pickingReadDate by remember { mutableStateOf(false) }
@@ -188,6 +191,21 @@ fun BookDetailScreen(
                         CommunityReviews(community, extras::retryCommunity, extras::moreReviews, onJoin, onOpenPerson)
                     }
                 }
+                QuotesSection(
+                    b, quotes,
+                    onAdd = viewModel::addQuote,
+                    onUpdate = viewModel::updateQuote,
+                    onDelete = { quote ->
+                        viewModel.deleteQuote(quote)
+                        scope.launch {
+                            snackbar.currentSnackbarData?.dismiss()
+                            if (snackbar.showSnackbar("Quote deleted", actionLabel = "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                                viewModel.restoreQuote(quote)
+                            }
+                        }
+                    },
+                    onMessage = { scope.launch { snackbar.showSnackbar(it) } },
+                )
                 SectionCard("Notes") {
                     OutlinedTextField(
                         value = notes,

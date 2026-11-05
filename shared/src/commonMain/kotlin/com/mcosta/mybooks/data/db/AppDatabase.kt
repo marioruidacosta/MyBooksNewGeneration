@@ -13,12 +13,13 @@ import com.mcosta.mybooks.domain.splitSeries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 
-@Database(entities = [BookEntity::class, ShareStateEntity::class, ChallengeEntity::class], version = 5, exportSchema = true)
+@Database(entities = [BookEntity::class, ShareStateEntity::class, ChallengeEntity::class, QuoteEntity::class], version = 6, exportSchema = true)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun shareStateDao(): ShareStateDao
     abstract fun challengeDao(): ChallengeDao
+    abstract fun quoteDao(): QuoteDao
 }
 
 /** Implemented by Room's code generator for each platform. */
@@ -30,7 +31,7 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
 /** Finishes a platform's database builder: migrations, SQLite driver and IO dispatcher. */
 fun createDatabase(builder: RoomDatabase.Builder<AppDatabase>, driver: SQLiteDriver): AppDatabase =
     builder
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
         .setDriver(driver)
         .setQueryCoroutineContext(Dispatchers.IO)
         .build()
@@ -97,5 +98,17 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
                 st.step()
             }
         }
+    }
+}
+
+/** v6: quotes from books. */
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(connection: SQLiteConnection) {
+        // Exactly the table and index Room generates (schemas/…/6.json).
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `quotes` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `bookId` INTEGER NOT NULL, " +
+                "`text` TEXT NOT NULL, `page` INTEGER, `dateAdded` INTEGER NOT NULL)"
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_quotes_bookId` ON `quotes` (`bookId`)")
     }
 }

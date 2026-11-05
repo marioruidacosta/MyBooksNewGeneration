@@ -101,6 +101,7 @@ kotlin {
             implementation(libs.sqlite.framework)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.play.services.code.scanner)
+            implementation(libs.play.services.text.recognition)
             implementation(libs.androidx.exifinterface)
         }
         getByName("androidHostTest").dependencies {

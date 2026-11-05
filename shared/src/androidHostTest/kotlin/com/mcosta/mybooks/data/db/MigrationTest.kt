@@ -117,6 +117,22 @@ class MigrationTest {
         db.close()
     }
 
+    /** Version 6 adds quotes: the library survives and the new table starts empty and works. */
+    @Test
+    fun upgradeAddsEmptyQuotes() = runTest {
+        val db = createAndroidDatabase(context, name)
+        assertEquals(2, db.bookDao().getAll().size)
+        assertTrue(db.quoteDao().getAll().isEmpty())
+        val dune = db.bookDao().findByIsbn("9780441013593")!!
+        db.quoteDao().insert(QuoteEntity(bookId = dune.id, text = "Fear is the mind-killer.", page = 8, dateAdded = 1))
+        db.quoteDao().insert(QuoteEntity(bookId = dune.id, text = "The spice must flow.", page = null, dateAdded = 2))
+        db.quoteDao().insert(QuoteEntity(bookId = dune.id, text = "Opening", page = 1, dateAdded = 3))
+        assertEquals(listOf("Opening", "Fear is the mind-killer.", "The spice must flow."), db.quoteDao().forBook(dune.id).map { it.text })
+        db.quoteDao().deleteForBook(dune.id)
+        assertTrue(db.quoteDao().getAll().isEmpty())
+        db.close()
+    }
+
     /**
      * Version 5 adds tags, series and loans. A title imported from Goodreads with its series written in has the
      * series moved out (and is found by its new title); other titles stay as they were.

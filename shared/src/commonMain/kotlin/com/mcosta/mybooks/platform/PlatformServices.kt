@@ -25,10 +25,17 @@ interface DocumentPicker {
     suspend fun open(mimeTypes: List<String>): ByteArray?
 }
 
+/** Reads the text in a photo of a page, on the phone. Throws with a message if it can't. */
+interface PageReader {
+    suspend fun read(photo: ByteArray): String
+}
+
 /** Everything the shared UI needs from the platform, created by each app shell. */
 class PlatformServices(
     val scanner: IsbnScanner,
     val camera: CoverCamera,
     val shrinker: PhotoShrinker,
     val documents: DocumentPicker,
+    /** Null where reading text from photos isn't available (quotes are then typed). */
+    val pageReader: PageReader? = null,
 )

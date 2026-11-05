@@ -18,6 +18,10 @@ import com.mcosta.mybooks.domain.Isbn
 import com.mcosta.mybooks.domain.MAX_GOAL
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.cleanTags
+import com.mcosta.mybooks.domain.MAX_QUOTE_LENGTH
+import com.mcosta.mybooks.domain.Quote
+import com.mcosta.mybooks.data.db.QuoteDao
+import com.mcosta.mybooks.data.db.toQuote
 import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -67,6 +71,8 @@ class BookRepository(
     private val events: ReadingEvents? = null,
     /** Suggestions marked "Not interested", kept in backups; null in tests that don't involve them. */
     private val hiddenSuggestions: HiddenSuggestions? = null,
+    /** Quotes, removed with their book and kept in backups; null in tests that don't involve them. */
+    private val quotes: QuoteDao? = null,
 ) {
     fun observeBooks(status: ReadingStatus?, query: String): Flow<List<Book>> =
         dao.observe(status, searchPattern(query)).map { list -> list.map { it.toBook() } }
@@ -186,6 +192,7 @@ class BookRepository(
     suspend fun delete(id: Long) {
         val book = dao.getById(id)?.toBook()
         dao.delete(id)
+        quotes?.deleteForBook(id)
         coverStore?.delete(book?.coverUrl)
         if (book != null) shareTracker?.deleted(book)
     }
@@ -224,8 +231,10 @@ class BookRepository(
         return importJson(library)
     }
 
-    suspend fun exportJson(): String =
-        BackupSerializer.encode(dao.getAll().map { it.toBook() }, clock(), shares(), challenges?.all().orEmpty(), hiddenSuggestions?.keys?.value.orEmpty())
+    suspend fun exportJson(): String = BackupSerializer.encode(
+        dao.getAll().map { it.toBook() }, clock(), shares(), challenges?.all().orEmpty(), hiddenSuggestions?.keys?.value.orEmpty(),
+        quotes?.getAll().orEmpty().map { it.toQuote() }.groupBy { it.bookId },
+    )
 
     private suspend fun shares() = shareTracker?.exportShares() ?: emptyMap()
 
@@ -237,6 +246,7 @@ class BookRepository(
      */
     suspend fun importJson(json: String): ImportSummary {
         val books = BackupSerializer.decodeWithShares(json)
+        val bookQuotes = BackupSerializer.decodeQuotes(json)
         val goals = BackupSerializer.decodeChallenges(json).filter { it.goal in 1..MAX_GOAL }
         val hidden = BackupSerializer.decodeHiddenSuggestions(json)
         var added = 0
@@ -244,7 +254,8 @@ class BookRepository(
         var failed = 0
         transactionRunner {
             val seenIsbns = mutableSetOf<String>()
-            for ((raw, share) in books) {
+            for ((index, entry) in books.withIndex()) {
+                val (raw, share) = entry
                 val book = (validate(raw.copy(id = 0)) as? Validation.Ok)?.book
                 if (book == null || (book.isbn != null && !seenIsbns.add(book.isbn))) {
                     failed++
@@ -259,11 +270,13 @@ class BookRepository(
                 if (existing != null) {
                     dao.update(withStatusDates(book.copy(id = existing.id, dateAdded = existing.dateAdded), book.status).toEntity())
                     if (share != null) shareTracker?.restored(existing.id, share)
+                    restoreQuotes(existing.id, bookQuotes.getOrNull(index).orEmpty())
                     updated++
                 } else {
                     val dateAdded = if (book.dateAdded > 0) book.dateAdded else clock()
                     val id = dao.insert(withStatusDates(book.copy(dateAdded = dateAdded), book.status).toEntity())
                     if (share != null) shareTracker?.restored(id, share)
+                    restoreQuotes(id, bookQuotes.getOrNull(index).orEmpty())
                     added++
                 }
             }
@@ -271,6 +284,18 @@ class BookRepository(
         for (goal in goals) challenges?.setGoal(goal.year, goal.goal)
         hiddenSuggestions?.addAll(hidden)
         return ImportSummary(added, updated, failed)
+    }
+
+    /** A backup's quotes for book [bookId]; a quote the book already has (same text) is not added twice. */
+    private suspend fun restoreQuotes(bookId: Long, restored: List<Quote>) {
+        val dao = quotes ?: return
+        if (restored.isEmpty()) return
+        val have = dao.forBook(bookId).map { it.text }.toMutableSet()
+        for (q in restored) {
+            val text = q.text.trim().take(MAX_QUOTE_LENGTH).trim()
+            if (text.isEmpty() || !have.add(text)) continue
+            dao.insert(q.copy(id = 0, bookId = bookId, text = text, page = q.page?.takeIf { it > 0 }, dateAdded = q.dateAdded.takeIf { it > 0 } ?: clock()).toEntity())
+        }
     }
 
     /** The library as a Goodreads CSV (for goodreads.com's import). */

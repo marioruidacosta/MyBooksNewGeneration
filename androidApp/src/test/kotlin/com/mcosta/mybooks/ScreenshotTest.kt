@@ -14,6 +14,10 @@ import androidx.test.core.app.ApplicationProvider
 import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.ChallengeRepository
 import com.mcosta.mybooks.data.PinnedTags
+import com.mcosta.mybooks.data.QuoteRepository
+import com.mcosta.mybooks.ui.scan.BatchScanScreen
+import com.mcosta.mybooks.ui.scan.BatchScanViewModel
+import com.mcosta.mybooks.ui.scan.ScanResult
 import com.mcosta.mybooks.domain.BookFilter
 import com.mcosta.mybooks.data.backup.BackupSerializer
 import com.mcosta.mybooks.data.covers.CoverStore
@@ -157,9 +161,35 @@ class ScreenshotTest {
 
     private fun bookPage(dark: Boolean) {
         val id = sampleLibrary()
-        val vm = BookDetailViewModel(repo, id, CoroutineScope(SupervisorJob() + Dispatchers.Default))
-        shoot("book", dark, ready = { vm.book.value != null }) {
+        val quotes = QuoteRepository(db.quoteDao())
+        runBlocking {
+            quotes.add(id, "Sem a vontade não se levanta nem um convento nem uma passarola.", 152)
+            quotes.add(id, "Os olhos de Blimunda viam por dentro das pessoas.", 78)
+        }
+        val vm = BookDetailViewModel(repo, id, CoroutineScope(SupervisorJob() + Dispatchers.Default), quoteRepo = quotes)
+        shoot("book", dark, ready = { vm.book.value != null && vm.quotes.value.size == 2 }) {
             BookDetailScreen(vm, onBack = {}, onEdit = {})
+        }
+    }
+
+    /** Scan several, after a few barcodes: added, already in the library, unknown. */
+    private fun batchScan(dark: Boolean) {
+        sampleLibrary()
+        val finder = BookRepository(db.bookDao(), object : BookLookupService {
+            override suspend fun lookup(isbn: String): LookupResult = when (isbn) {
+                "9789722036504" -> LookupResult.Found(Book(title = "A Cidade e as Serras", authors = "Eça de Queirós", publisher = "Porto Editora"))
+                "9780441013593" -> LookupResult.Found(Book(title = "Dune", authors = "Frank Herbert"))
+                else -> LookupResult.NotFound
+            }
+        })
+        val vm = BatchScanViewModel(finder)
+        vm.scanned("9780441013593")
+        vm.scanned("9789720046857")       // Memorial do Convento: already in the library
+        vm.scanned("9789720000004")
+        vm.setStatus(ReadingStatus.WISHLIST)
+        vm.scanned("9789722036504")
+        shoot("scan-several", dark, ready = { vm.state.value.items.none { it.result == ScanResult.Looking } }) {
+            BatchScanScreen(vm, onBack = {}, onAddManually = {}, onOpenBook = {})
         }
     }
 
@@ -199,6 +229,8 @@ class ScreenshotTest {
     @Config(qualifiers = TALL) @Test fun bookPageDark() = bookPage(dark = true)
     @Config(qualifiers = TALL) @Test fun seriesBookLight() = seriesBook(dark = false)
     @Test fun tagLight() = tag(dark = false)
+    @Test fun scanSeveralLight() = batchScan(dark = false)
+    @Test fun scanSeveralDark() = batchScan(dark = true)
 
     private companion object {
         const val TALL = "w411dp-h1600dp-xxhdpi"
