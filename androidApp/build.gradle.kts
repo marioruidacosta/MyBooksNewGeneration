@@ -65,4 +65,11 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // Screen tests: the main screens drawn by Robolectric and saved as images (build/screenshots).
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.okio)
+    testImplementation(libs.kotlinx.datetime)
+    testImplementation(libs.room.runtime)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

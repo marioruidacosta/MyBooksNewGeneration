@@ -92,7 +92,9 @@ fun SettingsScreen(
             Text(
                 "Save your whole library, including cover photos, to a .zip file, or restore it " +
                     "(older .json backups work too). Importing merges: matching books are updated, " +
-                    "others are added. Nothing is deleted.",
+                    "others are added. Nothing is deleted. Your phone also backs up the library, settings and cover " +
+                    "photos by itself (to your Google account on Android, iCloud on iPhone, when backup is on in the " +
+                    "phone's settings) and brings them back on a new phone.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             OutlinedButton(
