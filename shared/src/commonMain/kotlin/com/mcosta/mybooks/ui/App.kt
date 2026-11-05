@@ -15,14 +15,20 @@ val LocalPlatformServices = staticCompositionLocalOf<PlatformServices> { error("
 
 /** The whole app, shared by Android and iOS. */
 @Composable
-fun App(container: AppContainer, services: PlatformServices) {
+fun App(
+    container: AppContainer,
+    services: PlatformServices,
+    /** A screen to open now (from a notification); [onOpened] is called once it is. */
+    openRoute: String? = null,
+    onOpened: () -> Unit = {},
+) {
     val followWallpaper by container.appearance.followWallpaper.collectAsState()
     MyBooksTheme(followWallpaper) {
         CompositionLocalProvider(
             LocalCoverStore provides container.coverStore,
             LocalPlatformServices provides services,
         ) {
-            MyBooksNavHost(container)
+            MyBooksNavHost(container, openRoute, onOpened)
         }
     }
 }

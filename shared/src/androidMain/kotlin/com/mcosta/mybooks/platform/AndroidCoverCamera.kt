@@ -73,7 +73,7 @@ class AndroidDocumentPicker(private val activity: ComponentActivity, private val
 }
 
 /** The Android implementations of everything the shared UI needs from the platform. */
-fun androidPlatformServices(activity: ComponentActivity): PlatformServices {
+fun androidPlatformServices(activity: ComponentActivity, monthlyAlerts: MonthlyAlerts? = null): PlatformServices {
     val results = ActivityResults(activity)
     return PlatformServices(
         scanner = AndroidIsbnScanner(activity),
@@ -81,5 +81,7 @@ fun androidPlatformServices(activity: ComponentActivity): PlatformServices {
         shrinker = AndroidPhotoShrinker,
         documents = AndroidDocumentPicker(activity, results),
         pageReader = AndroidPageReader(),
+        imageSharer = AndroidImageSharer(activity),
+        monthlyAlerts = monthlyAlerts,
     )
 }

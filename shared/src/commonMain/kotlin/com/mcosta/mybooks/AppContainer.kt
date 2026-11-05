@@ -96,6 +96,9 @@ class AppContainer(
     /** Tags shown as rows on the home screen. */
     val pinnedTags = com.mcosta.mybooks.data.PinnedTags(preferences)
 
+    /** The monthly notification of New in Portugal books by your authors and publishers. */
+    val releaseAlerts = com.mcosta.mybooks.data.releases.ReleaseAlerts(releases, { repository.observeBooks(null, "").first() }, preferences)
+
     /** Yearly reading challenges. */
     val challenges = ChallengeRepository(database.challengeDao())
 
@@ -137,6 +140,12 @@ class AppContainer(
 
     /** Looks up missing covers (e.g. after a Goodreads import) in the background. */
     val coverFinder = CoverFinder(repository, applicationScope)
+
+    /** What the home-screen widget shows, today, following the library. */
+    val readingSummaries: kotlinx.coroutines.flow.Flow<com.mcosta.mybooks.domain.ReadingSummary> =
+        kotlinx.coroutines.flow.combine(repository.observeBooks(null, ""), challenges.observe()) { books, goals ->
+            com.mcosta.mybooks.domain.readingSummary(books, goals, com.mcosta.mybooks.ui.today(), kotlinx.datetime.TimeZone.currentSystemDefault())
+        }
 }
 
 /** The social services when [config] is complete, else null (nothing is created or contacted). */
