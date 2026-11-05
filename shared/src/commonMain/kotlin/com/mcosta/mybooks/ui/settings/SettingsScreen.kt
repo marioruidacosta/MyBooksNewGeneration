@@ -50,6 +50,7 @@ fun SettingsScreen(
     val message by viewModel.message.collectAsStateWithLifecycle()
     val coverProgress by viewModel.coverProgress.collectAsStateWithLifecycle()
     val followWallpaper by viewModel.followWallpaper.collectAsStateWithLifecycle()
+    val alertsOn by viewModel.alertsOn.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -85,6 +86,21 @@ fun SettingsScreen(
                         )
                     }
                     Switch(checked = followWallpaper, onCheckedChange = viewModel::setFollowWallpaper)
+                }
+                HorizontalDivider()
+            }
+            if (viewModel.alertsAvailable) {
+                Text("Notifications", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("New books from your authors", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Once a month, when New in Portugal has books by authors you have, or from publishers you read most.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = alertsOn, onCheckedChange = viewModel::setAlerts)
                 }
                 HorizontalDivider()
             }

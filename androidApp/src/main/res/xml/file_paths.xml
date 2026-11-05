@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Shared with the camera app only for the photo it is asked to take. -->
+<!-- Shared with the camera app only for the photo it is asked to take, and with the app chosen to share a picture. -->
 <paths>
     <cache-path name="camera" path="camera/" />
+    <cache-path name="shared" path="shared/" />
 </paths>

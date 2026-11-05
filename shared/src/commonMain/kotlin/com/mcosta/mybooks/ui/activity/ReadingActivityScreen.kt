@@ -20,6 +20,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -65,6 +68,8 @@ fun ReadingActivityScreen(
     onOpenBook: (Long) -> Unit,
     /** The books read in a year; null for read books without a read date. */
     onOpenYear: (Int?) -> Unit,
+    /** The year in review of a year with books read. */
+    onOpenReview: (Int) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<GoalEdit?>(null) }
@@ -108,6 +113,15 @@ fun ReadingActivityScreen(
             state.stats?.let { stats ->
                 item { Heading("Statistics") }
                 item { StatsSection(state.statsYears, stats, onYear = viewModel::showStats, modifier = Modifier.padding(top = 4.dp)) }
+                if (stats.books > 0) item {
+                    FilledTonalButton(
+                        onClick = { onOpenReview(stats.year) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    ) {
+                        Icon(Icons.Filled.AutoAwesome, null, Modifier.size(18.dp))
+                        Text("Your ${stats.year} in review", Modifier.padding(start = 8.dp))
+                    }
+                }
             }
             item { Heading("Read in ${state.year} · ${state.readThisYear.size}") }
             if (state.readThisYear.isEmpty()) {

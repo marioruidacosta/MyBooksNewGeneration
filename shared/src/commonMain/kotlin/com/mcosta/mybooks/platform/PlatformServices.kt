@@ -1,6 +1,7 @@
 package com.mcosta.mybooks.platform
 
 import com.mcosta.mybooks.data.covers.PhotoShrinker
+import androidx.compose.ui.graphics.ImageBitmap
 
 sealed interface ScanOutcome {
     data class Isbn(val isbn: String) : ScanOutcome
@@ -30,6 +31,20 @@ interface PageReader {
     suspend fun read(photo: ByteArray): String
 }
 
+/** Shares a picture through the platform's share sheet. Throws with a message if it can't. */
+interface ImageSharer {
+    suspend fun share(image: ImageBitmap, name: String)
+}
+
+/**
+ * Runs the monthly New in Portugal check in the background. [enable] asks for permission to notify where needed and
+ * returns false if it isn't given.
+ */
+interface MonthlyAlerts {
+    suspend fun enable(): Boolean
+    fun disable()
+}
+
 /** Everything the shared UI needs from the platform, created by each app shell. */
 class PlatformServices(
     val scanner: IsbnScanner,
@@ -38,4 +53,8 @@ class PlatformServices(
     val documents: DocumentPicker,
     /** Null where reading text from photos isn't available (quotes are then typed). */
     val pageReader: PageReader? = null,
+    /** Null where sharing pictures isn't available (the Share button is then hidden). */
+    val imageSharer: ImageSharer? = null,
+    /** Null where background notifications aren't available (the setting is then hidden). */
+    val monthlyAlerts: MonthlyAlerts? = null,
 )

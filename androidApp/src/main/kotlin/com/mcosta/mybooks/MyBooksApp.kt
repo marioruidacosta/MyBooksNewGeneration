@@ -1,7 +1,9 @@
 package com.mcosta.mybooks
 
 import android.app.Application
+import com.mcosta.mybooks.alerts.ReleaseAlertWorker
 import com.mcosta.mybooks.social.SocialConfig
+import com.mcosta.mybooks.widget.ReadingWidget
 
 class MyBooksApp : Application() {
     lateinit var container: AppContainer
@@ -15,5 +17,8 @@ class MyBooksApp : Application() {
             BuildConfig.VERSION_NAME,
             SocialConfig(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY),
         )
+        // Kept scheduled while turned on (e.g. after a backup is restored on a new phone).
+        if (container.releaseAlerts.enabled) ReleaseAlertWorker.schedule(this)
+        ReadingWidget.follow(this, container)
     }
 }

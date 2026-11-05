@@ -6,6 +6,8 @@ import com.mcosta.mybooks.data.Appearance
 import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.CoverFinder
 import com.mcosta.mybooks.platform.DocumentPicker
+import com.mcosta.mybooks.platform.MonthlyAlerts
+import com.mcosta.mybooks.data.releases.ReleaseAlerts
 import com.mcosta.mybooks.ui.today as currentDate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +23,31 @@ class SettingsViewModel(
     private val covers: CoverFinder? = null,
     /** Book or wallpaper colours; null in tests that don't involve it. */
     private val appearance: Appearance? = null,
+    /** The monthly New in Portugal notification and the platform's scheduling of it; null where unavailable. */
+    private val releaseAlerts: ReleaseAlerts? = null,
+    private val monthlyAlerts: MonthlyAlerts? = null,
 ) : ViewModel() {
+    /** Whether the phone can send the monthly notification (Android). */
+    val alertsAvailable: Boolean get() = releaseAlerts != null && monthlyAlerts != null
+
+    private val _alertsOn = MutableStateFlow(releaseAlerts?.enabled == true)
+    val alertsOn: StateFlow<Boolean> = _alertsOn.asStateFlow()
+
+    /** Turns the monthly notification on (asking for permission to notify) or off. */
+    fun setAlerts(on: Boolean) {
+        val alerts = releaseAlerts ?: return
+        val platform = monthlyAlerts ?: return
+        viewModelScope.launch {
+            if (on && !platform.enable()) {
+                _message.value = "MyBooks isn't allowed to send notifications. You can allow them in the phone's settings."
+                return@launch
+            }
+            if (!on) platform.disable()
+            alerts.setEnabled(on)
+            _alertsOn.value = on
+        }
+    }
+
     /** Whether the app takes its colours from the wallpaper. */
     val followWallpaper: StateFlow<Boolean> = appearance?.followWallpaper ?: MutableStateFlow(false)
 

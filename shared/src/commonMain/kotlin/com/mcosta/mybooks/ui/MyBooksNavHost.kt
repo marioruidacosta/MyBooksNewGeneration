@@ -17,6 +17,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -66,6 +67,8 @@ import com.mcosta.mybooks.ui.edit.EditBookScreen
 import com.mcosta.mybooks.ui.edit.EditBookViewModel
 import com.mcosta.mybooks.domain.BookFilter
 import com.mcosta.mybooks.ui.scan.BatchScanScreen
+import com.mcosta.mybooks.ui.activity.YearReviewScreen
+import com.mcosta.mybooks.ui.activity.YearReviewViewModel
 import com.mcosta.mybooks.ui.scan.BatchScanViewModel
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.ui.celebrate.CelebrationDialog
@@ -102,6 +105,8 @@ object Routes {
     const val SUGGESTIONS = "suggestions"
     /** The books read in {year}, or "undated" for read books without a read date. */
     const val READ_YEAR = "reading-activity/{year}"
+    /** A year of reading as a shareable review. */
+    const val YEAR_REVIEW = "year-review/{year}"
     const val ADD = "add?isbn={isbn}"
     const val EDIT = "edit/{id}"
     const val BOOK = "book/{id}"
@@ -122,6 +127,7 @@ object Routes {
 
     fun shelf(section: ReadingStatus?, search: Boolean = false) = "shelf/${section?.name ?: ALL_SHELF}?search=$search"
     fun readYear(year: Int?) = "reading-activity/${year ?: UNDATED}"
+    fun yearReview(year: Int) = "year-review/$year"
     const val ALL_SHELF = "ALL"
     const val UNDATED = "undated"
     fun add(isbn: String? = null) = if (isbn == null) "add" else "add?isbn=$isbn"
@@ -140,10 +146,17 @@ object Routes {
 }
 
 @Composable
-fun MyBooksNavHost(container: AppContainer) {
+fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened: () -> Unit = {}) {
     val social = container.social
     val sharing = container.sharingStatus?.state?.collectAsStateWithLifecycle()?.value ?: SharingState()
     val nav = rememberNavController()
+    // Effects run after the graph is set, so the route can be opened here.
+    LaunchedEffect(openRoute) {
+        if (openRoute != null) {
+            nav.navigate(openRoute) { launchSingleTop = true }
+            onOpened()
+        }
+    }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val services = LocalPlatformServices.current
@@ -283,6 +296,15 @@ fun MyBooksNavHost(container: AppContainer) {
                     onBack = { nav.popBackStack() },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     onOpenYear = { nav.navigate(Routes.readYear(it)) },
+                    onOpenReview = { nav.navigate(Routes.yearReview(it)) },
+                )
+            }
+            composable(Routes.YEAR_REVIEW, arguments = listOf(navArgument("year") { type = NavType.IntType })) { entry ->
+                val year = entry.savedStateHandle.get<Int>("year")!!
+                YearReviewScreen(
+                    viewModel = viewModel { YearReviewViewModel(container.repository, container.challenges, year) },
+                    onBack = { nav.popBackStack() },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
             composable(Routes.READ_YEAR, arguments = listOf(navArgument("year") { type = NavType.StringType })) { entry ->
@@ -405,7 +427,7 @@ fun MyBooksNavHost(container: AppContainer) {
             composable(Routes.SETTINGS) {
                 val session = social?.auth?.session?.collectAsStateWithLifecycle()?.value
                 SettingsScreen(
-                    viewModel = viewModel { SettingsViewModel(container.repository, services.documents, covers = container.coverFinder, appearance = container.appearance) },
+                    viewModel = viewModel { SettingsViewModel(container.repository, services.documents, covers = container.coverFinder, appearance = container.appearance, releaseAlerts = container.releaseAlerts, monthlyAlerts = services.monthlyAlerts) },
                     onBack = null,
                     accountLabel = social?.let {
                         if (session is SessionState.SignedIn) "Your community account" else "Join the MyBooks community"
