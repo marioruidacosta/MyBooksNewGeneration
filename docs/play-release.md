@@ -1,4 +1,4 @@
-# Releasing MyBooks NG on Google Play
+# Releasing MyBooks on Google Play
 
 Everything below is ready except the Google Play developer account. With an account, a release takes about an hour the
 first time, mostly filling in Play Console forms.
@@ -19,7 +19,7 @@ password manager. If the upload key is lost, Google can replace it (Play Console
 
 ## First release
 
-1. Play Console › **Create app**: name *MyBooks NG*, app, free.
+1. Play Console › **Create app**: name *MyBooks*, app, free. (Release builds are called MyBooks; debug builds installed from this computer stay "MyBooks NG", so the two apps can be told apart on one phone.)
 2. **App integrity**: keep *Play App Signing* on (Google keeps the app signing key; you upload with the upload key).
 3. **Google Books key**: Play re-signs the app with Google's app signing key, so add that key's SHA-1 (App integrity ›
    App signing key certificate) to the Android restriction of the Google Books API key in Google Cloud Console, next

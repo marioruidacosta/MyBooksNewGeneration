@@ -45,10 +45,16 @@ android {
         null
     }
 
+    // Published as "MyBooks". Debug builds keep "MyBooks NG" so they can be told apart on a phone that also has the
+    // original MyBooks app installed.
     buildTypes {
+        debug {
+            resValue("string", "app_name", "MyBooks NG")
+        }
         release {
             isMinifyEnabled = false
             signingConfig = release
+            resValue("string", "app_name", "MyBooks")
         }
     }
     compileOptions {
@@ -58,6 +64,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true

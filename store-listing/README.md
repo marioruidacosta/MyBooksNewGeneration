@@ -20,7 +20,7 @@ Edge or Chrome: `msedge --headless=new --hide-scrollbars --window-size=1080,1920
 
 **App name** (30 max)
 
-> MyBooks NG
+> MyBooks
 
 **Short description** (80 max)
 
@@ -28,7 +28,7 @@ Edge or Chrome: `msedge --headless=new --hide-scrollbars --window-size=1080,1920
 
 **Full description** (4000 max)
 
-> MyBooks NG is a personal library for the books you read, want to read and want to buy. Your library lives on your
+> MyBooks is a personal library for the books you read, want to read and want to buy. Your library lives on your
 > phone, with no ads and no tracking.
 >
 > TRACK YOUR READING
@@ -69,7 +69,7 @@ Edge or Chrome: `msedge --headless=new --hide-scrollbars --window-size=1080,1920
 
 **Nome da app**
 
-> MyBooks NG
+> MyBooks
 
 **Descrição breve** (80 no máximo)
 
@@ -77,7 +77,7 @@ Edge or Chrome: `msedge --headless=new --hide-scrollbars --window-size=1080,1920
 
 **Descrição completa**
 
-> O MyBooks NG é uma biblioteca pessoal para os livros que lê, quer ler e quer comprar. A sua biblioteca fica no
+> O MyBooks é uma biblioteca pessoal para os livros que lê, quer ler e quer comprar. A sua biblioteca fica no
 > telemóvel, sem anúncios e sem rastreio. A aplicação está em inglês.
 >
 > ACOMPANHE AS SUAS LEITURAS
