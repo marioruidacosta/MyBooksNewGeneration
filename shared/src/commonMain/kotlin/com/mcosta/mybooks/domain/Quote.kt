@@ -10,6 +10,8 @@ data class Quote(
     val text: String,
     val page: Int? = null,
     val dateAdded: Long = 0,
+    /** Set for highlights made in the reader: where the quote is in the ebook (locator JSON). */
+    val position: String? = null,
 )
 
 /**

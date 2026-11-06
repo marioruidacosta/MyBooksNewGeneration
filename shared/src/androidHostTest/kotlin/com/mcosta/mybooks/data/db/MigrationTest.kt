@@ -3,6 +3,7 @@ package com.mcosta.mybooks.data.db
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
+import com.mcosta.mybooks.domain.EbookFormat
 import com.mcosta.mybooks.domain.ReadingStatus
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -114,6 +115,27 @@ class MigrationTest {
         )
         db.shareStateDao().upsert(row)
         assertEquals(row, db.shareStateDao().get(dune.id))
+        db.close()
+    }
+
+    /** Version 7 adds ebooks and bookmarks, and a position on quotes (for highlights); old quotes have none. */
+    @Test
+    fun upgradeTo7AddsEbooksBookmarksAndQuotePositions() = runTest {
+        val db = createAndroidDatabase(context, name)
+        assertTrue(db.ebookDao().getAll().isEmpty())
+        assertTrue(db.bookmarkDao().getAll().isEmpty())
+        val dune = db.bookDao().findByIsbn("9780441013593")!!
+        db.ebookDao().upsert(EbookEntity(dune.id, EbookFormat.EPUB, "dune.epub", 1234, dateAdded = 5))
+        db.ebookDao().setPosition(dune.id, "{\"href\":\"ch2.xhtml\"}", lastOpened = 9)
+        assertEquals(EbookEntity(dune.id, EbookFormat.EPUB, "dune.epub", 1234, 5, "{\"href\":\"ch2.xhtml\"}", 9), db.ebookDao().get(dune.id))
+        val id = db.bookmarkDao().insert(BookmarkEntity(bookId = dune.id, position = "{\"href\":\"ch1.xhtml\"}", label = "Chapter 1", dateAdded = 6))
+        assertEquals(listOf(id), db.bookmarkDao().forBook(dune.id).map { it.id })
+
+        val old = db.quoteDao().insert(QuoteEntity(bookId = dune.id, text = "Fear is the mind-killer.", page = 8, dateAdded = 1))
+        val highlight = db.quoteDao().insert(QuoteEntity(bookId = dune.id, text = "The spice must flow.", page = null, dateAdded = 2, position = "{\"href\":\"ch1.xhtml\"}"))
+        val quotes = db.quoteDao().forBook(dune.id).associateBy { it.id }
+        assertNull(quotes.getValue(old).position)
+        assertEquals("{\"href\":\"ch1.xhtml\"}", quotes.getValue(highlight).position)
         db.close()
     }
 
