@@ -14,6 +14,9 @@ coil = "3.6.3"
 codeScanner = "16.1.0"
 textRecognition = "19.0.2"
 work = "2.11.2"
+readium = "3.4.0"
+desugarJdkLibs = "2.1.5"
+fragment = "1.9.1"
 coroutines = "1.11.0"
 junit = "4.13.2"
 robolectric = "4.17"
@@ -56,6 +59,13 @@ coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version
 play-services-code-scanner = { module = "com.google.android.gms:play-services-code-scanner", version.ref = "codeScanner" }
 play-services-text-recognition = { module = "com.google.android.gms:play-services-mlkit-text-recognition", version.ref = "textRecognition" }
 work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
+readium-shared = { module = "org.readium.kotlin-toolkit:readium-shared", version.ref = "readium" }
+readium-streamer = { module = "org.readium.kotlin-toolkit:readium-streamer", version.ref = "readium" }
+readium-navigator = { module = "org.readium.kotlin-toolkit:readium-navigator", version.ref = "readium" }
+readium-adapter-pdfium = { module = "org.readium.kotlin-toolkit:readium-adapter-pdfium", version.ref = "readium" }
+readium-navigator-media-tts = { module = "org.readium.kotlin-toolkit:readium-navigator-media-tts", version.ref = "readium" }
+desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }
+androidx-fragment = { module = "androidx.fragment:fragment-ktx", version.ref = "fragment" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
@@ -94,6 +104,7 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 room = { id = "androidx.room", version.ref = "room" }
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

@@ -60,6 +60,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // The reader (Readium) needs Java 8+ APIs desugared on older Androids.
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
@@ -81,6 +83,8 @@ android {
 
 dependencies {
     implementation(project(":shared"))
+    implementation(project(":androidReader"))
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.androidx.core.ktx)
     implementation(libs.work.runtime)
     implementation(libs.androidx.activity.compose)
