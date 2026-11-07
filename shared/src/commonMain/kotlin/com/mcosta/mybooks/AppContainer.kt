@@ -41,6 +41,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import okio.FileSystem
+import com.mcosta.mybooks.data.ebooks.EbookFiles
+import com.mcosta.mybooks.data.ebooks.EbookRepository
 import okio.Path
 
 /** Hand-wired app dependencies, created once per app from the platform's pieces. */
@@ -57,7 +59,11 @@ class AppContainer(
     /** Where New in Portugal's downloaded lists are saved. */
     releasesFileSystem: FileSystem,
     releasesDir: Path,
+    /** Where ebook files are kept: `files/ebooks` on Android (next to the releases folder). */
+    ebooksDir: Path = releasesDir.parent?.div("ebooks") ?: releasesDir / "ebooks",
 ) {
+    private val ebookFiles = EbookFiles(releasesFileSystem, ebooksDir)
+
     /** Outlives screens; used for writes that must finish after a screen closes. */
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -121,6 +127,9 @@ class AppContainer(
         events = events,
         hiddenSuggestions = hiddenSuggestions,
         quotes = database.quoteDao(),
+        ebooks = database.ebookDao(),
+        bookmarks = database.bookmarkDao(),
+        ebookFiles = ebookFiles,
     )
 
     /** Book suggestions from the library (worked out once per session, or on refresh). */
@@ -140,6 +149,9 @@ class AppContainer(
 
     /** Looks up missing covers (e.g. after a Goodreads import) in the background. */
     val coverFinder = CoverFinder(repository, applicationScope)
+
+    /** Books' ebook files, reading positions and bookmarks. */
+    val ebooks = EbookRepository(database.ebookDao(), database.bookmarkDao(), ebookFiles, repository)
 
     /** What the home-screen widget shows, today, following the library. */
     val readingSummaries: kotlinx.coroutines.flow.Flow<com.mcosta.mybooks.domain.ReadingSummary> =

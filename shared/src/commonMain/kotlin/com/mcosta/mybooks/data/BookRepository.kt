@@ -21,6 +21,9 @@ import com.mcosta.mybooks.domain.cleanTags
 import com.mcosta.mybooks.domain.MAX_QUOTE_LENGTH
 import com.mcosta.mybooks.domain.Quote
 import com.mcosta.mybooks.data.db.QuoteDao
+import com.mcosta.mybooks.data.db.EbookDao
+import com.mcosta.mybooks.data.db.BookmarkDao
+import com.mcosta.mybooks.data.ebooks.EbookFiles
 import com.mcosta.mybooks.data.db.toQuote
 import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.coroutineScope
@@ -73,6 +76,10 @@ class BookRepository(
     private val hiddenSuggestions: HiddenSuggestions? = null,
     /** Quotes, removed with their book and kept in backups; null in tests that don't involve them. */
     private val quotes: QuoteDao? = null,
+    /** Ebook files and bookmarks, removed with their book; null in tests that don't involve them. */
+    private val ebooks: EbookDao? = null,
+    private val bookmarks: BookmarkDao? = null,
+    private val ebookFiles: EbookFiles? = null,
 ) {
     fun observeBooks(status: ReadingStatus?, query: String): Flow<List<Book>> =
         dao.observe(status, searchPattern(query)).map { list -> list.map { it.toBook() } }
@@ -193,6 +200,9 @@ class BookRepository(
         val book = dao.getById(id)?.toBook()
         dao.delete(id)
         quotes?.deleteForBook(id)
+        ebooks?.get(id)?.let { ebookFiles?.delete(id, it.format) }
+        ebooks?.delete(id)
+        bookmarks?.deleteForBook(id)
         coverStore?.delete(book?.coverUrl)
         if (book != null) shareTracker?.deleted(book)
     }
