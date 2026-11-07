@@ -26,3 +26,24 @@ data class Bookmark(
     val label: String,
     val dateAdded: Long,
 )
+
+/** What an ebook file says about itself; any of it may be missing. */
+data class EbookMetadata(
+    val title: String?,
+    val authors: List<String>,
+    val isbn: String?,
+    val language: String?,
+)
+
+/** "Queirós, Eça de" (as catalogues and many ebooks write names) → "Eça de Queirós"; other names are only trimmed. */
+fun personName(raw: String): String {
+    val name = raw.trim()
+    val parts = name.split(',').map { it.trim() }
+    return if (parts.size == 2 && parts.all { it.isNotEmpty() }) "${parts[1]} ${parts[0]}" else name
+}
+
+/** A title from a file name: "Os_Maias.epub" → "Os Maias". */
+fun titleFromFileName(name: String): String =
+    name.substringAfterLast('/').substringAfterLast('\\')
+        .let { if ('.' in it && it.substringAfterLast('.').length in 2..5) it.substringBeforeLast('.') else it }
+        .replace('_', ' ').replace(Regex("""\s+"""), " ").trim()
