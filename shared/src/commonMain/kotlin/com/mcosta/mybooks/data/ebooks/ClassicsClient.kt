@@ -30,17 +30,20 @@ interface ClassicsSource {
     suspend fun download(classic: Classic, into: suspend (Source) -> Unit)
 }
 
+/** How long a search waits: Gutendex often takes 40–50 seconds to answer. */
+const val CLASSICS_SEARCH_TIMEOUT_MS = 90_000L
+
 /** Project Gutenberg (through Gutendex) couldn't be reached, answered with an error, or took too long. */
 class ClassicsUnavailable(cause: Throwable? = null) : Exception("Project Gutenberg couldn't be reached", cause)
 
 /**
  * Searches Project Gutenberg's free books through the Gutendex API and downloads their EPUBs. Searches can be slow:
- * they wait up to [timeoutMillis] (30 s), downloads four times as long.
+ * they wait up to [timeoutMillis] (a minute and a half), downloads twice as long.
  */
 class ClassicsClient(
     private val http: HttpClient,
     private val base: String = "https://gutendex.com/books/",
-    private val timeoutMillis: Long = 30_000,
+    private val timeoutMillis: Long = CLASSICS_SEARCH_TIMEOUT_MS,
 ) : ClassicsSource {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -48,7 +51,8 @@ class ClassicsClient(
     override suspend fun search(query: String): List<Classic> = unavailableOnFailure {
         val response = http.get(base) {
             parameter("search", query.trim())
-            timeout { requestTimeoutMillis = timeoutMillis }
+            // Gutendex sends nothing until its answer is ready: the socket must wait as long as the request.
+            timeout { requestTimeoutMillis = timeoutMillis; socketTimeoutMillis = timeoutMillis }
         }
         if (!response.status.isSuccess()) throw ClassicsUnavailable()
         json.decodeFromString<Page>(response.bodyAsText()).results.mapNotNull { it.toClassic() }
@@ -57,7 +61,7 @@ class ClassicsClient(
     /** Downloads [classic]'s EPUB and hands it to [into]. EPUBs from Gutenberg are a few MB, so it is read whole. */
     override suspend fun download(classic: Classic, into: suspend (Source) -> Unit) {
         val bytes = unavailableOnFailure {
-            val response = http.get(classic.epubUrl) { timeout { requestTimeoutMillis = timeoutMillis * 4 } }
+            val response = http.get(classic.epubUrl) { timeout { requestTimeoutMillis = timeoutMillis * 2; socketTimeoutMillis = timeoutMillis } }
             if (!response.status.isSuccess()) throw ClassicsUnavailable()
             response.bodyAsBytes()
         }
