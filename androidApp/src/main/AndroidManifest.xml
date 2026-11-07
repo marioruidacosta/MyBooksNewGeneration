@@ -39,6 +39,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- The ebook reader (androidReader). Turning the phone keeps the book open instead of reloading it. -->
+        <activity
+            android:name="com.mcosta.mybooks.reader.ReaderActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
         <receiver
             android:name=".widget.ReadingWidget"
             android:exported="false"

@@ -5,8 +5,8 @@ import com.mcosta.mybooks.alerts.ReleaseAlertWorker
 import com.mcosta.mybooks.social.SocialConfig
 import com.mcosta.mybooks.widget.ReadingWidget
 
-class MyBooksApp : Application() {
-    lateinit var container: AppContainer
+class MyBooksApp : Application(), ContainerOwner {
+    override lateinit var container: AppContainer
         private set
 
     override fun onCreate() {

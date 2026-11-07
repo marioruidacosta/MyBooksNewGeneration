@@ -8,6 +8,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
 import com.mcosta.mybooks.alerts.AndroidMonthlyAlerts
 import com.mcosta.mybooks.platform.androidPlatformServices
+import com.mcosta.mybooks.reader.AndroidEbookPlatform
+import com.mcosta.mybooks.reader.ReaderActivity
 import com.mcosta.mybooks.ui.App
 
 class MainActivity : ComponentActivity() {
@@ -18,7 +20,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val container = (application as MyBooksApp).container
-        val services = androidPlatformServices(this, monthlyAlerts = AndroidMonthlyAlerts(this))
+        val services = androidPlatformServices(
+            this,
+            monthlyAlerts = AndroidMonthlyAlerts(this),
+            ebooks = { results -> AndroidEbookPlatform(this, results, openReader = { ReaderActivity.start(this, it) }) },
+        )
         if (savedInstanceState == null) openFrom(intent)
         setContent {
             App(container, services, openRoute = openRoute.value, onOpened = { openRoute.value = null })

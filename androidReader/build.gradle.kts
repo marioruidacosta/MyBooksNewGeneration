@@ -45,6 +45,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons)
     implementation(libs.okio)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 

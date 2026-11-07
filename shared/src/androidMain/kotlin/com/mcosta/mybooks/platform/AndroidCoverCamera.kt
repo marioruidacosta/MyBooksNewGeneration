@@ -73,7 +73,12 @@ class AndroidDocumentPicker(private val activity: ComponentActivity, private val
 }
 
 /** The Android implementations of everything the shared UI needs from the platform. */
-fun androidPlatformServices(activity: ComponentActivity, monthlyAlerts: MonthlyAlerts? = null): PlatformServices {
+fun androidPlatformServices(
+    activity: ComponentActivity,
+    monthlyAlerts: MonthlyAlerts? = null,
+    /** The ebook reader, made with the same [ActivityResults] as the other pickers. */
+    ebooks: ((ActivityResults) -> EbookPlatform)? = null,
+): PlatformServices {
     val results = ActivityResults(activity)
     return PlatformServices(
         scanner = AndroidIsbnScanner(activity),
@@ -83,5 +88,6 @@ fun androidPlatformServices(activity: ComponentActivity, monthlyAlerts: MonthlyA
         pageReader = AndroidPageReader(),
         imageSharer = AndroidImageSharer(activity),
         monthlyAlerts = monthlyAlerts,
+        ebooks = ebooks?.invoke(results),
     )
 }

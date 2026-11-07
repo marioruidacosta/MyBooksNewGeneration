@@ -1,0 +1,79 @@
+package com.mcosta.mybooks.reader
+
+import androidx.lifecycle.ViewModel
+import com.mcosta.mybooks.domain.EbookFormat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+/** The ebook file to open and where reading stopped (a Readium locator as JSON). */
+data class ReaderFile(val format: EbookFormat, val path: String, val position: String?)
+
+sealed interface ReaderLoad {
+    data object Loading : ReaderLoad
+    data class Ready(val file: ReaderFile) : ReaderLoad
+    data class Failed(val message: String) : ReaderLoad
+}
+
+/** Saves the place at most this often while reading, and always when leaving. */
+const val SAVE_EVERY_MS = 3_000L
+
+/**
+ * The reader's state, apart from Readium: loading the file, saving the place as it moves (at most every
+ * [SAVE_EVERY_MS], and when leaving), and "Finished? Mark as Read" when [save] says the end was reached.
+ * Saves run in [scope] (the app's), so the last one finishes even after the reader closes.
+ */
+class ReaderViewModel(
+    load: suspend () -> ReaderFile?,
+    private val save: suspend (position: String, progression: Double) -> Boolean,
+    private val markRead: suspend () -> Unit,
+    private val scope: CoroutineScope,
+    private val clock: () -> Long = { System.currentTimeMillis() },
+) : ViewModel() {
+    private val _load = MutableStateFlow<ReaderLoad>(ReaderLoad.Loading)
+    val load: StateFlow<ReaderLoad> = _load.asStateFlow()
+
+    private val _finishPrompt = MutableStateFlow(false)
+    val finishPrompt: StateFlow<Boolean> = _finishPrompt.asStateFlow()
+
+    private var pending: Pair<String, Double>? = null
+    private var lastSaved: Long? = null
+
+    init {
+        scope.launch {
+            _load.value = load()?.let { ReaderLoad.Ready(it) } ?: ReaderLoad.Failed("Couldn't open this book")
+        }
+    }
+
+    /** The reader moved to [position] ([progression] 0–1 through the book). */
+    fun position(position: String, progression: Double) {
+        pending = position to progression
+        val last = lastSaved
+        if (last == null || clock() - last >= SAVE_EVERY_MS) flush()
+    }
+
+    /** Leaving the reader (or the app going to the background): the place is saved now. */
+    fun leave() = flush()
+
+    private fun flush() {
+        val (position, progression) = pending ?: return
+        pending = null
+        lastSaved = clock()
+        scope.launch { if (save(position, progression)) _finishPrompt.value = true }
+    }
+
+    fun markFinished() {
+        _finishPrompt.value = false
+        scope.launch { markRead() }
+    }
+
+    fun dismissFinish() {
+        _finishPrompt.value = false
+    }
+
+    fun failed(message: String) {
+        _load.value = ReaderLoad.Failed(message)
+    }
+}
