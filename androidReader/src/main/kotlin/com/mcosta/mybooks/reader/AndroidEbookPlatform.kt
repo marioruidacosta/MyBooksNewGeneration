@@ -55,5 +55,8 @@ object IncomingFiles {
     private fun displayName(context: Context, uri: Uri): String =
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
-        } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "book"
+        } ?: uri.lastPathSegment
+            // A path, or a document id like "primary:Download/os-maias.epub": its last part.
+            ?.substringAfterLast('/')?.substringAfterLast('\\')?.substringAfterLast(':')
+            ?.takeIf { it.isNotBlank() } ?: "book"
 }
