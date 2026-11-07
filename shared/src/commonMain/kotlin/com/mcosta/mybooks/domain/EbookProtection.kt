@@ -38,7 +38,8 @@ fun pdfProtection(text: String): Protection {
 }
 
 private fun xmlText(xml: String, tag: String): List<String> =
-    Regex("""<(?:\w+:)?$tag\b[^>]*>(.*?)</(?:\w+:)?$tag>""", RegexOption.DOT_MATCHES_ALL).findAll(xml)
+    // [\s\S] rather than DOT_MATCHES_ALL, which isn't available in common (iOS) Kotlin.
+    Regex("""<(?:\w+:)?$tag\b[^>]*>([\s\S]*?)</(?:\w+:)?$tag>""").findAll(xml)
         .map { it.groupValues[1].replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&").trim() }
         .filter { it.isNotEmpty() }
         .toList()
