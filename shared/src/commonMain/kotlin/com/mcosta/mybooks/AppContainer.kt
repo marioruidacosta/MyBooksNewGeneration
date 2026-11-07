@@ -91,6 +91,9 @@ class AppContainer(
     /** Catalogue books opened on their own page (from "More by …"), while the app runs. */
     val catalogBooks = CatalogBooks()
 
+    /** Free classics from Project Gutenberg. */
+    val classics = com.mcosta.mybooks.data.ebooks.ClassicsClient(http)
+
     /** Books just finished, for the celebration. */
     val events = ReadingEvents()
 
