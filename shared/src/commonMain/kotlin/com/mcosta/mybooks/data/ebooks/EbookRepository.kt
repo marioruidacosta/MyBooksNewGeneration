@@ -43,6 +43,9 @@ class EbookRepository(
 
     fun fileOf(ebook: Ebook) = files.path(ebook.bookId, ebook.format)
 
+    /** Whether the book has an ebook (its file may be missing, after a backup is restored). */
+    suspend fun hasEbook(bookId: Long): Boolean = ebooks.get(bookId) != null
+
     /**
      * Stores [source] as the book's ebook, replacing any other. Adding the same format again after the file went
      * missing (a restored backup) keeps the reading position; a different file starts from the beginning.

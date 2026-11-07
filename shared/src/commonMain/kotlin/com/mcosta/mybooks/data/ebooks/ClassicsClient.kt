@@ -24,6 +24,12 @@ data class Classic(
     val coverUrl: String?,
 )
 
+/** Free classics: searching, and downloading an EPUB. */
+interface ClassicsSource {
+    suspend fun search(query: String): List<Classic>
+    suspend fun download(classic: Classic, into: suspend (Source) -> Unit)
+}
+
 /** Project Gutenberg (through Gutendex) couldn't be reached, answered with an error, or took too long. */
 class ClassicsUnavailable(cause: Throwable? = null) : Exception("Project Gutenberg couldn't be reached", cause)
 
@@ -35,11 +41,11 @@ class ClassicsClient(
     private val http: HttpClient,
     private val base: String = "https://gutendex.com/books/",
     private val timeoutMillis: Long = 30_000,
-) {
+) : ClassicsSource {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Books matching [query] (title or author words) that have an EPUB, in Gutendex's order (most downloaded first). */
-    suspend fun search(query: String): List<Classic> = unavailableOnFailure {
+    override suspend fun search(query: String): List<Classic> = unavailableOnFailure {
         val response = http.get(base) {
             parameter("search", query.trim())
             timeout { requestTimeoutMillis = timeoutMillis }
@@ -49,7 +55,7 @@ class ClassicsClient(
     }
 
     /** Downloads [classic]'s EPUB and hands it to [into]. EPUBs from Gutenberg are a few MB, so it is read whole. */
-    suspend fun download(classic: Classic, into: suspend (Source) -> Unit) {
+    override suspend fun download(classic: Classic, into: suspend (Source) -> Unit) {
         val bytes = unavailableOnFailure {
             val response = http.get(classic.epubUrl) { timeout { requestTimeoutMillis = timeoutMillis * 4 } }
             if (!response.status.isSuccess()) throw ClassicsUnavailable()

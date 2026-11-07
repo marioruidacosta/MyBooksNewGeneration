@@ -64,6 +64,9 @@ class AppContainer(
 ) {
     private val ebookFiles = EbookFiles(releasesFileSystem, ebooksDir)
 
+    /** The phone's file system (where ebooks and incoming files live). */
+    val fileSystem: FileSystem = releasesFileSystem
+
     /** Outlives screens; used for writes that must finish after a screen closes. */
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -93,6 +96,9 @@ class AppContainer(
 
     /** Free classics from Project Gutenberg. */
     val classics = com.mcosta.mybooks.data.ebooks.ClassicsClient(http)
+
+    /** Ebook files waiting for the "Add an ebook" screen. */
+    val pendingFiles = com.mcosta.mybooks.ui.ebooks.PendingFiles()
 
     /** Books just finished, for the celebration. */
     val events = ReadingEvents()

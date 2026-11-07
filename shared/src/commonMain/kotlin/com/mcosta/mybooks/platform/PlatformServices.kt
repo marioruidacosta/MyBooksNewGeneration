@@ -2,6 +2,8 @@ package com.mcosta.mybooks.platform
 
 import com.mcosta.mybooks.data.covers.PhotoShrinker
 import androidx.compose.ui.graphics.ImageBitmap
+import com.mcosta.mybooks.domain.EbookFormat
+import com.mcosta.mybooks.domain.EbookMetadata
 
 sealed interface ScanOutcome {
     data class Isbn(val isbn: String) : ScanOutcome
@@ -45,6 +47,26 @@ interface MonthlyAlerts {
     fun disable()
 }
 
+/** A file handed to MyBooks (picked, or opened or shared from another app), copied where the app owns it. */
+data class IncomingFile(val path: String, val fileName: String, val size: Long)
+
+/** What a file turned out to be. */
+sealed interface Inspection {
+    data class Readable(val format: EbookFormat, val metadata: EbookMetadata) : Inspection
+    /** Adobe DRM (Adobe Digital Editions) or an `.acsm` download ticket; [metadata] when the file tells. */
+    data class AdobeProtected(val metadata: EbookMetadata?) : Inspection
+    data object Protected : Inspection
+    data object Unreadable : Inspection
+}
+
+/** Ebooks on this platform: picking and checking files, and the reader. */
+interface EbookPlatform {
+    /** Lets the user choose an EPUB, PDF or `.acsm` file; null if cancelled. */
+    suspend fun pickFile(): IncomingFile?
+    suspend fun inspect(file: IncomingFile): Inspection
+    fun openReader(bookId: Long)
+}
+
 /** Everything the shared UI needs from the platform, created by each app shell. */
 class PlatformServices(
     val scanner: IsbnScanner,
@@ -57,4 +79,6 @@ class PlatformServices(
     val imageSharer: ImageSharer? = null,
     /** Null where background notifications aren't available (the setting is then hidden). */
     val monthlyAlerts: MonthlyAlerts? = null,
+    /** Null where there is no ebook reader (iPhone for now): reading options are then hidden. */
+    val ebooks: EbookPlatform? = null,
 )

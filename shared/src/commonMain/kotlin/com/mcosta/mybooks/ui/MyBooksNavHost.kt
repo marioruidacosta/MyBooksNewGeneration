@@ -67,6 +67,11 @@ import com.mcosta.mybooks.ui.edit.EditBookScreen
 import com.mcosta.mybooks.ui.edit.EditBookViewModel
 import com.mcosta.mybooks.domain.BookFilter
 import com.mcosta.mybooks.ui.scan.BatchScanScreen
+import com.mcosta.mybooks.ui.ebooks.AddEbookScreen
+import com.mcosta.mybooks.ui.ebooks.AddEbookViewModel
+import com.mcosta.mybooks.ui.ebooks.ClassicsScreen
+import com.mcosta.mybooks.ui.ebooks.ClassicsViewModel
+import com.mcosta.mybooks.data.ebooks.EbookMatcher
 import com.mcosta.mybooks.ui.activity.YearReviewScreen
 import com.mcosta.mybooks.ui.activity.YearReviewViewModel
 import com.mcosta.mybooks.ui.scan.BatchScanViewModel
@@ -85,6 +90,7 @@ import com.mcosta.mybooks.ui.library.LibraryViewModel
 import com.mcosta.mybooks.ui.settings.SettingsScreen
 import com.mcosta.mybooks.ui.settings.SettingsViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 
 object Routes {
     /** The home screen: Reading, your reading activity and the shelves. */
@@ -99,6 +105,10 @@ object Routes {
     const val LENT = "lent"
     /** Scanning several books in a row. */
     const val SCAN_SEVERAL = "scan-several"
+    /** Adding an ebook file: {key} finds it in [com.mcosta.mybooks.AppContainer.pendingFiles]; {book} when from a book's page. */
+    const val ADD_EBOOK = "add-ebook/{key}?book={book}"
+    const val CLASSICS = "classics"
+    fun addEbook(key: String, forBook: Long? = null) = if (forBook == null) "add-ebook/$key" else "add-ebook/$key?book=$forBook"
     const val READING_ACTIVITY = "reading-activity"
     /** A catalogue book (from "More by …"); {key} finds it in [com.mcosta.mybooks.AppContainer.catalogBooks]. */
     const val CATALOG_BOOK = "catalog/{key}"
@@ -160,6 +170,21 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val services = LocalPlatformServices.current
+    val ebookPlatform = services.ebooks
+    /** Picks an EPUB, PDF or .acsm file and opens "Add an ebook" (for [forBook] when from its page); null without a reader. */
+    val pickEbook: ((forBook: Long?) -> Unit)? = ebookPlatform?.let { platform ->
+        { forBook ->
+            scope.launch {
+                try {
+                    platform.pickFile()?.let { nav.navigate(Routes.addEbook(container.pendingFiles.put(it), forBook)) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    snackbar.showSnackbar("Couldn't open the file: ${e.message ?: "unknown error"}")
+                }
+            }
+        }
+    }
 
     val celebrations = viewModel { CelebrationViewModel(container.repository, container.challenges, container.events) }
     val celebration by celebrations.celebration.collectAsStateWithLifecycle()
@@ -214,6 +239,8 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     onOpenTag = { nav.navigate(Routes.tag(it)) },
                     onOpenLent = { nav.navigate(Routes.LENT) },
                     onScanSeveral = { nav.navigate(Routes.SCAN_SEVERAL) },
+                    onAddEbook = pickEbook?.let { pick -> { pick(null) } },
+                    onClassics = ebookPlatform?.let { { nav.navigate(Routes.CLASSICS) } },
                     onAddManually = { nav.navigate(Routes.add()) },
                     onScan = {
                         scope.launch {
@@ -257,6 +284,41 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                         onOpenBook = { nav.navigate(Routes.book(it)) },
                     )
                 }
+            }
+            composable(
+                Routes.ADD_EBOOK,
+                arguments = listOf(
+                    navArgument("key") { type = NavType.StringType },
+                    navArgument("book") { type = NavType.LongType; defaultValue = -1L },
+                ),
+            ) { entry ->
+                val key = entry.savedStateHandle.get<String>("key")!!
+                val file = container.pendingFiles.get(key)
+                val platform = ebookPlatform
+                if (file == null || platform == null) {
+                    LaunchedEffect(Unit) { nav.popBackStack() }
+                    return@composable
+                }
+                val forBook = entry.savedStateHandle.get<Long>("book")?.takeIf { it >= 0 }
+                AddEbookScreen(
+                    viewModel = viewModel {
+                        AddEbookViewModel(file, platform::inspect, EbookMatcher(container.repository), container.ebooks, container.repository, container.fileSystem, forBook)
+                    },
+                    onBack = { container.pendingFiles.remove(key); nav.popBackStack() },
+                    onDone = { bookId, read ->
+                        container.pendingFiles.remove(key)
+                        nav.navigate(Routes.book(bookId)) { popUpTo(Routes.ADD_EBOOK) { inclusive = true } }
+                        if (read) platform.openReader(bookId)
+                    },
+                )
+            }
+            composable(Routes.CLASSICS) {
+                ClassicsScreen(
+                    viewModel = viewModel { ClassicsViewModel(container.classics, EbookMatcher(container.repository), container.ebooks, container.repository) },
+                    onBack = { nav.popBackStack() },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
+                    onRead = ebookPlatform?.let { p -> { id: Long -> p.openReader(id) } },
+                )
             }
             composable(Routes.SCAN_SEVERAL) {
                 BatchScanScreen(
@@ -333,7 +395,9 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
             composable(Routes.BOOK, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.savedStateHandle.get<Long>("id")!!
                 BookDetailScreen(
-                    viewModel = viewModel { BookDetailViewModel(container.repository, id, container.applicationScope, container.authors, container.quotes) },
+                    viewModel = viewModel { BookDetailViewModel(container.repository, id, container.applicationScope, container.authors, container.quotes, container.ebooks) },
+                    onRead = ebookPlatform?.let { p -> { p.openReader(id) } },
+                    onAddEbookFile = pickEbook?.let { pick -> { pick(id) } },
                     onBack = { nav.popBackStack() },
                     onEdit = { nav.navigate(Routes.edit(id)) },
                     sharing = sharing,
