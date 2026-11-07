@@ -4,6 +4,9 @@ import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.Challenge
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.Quote
+import com.mcosta.mybooks.domain.Bookmark
+import com.mcosta.mybooks.domain.Ebook
+import com.mcosta.mybooks.domain.EbookFormat
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -30,12 +33,26 @@ object BackupSerializer {
         hiddenSuggestions: Collection<String> = emptyList(),
         /** Quotes keyed by [Book.id]. */
         quotes: Map<Long, List<Quote>> = emptyMap(),
+        /** Ebooks and bookmarks keyed by [Book.id]: the reading place and file details, never the file. */
+        ebooks: Map<Long, Ebook> = emptyMap(),
+        bookmarks: Map<Long, List<Bookmark>> = emptyMap(),
     ): String = json.encodeToString(
         BackupFile(
-            VERSION, exportedAt, books.map { it.toBackup(shares[it.id], quotes[it.id].orEmpty()) }, challenges.map { BackupChallenge(it.year, it.goal) },
+            VERSION, exportedAt,
+            books.map { it.toBackup(shares[it.id], quotes[it.id].orEmpty(), ebooks[it.id], bookmarks[it.id].orEmpty()) },
+            challenges.map { BackupChallenge(it.year, it.goal) },
             hiddenSuggestions.sorted(),
         ),
     )
+
+    /**
+     * Each book's ebook (without the file) and bookmarks, in the order of [decode]'s books (none in older backups);
+     * their bookId is 0. Throws like [decode].
+     */
+    fun decodeEbooks(text: String): List<Pair<Ebook?, List<Bookmark>>> = file(text).books.map { b ->
+        b.ebook?.let { Ebook(0, it.format, it.fileName, it.size, it.dateAdded, it.position, it.lastOpened) } to
+            b.bookmarks.map { Bookmark(bookId = 0, position = it.position, label = it.label, dateAdded = it.dateAdded) }
+    }
 
     /** Throws [BackupFormatException] if [text] is not a valid version-1 backup. */
     fun decode(text: String): List<Book> = decodeWithShares(text).map { it.first }
@@ -52,7 +69,7 @@ object BackupSerializer {
 
     /** Each book's quotes, in the order of [decode]'s books (none in older backups); their bookId is 0. Throws like [decode]. */
     fun decodeQuotes(text: String): List<List<Quote>> =
-        file(text).books.map { b -> b.quotes.map { Quote(bookId = 0, text = it.text, page = it.page, dateAdded = it.dateAdded) } }
+        file(text).books.map { b -> b.quotes.map { Quote(bookId = 0, text = it.text, page = it.page, dateAdded = it.dateAdded, position = it.position) } }
 
     private fun file(text: String): BackupFile {
         val file = try {
@@ -79,7 +96,20 @@ object BackupSerializer {
     private data class BackupChallenge(val year: Int, val goal: Int)
 
     @Serializable
-    private data class BackupQuote(val text: String = "", val page: Int? = null, val dateAdded: Long = 0)
+    private data class BackupQuote(val text: String = "", val page: Int? = null, val dateAdded: Long = 0, val position: String? = null)
+
+    @Serializable
+    private data class BackupEbook(
+        val format: EbookFormat,
+        val fileName: String = "",
+        val size: Long = 0,
+        val dateAdded: Long = 0,
+        val position: String? = null,
+        val lastOpened: Long? = null,
+    )
+
+    @Serializable
+    private data class BackupBookmark(val position: String, val label: String = "", val dateAdded: Long = 0)
 
     @Serializable
     private data class BackupBook(
@@ -108,6 +138,8 @@ object BackupSerializer {
         val lentTo: String? = null,
         val lentOn: Long? = null,
         val quotes: List<BackupQuote> = emptyList(),
+        val ebook: BackupEbook? = null,
+        val bookmarks: List<BackupBookmark> = emptyList(),
     ) {
         fun toBook() = Book(
             isbn = isbn, title = title, authors = authors, publisher = publisher, publishedYear = publishedYear,
@@ -118,13 +150,15 @@ object BackupSerializer {
         )
     }
 
-    private fun Book.toBackup(share: BackupShare?, quotes: List<Quote>) = BackupBook(
+    private fun Book.toBackup(share: BackupShare?, quotes: List<Quote>, ebook: Ebook?, bookmarks: List<Bookmark>) = BackupBook(
         isbn = isbn, title = title, authors = authors, publisher = publisher, publishedYear = publishedYear,
         pageCount = pageCount, coverUrl = coverUrl, description = description, status = status,
         rating = rating, notes = notes, dateAdded = dateAdded, dateRead = dateRead,
         dateStarted = dateStarted, currentPage = currentPage, progressPercent = progressPercent, review = review,
         shareId = share?.shareId, shareExcluded = share?.excluded ?: false,
-        quotes = quotes.map { BackupQuote(it.text, it.page, it.dateAdded) },
+        quotes = quotes.map { BackupQuote(it.text, it.page, it.dateAdded, it.position) },
+        ebook = ebook?.let { BackupEbook(it.format, it.fileName, it.size, it.dateAdded, it.position, it.lastOpened) },
+        bookmarks = bookmarks.map { BackupBookmark(it.position, it.label, it.dateAdded) },
         tags = tags, series = series, seriesNumber = seriesNumber, lentTo = lentTo, lentOn = lentOn,
     )
 }

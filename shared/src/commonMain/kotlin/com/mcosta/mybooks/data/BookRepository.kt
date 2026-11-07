@@ -24,6 +24,10 @@ import com.mcosta.mybooks.data.db.QuoteDao
 import com.mcosta.mybooks.data.db.EbookDao
 import com.mcosta.mybooks.data.db.BookmarkDao
 import com.mcosta.mybooks.data.ebooks.EbookFiles
+import com.mcosta.mybooks.data.db.toEbook
+import com.mcosta.mybooks.data.db.toBookmark
+import com.mcosta.mybooks.domain.Bookmark
+import com.mcosta.mybooks.domain.Ebook
 import com.mcosta.mybooks.data.db.toQuote
 import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.coroutineScope
@@ -244,6 +248,8 @@ class BookRepository(
     suspend fun exportJson(): String = BackupSerializer.encode(
         dao.getAll().map { it.toBook() }, clock(), shares(), challenges?.all().orEmpty(), hiddenSuggestions?.keys?.value.orEmpty(),
         quotes?.getAll().orEmpty().map { it.toQuote() }.groupBy { it.bookId },
+        ebooks?.getAll().orEmpty().associate { it.bookId to it.toEbook() },
+        bookmarks?.getAll().orEmpty().map { it.toBookmark() }.groupBy { it.bookId },
     )
 
     private suspend fun shares() = shareTracker?.exportShares() ?: emptyMap()
@@ -257,6 +263,7 @@ class BookRepository(
     suspend fun importJson(json: String): ImportSummary {
         val books = BackupSerializer.decodeWithShares(json)
         val bookQuotes = BackupSerializer.decodeQuotes(json)
+        val bookEbooks = BackupSerializer.decodeEbooks(json)
         val goals = BackupSerializer.decodeChallenges(json).filter { it.goal in 1..MAX_GOAL }
         val hidden = BackupSerializer.decodeHiddenSuggestions(json)
         var added = 0
@@ -281,12 +288,14 @@ class BookRepository(
                     dao.update(withStatusDates(book.copy(id = existing.id, dateAdded = existing.dateAdded), book.status).toEntity())
                     if (share != null) shareTracker?.restored(existing.id, share)
                     restoreQuotes(existing.id, bookQuotes.getOrNull(index).orEmpty())
+                    restoreEbook(existing.id, bookEbooks.getOrNull(index))
                     updated++
                 } else {
                     val dateAdded = if (book.dateAdded > 0) book.dateAdded else clock()
                     val id = dao.insert(withStatusDates(book.copy(dateAdded = dateAdded), book.status).toEntity())
                     if (share != null) shareTracker?.restored(id, share)
                     restoreQuotes(id, bookQuotes.getOrNull(index).orEmpty())
+                    restoreEbook(id, bookEbooks.getOrNull(index))
                     added++
                 }
             }
@@ -294,6 +303,21 @@ class BookRepository(
         for (goal in goals) challenges?.setGoal(goal.year, goal.goal)
         hiddenSuggestions?.addAll(hidden)
         return ImportSummary(added, updated, failed)
+    }
+
+    /**
+     * A backup's ebook (without its file, so the book shows "Ebook file not on this phone") and bookmarks for book
+     * [bookId]. An ebook the book already has keeps its own place; a bookmark already there is not added twice.
+     */
+    private suspend fun restoreEbook(bookId: Long, restored: Pair<Ebook?, List<Bookmark>>?) {
+        val (ebook, marks) = restored ?: return
+        if (ebook != null && ebooks != null && ebooks.get(bookId) == null) ebooks.upsert(ebook.copy(bookId = bookId).toEntity())
+        val dao = bookmarks ?: return
+        if (marks.isEmpty()) return
+        val have = dao.forBook(bookId).map { it.position to it.label }.toMutableSet()
+        for (m in marks) {
+            if (have.add(m.position to m.label)) dao.insert(m.copy(id = 0, bookId = bookId).toEntity())
+        }
     }
 
     /** A backup's quotes for book [bookId]; a quote the book already has (same text) is not added twice. */
