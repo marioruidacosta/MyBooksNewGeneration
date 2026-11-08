@@ -70,7 +70,8 @@ private class Device(server: FakeSyncServer, scope: CoroutineScope, clock: () ->
     val books = FakeBookDao()
     val quotes = FakeQuoteDao()
     val queue = FakeSyncQueueDao()
-    val state = FakeSyncStateDao()
+    // These tests are about the engine once the first sign-in merge is done (FirstMergeTest covers it).
+    val state = FakeSyncStateDao().apply { rows["merged:$OWNER"] = "1" }
     val prefValues = mutableMapOf<String, String>()
     val recorder = SyncRecorder(queue, clock, { true }, { it() })
     val syncBooks = SyncingBookDao(books, recorder)

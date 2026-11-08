@@ -104,7 +104,7 @@ class AppContainer(
         createSocialServices(config, engine, socialSettings)
     }
 
-    private val sharing: Sharing? = sharingFor(social, database.shareStateDao(), applicationScope) { id -> repository.getBook(id) }
+    private val sharing: Sharing? = sharingFor(social, database.shareStateDao(), applicationScope, uuidOf = { id -> database.bookDao().getById(id)?.uuid }) { id -> repository.getBook(id) }
 
     /** Whether the signed-in user shares their reading activity; null without the community. */
     val sharingStatus: SharingStatus? = sharing?.status
@@ -212,11 +212,15 @@ internal fun socialFor(
 /** The pieces that share reading activity, wired to each other. */
 internal class Sharing(val tracker: ShareTracker, val status: SharingStatus, val publisher: Publisher)
 
-/** Activity sharing for [social], or null without the community. [loadBook] reads a book from the library. */
+/**
+ * Activity sharing for [social], or null without the community. [loadBook] reads a book from the library; [uuidOf] gives a
+ * book's uuid, also its public id.
+ */
 internal fun sharingFor(
     social: SocialServices?,
     dao: ShareStateDao,
     scope: CoroutineScope,
+    uuidOf: suspend (Long) -> String? = { null },
     loadBook: suspend (Long) -> Book?,
 ): Sharing? {
     if (social == null) return null
@@ -224,7 +228,7 @@ internal fun sharingFor(
     val activeOwner = { status.state.value.activeOwner }
     val lock = ShareLock()
     val publisher = Publisher(dao, loadBook, social.activity, activeOwner, scope, lock = lock)
-    val tracker = ShareTracker(dao, activeOwner, onPending = publisher::requestSync, lock = lock)
+    val tracker = ShareTracker(dao, activeOwner, onPending = publisher::requestSync, lock = lock, uuidOf = uuidOf)
     status = SharingStatus(social, scope, onActivated = publisher::requestSync, onDisabled = tracker::forgetOwner)
     return Sharing(tracker, status, publisher)
 }

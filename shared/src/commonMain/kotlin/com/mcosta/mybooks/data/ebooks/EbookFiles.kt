@@ -36,4 +36,10 @@ class EbookFiles(
     }
 
     fun delete(bookId: Long, format: EbookFormat) = fs.delete(path(bookId, format), mustExist = false)
+
+    /** The file moves to another book (two copies of a book were combined); one already there is replaced. */
+    fun move(fromBookId: Long, toBookId: Long, format: EbookFormat) {
+        val from = path(fromBookId, format)
+        if (fs.exists(from)) fs.atomicMove(from, path(toBookId, format))
+    }
 }

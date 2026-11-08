@@ -164,13 +164,26 @@ fun AccountScreen(viewModel: AccountViewModel, onBack: () -> Unit) {
             }
 
             HorizontalDivider()
-            OutlinedButton(onClick = viewModel::signOut, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
+            OutlinedButton(onClick = { viewModel.signOut() }, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
             TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("Delete account", color = MaterialTheme.colorScheme.error)
             }
         }
     }
 
+    if (state.askKeepLibrary) {
+        AlertDialog(
+            onDismissRequest = viewModel::cancelSignOut,
+            title = { Text("Keep a copy of your library on this device?") },
+            text = { Text("The library in your account stays as it is.") },
+            confirmButton = { TextButton(onClick = { viewModel.signOut(keepLibrary = true) }) { Text("Keep") } },
+            dismissButton = {
+                TextButton(onClick = { viewModel.signOut(keepLibrary = false) }) {
+                    Text("Remove", color = MaterialTheme.colorScheme.error)
+                }
+            },
+        )
+    }
     if (confirmStopSharing) {
         AlertDialog(
             onDismissRequest = { confirmStopSharing = false },

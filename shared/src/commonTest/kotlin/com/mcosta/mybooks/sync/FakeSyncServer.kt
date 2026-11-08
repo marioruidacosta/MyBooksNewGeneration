@@ -27,7 +27,7 @@ class FakeSyncServer(
     /** How many calls in a row [failNext] is thrown by; back to 1 once used up. */
     var failTimes = 1
 
-    /** The server's reason to set a pushed row aside, or null to apply it. */
+    /** The server's reason to set a pushed (or merged) row aside, or null to apply it. */
     var refuse: (SyncRow) -> String? = { null }
 
     /** Every data call ("push", "pull", "merge", "cover"), with the [clock] time it was made at, failed ones included. */
@@ -98,7 +98,12 @@ class FakeSyncServer(
         check("merge")
         require(books.size <= 100) { "merge_library takes at most 100 books" }
         val ids = mutableMapOf<String, String>()
+        val refused = mutableListOf<SetAside>()
         for (b in books) {
+            refuse(b)?.let {
+                refused += SetAside(b.table, b.id, it)
+                continue
+            }
             val live = mine().values.filter { it.table == SyncTable.BOOKS && !isDeleted(it) }.sortedBy { it.seq }
             val isbn = text(b, "isbn").trim()
             val titleKey = catalogTitleKey(text(b, "title")).trim()
@@ -115,7 +120,7 @@ class FakeSyncServer(
             ids[b.id] = cloudId
         }
         if (ids.isNotEmpty()) pingFlow.tryEmit(owner)
-        return MergeResult(ids, emptyList())
+        return MergeResult(ids, refused)
     }
 
     override fun pings(owner: String): Flow<Unit> = pingFlow.filter { it == owner }.map { }

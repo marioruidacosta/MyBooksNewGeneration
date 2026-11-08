@@ -1,5 +1,9 @@
 package com.mcosta.mybooks.sync
 
+import com.mcosta.mybooks.data.covers.CoverStore
+import com.mcosta.mybooks.data.ebooks.EbookFiles
+import com.mcosta.mybooks.domain.EbookFormat
+import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -40,7 +44,9 @@ internal const val PULL_MAX = 500
  * time the ping channel is (re)subscribed, since pings can be missed while it reconnects), on [refresh] and on
  * [connectivityRestored]. After a failure it waits [retryDelays] (the last one repeating) before trying again;
  * [connectivityRestored] and [refresh] cut the wait short. A session that expired (AUTH) stops until [start] is called
- * again, keeping the queue.
+ * again, keeping the queue. An account's first pass on this device runs the first sign-in merge ([FirstMerge]) before
+ * anything else ([mergeProgress] counts it). [shares], [coverStore] and [ebookFiles] are what that merge and [signOut]
+ * touch besides the database.
  *
  * Everything runs in [scope] (the app's, off the main thread).
  */
@@ -52,6 +58,9 @@ class LibrarySync(
     private val clock: () -> Long,
     private val scope: CoroutineScope,
     private val retryDelays: List<Long> = listOf(5_000, 15_000, 60_000, 300_000),
+    shares: ShareTracker? = null,
+    private val coverStore: CoverStore? = null,
+    private val ebookFiles: EbookFiles? = null,
 ) {
     init {
         require(retryDelays.isNotEmpty()) { "retryDelays is empty" }
@@ -64,6 +73,11 @@ class LibrarySync(
 
     /** Changes the server refused (set aside) since [start]; they left the queue, the device keeps its values. */
     val setAside: StateFlow<Int> = _setAside.asStateFlow()
+
+    private val firstMerge = FirstMerge(api, db, applier, shares, coverStore, ebookFiles) { n -> _setAside.update { it + n } }
+
+    /** (books done, books in all) while the first sign-in merge combines the libraries; null otherwise. */
+    val mergeProgress: StateFlow<Pair<Int, Int>?> = firstMerge.progress
 
     /**
      * One signed-in run. [wake]: something changed here or on the server. [now]: retry now (connection back,
@@ -90,7 +104,6 @@ class LibrarySync(
         val current = session
         if (current != null && current.owner == owner && current.job.isActive) return
         stop()
-        // Task 8: the first sign-in merge runs here when sync_state["merged:<owner>"] is absent.
         val next = Session(owner)
         _setAside.value = 0
         _status.value = SyncStatus.Syncing
@@ -115,7 +128,38 @@ class LibrarySync(
         _status.value = SyncStatus.Off
     }
 
-    // Task 8 adds `suspend fun signOut(keepLibrary: Boolean)` here: stop(), then clear the queue and sync_state.
+    /**
+     * Signing out: sync stops, and the queue and sync state are cleared (signing in again, to any account, runs the
+     * first sign-in merge). [keepLibrary] false also erases the library: books, quotes, ebooks, bookmarks, challenges,
+     * share state, cover photos and ebook files. The cloud library is untouched either way.
+     */
+    suspend fun signOut(keepLibrary: Boolean) {
+        stop()
+        val photos = mutableListOf<String>()
+        val files = mutableListOf<Pair<Long, EbookFormat>>()
+        // After the stopped session's last pass.
+        passLock.withLock {
+            recorder.transaction {
+                db.queue.clear()
+                db.state.clear()
+                if (keepLibrary) return@transaction
+                for (ebook in db.ebooks.getAllAny()) {
+                    files += ebook.bookId to ebook.format
+                    db.ebooks.delete(ebook.bookId)
+                }
+                db.quotes.getAllAny().forEach { db.quotes.delete(it.id) }
+                db.bookmarks.getAllAny().forEach { db.bookmarks.delete(it.id) }
+                db.challenges.getAllAny().forEach { db.challenges.delete(it.year) }
+                db.shareState?.let { shares -> shares.all().forEach { shares.delete(it.bookId) } }
+                for (book in db.books.getAllAny()) {
+                    book.coverUrl?.takeIf { coverStore?.isLocal(it) == true }?.let { photos += it }
+                    db.books.delete(book.id)
+                }
+            }
+        }
+        photos.forEach { coverStore?.delete(it) }
+        files.forEach { (book, format) -> ebookFiles?.delete(book, format) }
+    }
 
     /** Pushes and pulls now, and returns when that pass is over (pull-to-refresh, app back in the foreground). */
     suspend fun refresh() {
@@ -144,7 +188,7 @@ class LibrarySync(
             wake.tryReceive()
             now.tryReceive()
             val waiting = session.takeWaiters()
-            val error = passLock.withLock { pass() }
+            val error = passLock.withLock { pass(session.owner) }
             waiting.forEach { it.complete(Unit) }
             currentCoroutineContext().ensureActive()
             if (error == null) {
@@ -169,12 +213,13 @@ class LibrarySync(
         }
     }
 
-    /** One push and pull; the error that stopped it, or null. */
-    private suspend fun pass(): Exception? {
+    /** One push and pull (after the first sign-in merge, the first time); the error that stopped it, or null. */
+    private suspend fun pass(owner: String): Exception? {
         _status.value = SyncStatus.Syncing
         return try {
-            push()
-            pull()
+            firstMerge.run(owner)
+            pushQueue(api, db, applier) { n -> _setAside.update { it + n } }
+            pullFrom(api, db, applier, db.state.get(SEQ_KEY)?.toLongOrNull() ?: 0L)
             currentCoroutineContext().ensureActive()
             _status.value = SyncStatus.Synced(clock())
             null
@@ -182,50 +227,6 @@ class LibrarySync(
             throw e
         } catch (e: Exception) {
             e
-        }
-    }
-
-    /**
-     * Sends the queue: each entry as its row's current fields and times. An entry leaves the queue once the server has
-     * applied or set aside exactly what was sent; a row edited meanwhile stays queued (its new values go next), and an
-     * entry whose row is gone (removed for good) is dropped.
-     */
-    private suspend fun push() {
-        while (true) {
-            val batch = db.queue.batch(PUSH_BATCH)
-            if (batch.isEmpty()) return
-            val sent = LinkedHashMap<Pair<SyncTable, String>, SyncRow>()
-            for (entry in batch) {
-                val table = SyncTable.entries.firstOrNull { it.wire == entry.table } ?: continue
-                applier.localRow(table, entry.rowId)?.let { sent[table to entry.rowId] = it }
-            }
-            val result = if (sent.isEmpty()) PushResult(emptyList(), emptyList()) else api.push(sent.values.toList())
-            val done = (result.applied + result.setAside.map { it.table to it.id }).toSet()
-            val removed = recorder.transaction {
-                val ids = batch.filter { entry ->
-                    val table = SyncTable.entries.firstOrNull { it.wire == entry.table } ?: return@filter true
-                    val key = table to entry.rowId
-                    val current = applier.localRow(table, entry.rowId)
-                    if (key in sent) key in done && current == sent[key] else current == null
-                }.map { it.id }
-                if (ids.isNotEmpty()) db.queue.remove(ids)
-                ids
-            }
-            _setAside.update { it + result.setAside.size }
-            // Nothing could be confirmed (every row changed meanwhile): the change's own wake sends them again.
-            if (removed.isEmpty()) return
-        }
-    }
-
-    /** Pulls every row changed since the stored cursor, a page at a time; each page is stored with its cursor. */
-    private suspend fun pull() {
-        var after = db.state.get(SEQ_KEY)?.toLongOrNull() ?: 0L
-        while (true) {
-            val page = api.pull(after, PULL_MAX)
-            val last = page.last
-            applier.apply(page.rows) { db.state.set(SEQ_KEY, last.toString()) }
-            if (page.rows.size < PULL_MAX || last <= after) return
-            after = last
         }
     }
 
@@ -261,5 +262,49 @@ class LibrarySync(
                 }
             }
         }
+    }
+}
+
+/**
+ * Sends the queue: each entry as its row's current fields and times. An entry leaves the queue once the server has
+ * applied or set aside exactly what was sent; a row edited meanwhile stays queued (its new values go next), and an entry
+ * whose row is gone (removed for good) is dropped. [onSetAside] gets each batch's count of rows set aside.
+ */
+internal suspend fun pushQueue(api: SyncApi, db: SyncDatabase, applier: RemoteApplier, onSetAside: (Int) -> Unit) {
+    while (true) {
+        val batch = db.queue.batch(PUSH_BATCH)
+        if (batch.isEmpty()) return
+        val sent = LinkedHashMap<Pair<SyncTable, String>, SyncRow>()
+        for (entry in batch) {
+            val table = SyncTable.entries.firstOrNull { it.wire == entry.table } ?: continue
+            applier.localRow(table, entry.rowId)?.let { sent[table to entry.rowId] = it }
+        }
+        val result = if (sent.isEmpty()) PushResult(emptyList(), emptyList()) else api.push(sent.values.toList())
+        val done = (result.applied + result.setAside.map { it.table to it.id }).toSet()
+        val removed = applier.transaction {
+            val ids = batch.filter { entry ->
+                val table = SyncTable.entries.firstOrNull { it.wire == entry.table } ?: return@filter true
+                val key = table to entry.rowId
+                val current = applier.localRow(table, entry.rowId)
+                if (key in sent) key in done && current == sent[key] else current == null
+            }.map { it.id }
+            if (ids.isNotEmpty()) db.queue.remove(ids)
+            ids
+        }
+        onSetAside(result.setAside.size)
+        // Nothing could be confirmed (every row changed meanwhile): the change's own wake sends them again.
+        if (removed.isEmpty()) return
+    }
+}
+
+/** Pulls every row changed after [from], a page at a time; each page is stored with its cursor. */
+internal suspend fun pullFrom(api: SyncApi, db: SyncDatabase, applier: RemoteApplier, from: Long) {
+    var after = from
+    while (true) {
+        val page = api.pull(after, PULL_MAX)
+        val last = page.last
+        applier.apply(page.rows) { db.state.set(SEQ_KEY, last.toString()) }
+        if (page.rows.size < PULL_MAX || last <= after) return
+        after = last
     }
 }

@@ -7,6 +7,7 @@ import com.mcosta.mybooks.data.db.BookmarkDao
 import com.mcosta.mybooks.data.db.ChallengeDao
 import com.mcosta.mybooks.data.db.EbookDao
 import com.mcosta.mybooks.data.db.QuoteDao
+import com.mcosta.mybooks.data.db.ShareStateDao
 import com.mcosta.mybooks.data.db.SyncQueueDao
 import com.mcosta.mybooks.data.db.SyncStateDao
 import com.mcosta.mybooks.data.db.toBook
@@ -25,6 +26,9 @@ import kotlinx.serialization.json.put
 
 /** The account-wide preferences that sync (pinned tags, "Not interested"): read for upload, written when pulled. */
 interface SyncedPrefs {
+    /** Every key that syncs: the first sign-in merge uploads them all. */
+    val keys: Collection<String> get() = emptyList()
+
     fun get(key: String): String?
 
     /** A value pulled from another device; null removes it. Must not record a change (it would be pushed back). */
@@ -44,6 +48,8 @@ class SyncDatabase(
     val queue: SyncQueueDao,
     val state: SyncStateDao,
     val prefs: SyncedPrefs? = null,
+    /** Erased with the library on "Remove" at sign-out; null where sharing isn't kept. */
+    val shareState: ShareStateDao? = null,
 )
 
 /** `sync_state` key of the child rows waiting for their book (a JSON array of rows). */
@@ -95,6 +101,9 @@ class RemoteApplier(
             }
         }
     }
+
+    /** Runs [block] in one write transaction, the one [apply] uses. */
+    internal suspend fun <T> transaction(block: suspend () -> T): T = recorder.transaction(block)
 
     /** The local row as it would be pushed, or null when it isn't on this device (any more). */
     suspend fun localRow(table: SyncTable, id: String): SyncRow? = when (table) {

@@ -24,6 +24,8 @@ class ShareTracker(
     private val onPending: () -> Unit,
     private val newShareId: () -> String = ::randomShareId,
     private val lock: ShareLock = ShareLock(),
+    /** A book's sync uuid, which is also its public id; null when unknown (a random id is used then). */
+    private val uuidOf: suspend (Long) -> String? = { null },
 ) {
     suspend fun changed(old: Book?, new: Book) {
         val owner = activeOwner() ?: return
@@ -81,6 +83,58 @@ class ShareTracker(
         dao.upsert(row.withBefore(book))
     }
 
+    /**
+     * The first sign-in merge joined book [fromBookId] to book [toBookId] (the same book when only its uuid changed to
+     * the cloud's). The share state moves to [toBookId], under that book's uuid as its public id:
+     * - A public copy under another id is removed through the usual unshare path: a deleted row, waiting, parked under
+     *   an id no book has, which the Publisher unpublishes and then drops.
+     * - When both books had share state, [toBookId] keeps its own; "Don't share this book" from either side wins.
+     * - A shared book that changed id is published again under the new one, against [book] (its state now), so the
+     *   move itself adds nothing to the feed.
+     */
+    suspend fun moveShare(fromBookId: Long, toBookId: Long, book: Book? = null) {
+        val newId = uuidOf(toBookId) ?: return
+        val marked = lock.mutex.withLock {
+            val from = dao.get(fromBookId) ?: return@withLock false
+            var parkAt = minOf(0L, dao.all().minOfOrNull { it.bookId } ?: 0L)
+            var retired = false
+
+            /** Sends [row]'s public copy to the unshare path, unless it can't be on the server. */
+            suspend fun retire(row: ShareStateEntity) {
+                if (row.excluded && !row.pending && !row.deleted) return
+                dao.upsert(row.copy(bookId = --parkAt, deleted = true, pending = true))
+                retired = true
+            }
+
+            if (fromBookId != toBookId) dao.delete(fromBookId)
+            if (from.deleted) {
+                retire(from)
+                return@withLock retired
+            }
+            val existing = if (fromBookId == toBookId) null else dao.get(toBookId)
+            existing?.takeIf { it.deleted }?.let { retire(it) }
+            val target = existing?.takeIf { !it.deleted }
+            var kept = if (target == null) {
+                from.copy(bookId = toBookId)
+            } else {
+                if (from.shareId != target.shareId) retire(from)
+                val excluded = target.excluded || from.excluded
+                target.copy(excluded = excluded, pending = target.pending || excluded != target.excluded)
+            }
+            if (kept.shareId != newId) {
+                retire(kept)
+                kept = kept.copy(shareId = newId)
+                // Not waiting yet: publish (or, for "Don't share", unpublish) under the new id.
+                if (!kept.pending && (kept.excluded || book != null)) {
+                    kept = (if (kept.excluded) kept else kept.withBefore(book)).copy(pending = true)
+                }
+            }
+            dao.upsert(kept)
+            retired || kept.pending
+        }
+        if (marked) onPending()
+    }
+
     fun observeExcluded(bookId: Long): Flow<Boolean> = dao.observe(bookId).map { it?.excluded == true }
 
     suspend fun exportShares(): Map<Long, BackupShare> =
@@ -109,8 +163,8 @@ class ShareTracker(
         }
     }
 
-    private fun newRow(bookId: Long, owner: String) = ShareStateEntity(
-        bookId = bookId, shareId = newShareId(), owner = owner, hasBefore = false,
+    private suspend fun newRow(bookId: Long, owner: String) = ShareStateEntity(
+        bookId = bookId, shareId = uuidOf(bookId) ?: newShareId(), owner = owner, hasBefore = false,
         beforeStatus = null, beforeRating = null, beforeProgress = null, beforeReview = null,
         pending = false, excluded = false, deleted = false,
     )

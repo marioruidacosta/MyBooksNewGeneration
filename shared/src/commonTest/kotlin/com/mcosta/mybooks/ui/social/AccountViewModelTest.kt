@@ -1,12 +1,32 @@
 package com.mcosta.mybooks.ui.social
 
 import com.mcosta.mybooks.MainDispatcherTest
+import com.mcosta.mybooks.data.FakeBookDao
+import com.mcosta.mybooks.data.FakeBookmarkDao
+import com.mcosta.mybooks.data.FakeChallengeDao
+import com.mcosta.mybooks.data.FakeEbookDao
+import com.mcosta.mybooks.data.FakeQuoteDao
+import com.mcosta.mybooks.data.FakeSyncQueueDao
+import com.mcosta.mybooks.data.FakeSyncStateDao
+import com.mcosta.mybooks.data.db.BookEntity
 import com.mcosta.mybooks.data.covers.PhotoShrinker
 import com.mcosta.mybooks.social.FakeSocial
 import com.mcosta.mybooks.share.SharingStatus
 import com.mcosta.mybooks.social.model.SessionState
 import com.mcosta.mybooks.social.model.Visibility
+import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.sync.FakeSyncServer
+import com.mcosta.mybooks.sync.LibrarySync
+import com.mcosta.mybooks.sync.RemoteApplier
+import com.mcosta.mybooks.sync.SyncDatabase
+import com.mcosta.mybooks.sync.SyncRecorder
+import com.mcosta.mybooks.sync.SyncStatus
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -134,5 +154,108 @@ class AccountViewModelTest : MainDispatcherTest() {
         val vm = vm()
         vm.setShareActivity(true)
         assertTrue(vm.state.value.profile!!.shareActivity)
+    }
+
+    // ---- signing out while the library syncs ----
+
+    /** A synced library on this phone, with one book and one change waiting. */
+    private class SyncedLibrary(scope: CoroutineScope) {
+        val books = FakeBookDao()
+        val queue = FakeSyncQueueDao()
+        val state = FakeSyncStateDao()
+        private val db = SyncDatabase(books, FakeQuoteDao(), FakeEbookDao(), FakeBookmarkDao(), FakeChallengeDao(), queue, state)
+        private val recorder = SyncRecorder(queue, { 0L }, { true }, { it() })
+        val sync = LibrarySync(FakeSyncServer(), db, recorder, RemoteApplier(db, recorder), { 0L }, scope)
+
+        suspend fun fill() {
+            books.insert(
+                BookEntity(
+                    isbn = null, title = "Os Maias", authors = "Eça de Queirós", publisher = null, publishedYear = null,
+                    pageCount = null, coverUrl = null, description = null, status = ReadingStatus.READ, rating = null,
+                    notes = "", dateAdded = 0, dateRead = null, searchText = "os maias", uuid = "x",
+                ),
+            )
+            queue.enqueue("books", "x", 0)
+            state.set("seq", "7")
+        }
+    }
+
+    private val engineJob = SupervisorJob()
+
+    @AfterTest
+    fun stopEngines() = engineJob.cancel()
+
+    private suspend fun TestScope.syncedLibrary(): SyncedLibrary {
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob))
+        library.fill()
+        library.sync.start(ana)
+        return library
+    }
+
+    @Test
+    fun signOutWhileSyncingAsksWhetherToKeepTheLibrary() = runTest {
+        fake.signInAs(ana)
+        val library = syncedLibrary()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+
+        assertTrue(vm.state.value.askKeepLibrary)
+        assertEquals(SessionState.SignedIn(ana, null), fake.auth.session.value)
+        assertFalse(vm.state.value.signedOut)
+
+        vm.cancelSignOut()
+        assertFalse(vm.state.value.askKeepLibrary)
+        assertEquals(SessionState.SignedIn(ana, null), fake.auth.session.value)
+    }
+
+    @Test
+    fun signOutKeepLeavesLibraryClearsQueue() = runTest {
+        fake.signInAs(ana)
+        val library = syncedLibrary()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+        vm.signOut(keepLibrary = true)
+
+        assertEquals(SessionState.SignedOut, fake.auth.session.value)
+        assertTrue(vm.state.value.signedOut)
+        assertFalse(vm.state.value.askKeepLibrary)
+        assertEquals(listOf("x"), library.books.rows.value.values.map { it.uuid })
+        assertTrue(library.queue.rows.value.isEmpty())
+        assertTrue(library.state.rows.isEmpty())
+        assertEquals(SyncStatus.Off, library.sync.status.value)
+    }
+
+    @Test
+    fun signOutRemoveErasesLibrary() = runTest {
+        fake.signInAs(ana)
+        val library = syncedLibrary()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+        vm.signOut(keepLibrary = false)
+
+        assertEquals(SessionState.SignedOut, fake.auth.session.value)
+        assertTrue(vm.state.value.signedOut)
+        assertTrue(library.books.rows.value.isEmpty())
+        assertTrue(library.queue.rows.value.isEmpty())
+        assertEquals(SyncStatus.Off, library.sync.status.value)
+    }
+
+    @Test
+    fun signOutWithSyncOffSignsOutAtOnce() = runTest {
+        fake.signInAs(ana)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob))
+        library.fill()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+
+        assertFalse(vm.state.value.askKeepLibrary)
+        assertTrue(vm.state.value.signedOut)
+        assertEquals(SessionState.SignedOut, fake.auth.session.value)
+        assertEquals(1, library.books.rows.value.size)
+        assertEquals(1, library.queue.rows.value.size)
     }
 }

@@ -9,6 +9,8 @@ import com.mcosta.mybooks.social.model.Person
 import com.mcosta.mybooks.social.model.Profile
 import com.mcosta.mybooks.social.model.Visibility
 import com.mcosta.mybooks.social.socialMessage
+import com.mcosta.mybooks.sync.LibrarySync
+import com.mcosta.mybooks.sync.SyncStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +30,8 @@ data class AccountState(
     val deleted: Boolean = false,
     /** True after signing out; the screen then closes. */
     val signedOut: Boolean = false,
+    /** "Sign out" was tapped while the library syncs: ask whether to keep a copy of it on this phone. */
+    val askKeepLibrary: Boolean = false,
 )
 
 /** The signed-in user's community account: profile, avatar, visibility, blocked people, sign out, delete. */
@@ -36,6 +40,8 @@ class AccountViewModel(
     private val shrinker: PhotoShrinker,
     /** Activity sharing; null in tests that don't involve it (the switch then talks to the server only). */
     private val sharing: SharingStatus? = null,
+    /** Cloud sync of the library; null where it isn't set up (sign out then never asks about the library). */
+    private val sync: LibrarySync? = null,
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val _state = MutableStateFlow(AccountState())
@@ -83,10 +89,29 @@ class AccountViewModel(
         _state.update { s -> s.copy(blocked = s.blocked.filterNot { it.id == userId }) }
     }
 
-    fun signOut() = launchAction {
+    /** "Sign out" tapped: while the library syncs, first ask whether to keep it ([signOut] with the answer). */
+    fun signOut() {
+        val syncing = sync != null && sync.status.value != SyncStatus.Off
+        if (syncing) {
+            _state.update { it.copy(askKeepLibrary = true) }
+            return
+        }
+        launchAction {
+            services.auth.signOut()
+            _state.update { AccountState(signedOut = true) }
+        }
+    }
+
+    /** The answer to "Keep a copy of your library on this device?". */
+    fun signOut(keepLibrary: Boolean) = launchAction {
+        _state.update { it.copy(askKeepLibrary = false) }
+        sync?.signOut(keepLibrary)
         services.auth.signOut()
         _state.update { AccountState(signedOut = true) }
     }
+
+    /** The keep-library question was dismissed: still signed in. */
+    fun cancelSignOut() = _state.update { it.copy(askKeepLibrary = false) }
 
     fun deleteAccount() = launchAction {
         services.profiles.deleteAccount()
