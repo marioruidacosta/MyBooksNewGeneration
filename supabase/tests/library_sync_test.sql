@@ -182,6 +182,25 @@ select throws_ok(
                           from generate_series(1, 101) g))$$,
   '22023', null, 'merge_over_100_rejected');
 
+select pg_temp.push_book('c5', '{"title":"Válka s mloky","authors":"Karel Čapek"}', '{"title":1000,"authors":1000}');
+select is(
+  (select merge_library(jsonb_build_array(jsonb_build_object('id','l5',
+    'fields','{"title":"valka s mloky","authors":"Karel Capek"}'::jsonb,'times','{}'::jsonb)))->'ids'),
+  '{"l5":"c5"}'::jsonb, 'merge_matches_non_portuguese_accents');
+
+-- covers_storage_isolation
+select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
+insert into storage.objects (bucket_id, name) values ('covers', '22222222-2222-2222-2222-222222222222/b.jpg');
+select pg_temp.act_as('11111111-1111-1111-1111-111111111111');
+select lives_ok($$insert into storage.objects (bucket_id, name) values ('covers', '11111111-1111-1111-1111-111111111111/x.jpg')$$,
+  'covers_insert_own_folder');
+select throws_ok($$insert into storage.objects (bucket_id, name) values ('covers', '22222222-2222-2222-2222-222222222222/x.jpg')$$,
+  '42501', null, 'covers_insert_other_folder_denied');
+select is((select count(*)::int from storage.objects where name like '22222222-2222-2222-2222-222222222222/%'), 0,
+  'covers_select_hides_other_folder');
+select is((select count(*)::int from storage.objects where name like '11111111-1111-1111-1111-111111111111/%'), 1,
+  'covers_select_sees_own_folder');
+
 -- rls_hides_other_owner
 select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
 select is(

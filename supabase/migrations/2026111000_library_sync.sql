@@ -296,12 +296,11 @@ grant execute on function sync_push(jsonb) to authenticated;
 revoke all on function sync_pull(bigint, int) from public, anon;
 grant execute on function sync_pull(bigint, int) to authenticated;
 
--- Case- and accent-insensitive key, like the app's searchKey (Portuguese letters; no unaccent extension needed).
+-- Case- and accent-insensitive key, like the app's searchKey: NFD, drop the combining marks, lowercase.
 create function _fold(p_text text) returns text
 language sql immutable set search_path = public, pg_temp as $$
-  select lower(translate(coalesce(p_text, ''),
-    'áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ',
-    'aaaaaeeeeiiiiooooouuuucnAAAAAEEEEIIIIOOOOOUUUUCN'));
+  select lower(regexp_replace(normalize(coalesce(p_text, ''), NFD),
+    E'[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F]', '', 'g'));
 $$;
 revoke all on function _fold(text) from public, anon, authenticated;
 
