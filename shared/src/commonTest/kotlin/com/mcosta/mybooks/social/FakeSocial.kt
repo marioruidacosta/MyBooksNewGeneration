@@ -66,6 +66,8 @@ class FakeSocial {
     var onPublish: suspend () -> Unit = {}
     /** Runs inside like and unlike before they take effect (e.g. to hold the call in flight). */
     var onLike: suspend () -> Unit = {}
+    /** Runs inside feed(), before it answers (to hold it open in tests). */
+    var onFeed: suspend () -> Unit = {}
 
     private val profiles = linkedMapOf<String, Profile>()
     private val emails = mutableMapOf<String, String>()          // email -> user id
@@ -309,6 +311,7 @@ class FakeSocial {
         }
         override suspend fun feed(scope: FeedScope, cursor: FeedCursor?): FeedPage {
             check()
+            onFeed()
             val me = me()
             val visible = entries.filter { e ->
                 !blockedBetween(me, e.actor) && when (scope) {

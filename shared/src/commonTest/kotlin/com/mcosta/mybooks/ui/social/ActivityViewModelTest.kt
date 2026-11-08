@@ -14,6 +14,7 @@ import com.mcosta.mybooks.social.model.ReportReason
 import com.mcosta.mybooks.social.model.Visibility
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -32,7 +33,8 @@ class ActivityViewModelTest : MainDispatcherTest() {
         override suspend fun lookup(isbn: String) = LookupResult.NotFound
     })
 
-    private fun vm() = ActivityViewModel(fake.services, repo)
+    private fun vm(repository: BookRepository = repo, compute: kotlinx.coroutines.CoroutineDispatcher = mainDispatcher) =
+        ActivityViewModel(fake.services, repository, compute)
 
     @Test
     fun signedOutShowsJoinState() = runTest {
@@ -299,5 +301,86 @@ class ActivityViewModelTest : MainDispatcherTest() {
         vm.wantToBuy(book)
         assertEquals(1, repo.observeBooks(null, "").first().size)
         assertEquals(ReadingStatus.TO_READ, repo.observeBooks(null, "").first().single().status)
+    }
+
+    /** A library whose saves wait for [gate], so two adds really overlap. */
+    private val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+    private val slowDao = FakeBookDao()
+    private val slowRepo = BookRepository(object : com.mcosta.mybooks.data.db.BookDao by slowDao {
+        override suspend fun insert(book: com.mcosta.mybooks.data.db.BookEntity): Long {
+            gate.await()
+            return slowDao.insert(book)
+        }
+    }, object : BookLookupService {
+        override suspend fun lookup(isbn: String) = LookupResult.NotFound
+    })
+
+    /** Review focus: two quick taps on the card add the book once, even when the first save is still running. */
+    @Test
+    fun overlappingCardAddsAddOnce() = runTest {
+        fake.makeFriends(ana, bruno)
+        fake.addEntry(bruno, ActivityKind.STARTED, title = "Sem ISBN")
+        fake.signInAs(ana)
+        val vm = vm(slowRepo)
+        val book = vm.state.value.entries.single().book
+        vm.wantToRead(book)
+        vm.wantToBuy(book)
+        gate.complete(Unit)
+        assertEquals(1, slowRepo.observeBooks(null, "").first().size)
+    }
+
+    /** The card and the book sheet share one lock: tapping both at once adds the book once. */
+    @Test
+    fun cardAndSheetAddsAddOnce() = runTest {
+        fake.makeFriends(ana, bruno)
+        fake.addEntry(bruno, ActivityKind.STARTED, title = "Sem ISBN")
+        fake.signInAs(ana)
+        val vm = vm(slowRepo)
+        val book = vm.state.value.entries.single().book
+        vm.wantToRead(book)
+        vm.openBook(book)
+        vm.addToLibrary(ReadingStatus.WISHLIST)
+        gate.complete(Unit)
+        assertEquals(1, slowRepo.observeBooks(null, "").first().size)
+    }
+
+    /** The card says "In your library" for another edition (same title and author): the sheet agrees. */
+    @Test
+    fun sheetAgreesWithTheCard() = runTest {
+        fake.makeFriends(ana, bruno)
+        fake.addEntry(bruno, ActivityKind.STARTED, title = "Poesia: antologia", isbn = "9789722036504")
+        repo.save(Book(title = "Poesia", authors = "Author", isbn = "9789722039994", status = ReadingStatus.READ))
+        fake.signInAs(ana)
+        val vm = vm()
+        val book = vm.state.value.entries.single().book
+        assertEquals(ReadingStatus.READ, vm.state.value.shelves[book.shareId])
+        vm.openBook(book)
+        assertTrue(vm.state.value.openBookInLibrary)
+    }
+
+    /** The feed, the friends list and the friends row load at the same time. */
+    @Test
+    fun theRowLoadsWhileTheFeedDoes() = runTest {
+        fake.makeFriends(ana, bruno)
+        val feedGate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        fake.onFeed = { feedGate.await() }
+        fake.signInAs(ana)
+        vm()
+        assertEquals(1, fake.readingCalls)
+        feedGate.complete(Unit)
+    }
+
+    /** Matching the library runs on the given (background) dispatcher. */
+    @Test
+    fun shelvesAreWorkedOutOffTheMainThread() = runTest {
+        fake.makeFriends(ana, bruno)
+        fake.addEntry(bruno, ActivityKind.STARTED, title = "Dune", isbn = "9780441013593")
+        repo.save(Book(title = "Dune", authors = "Frank Herbert", isbn = "9780441013593", status = ReadingStatus.READ))
+        fake.signInAs(ana)
+        val background = kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)
+        val vm = vm(compute = background)
+        assertTrue(vm.state.value.shelves.isEmpty())
+        advanceUntilIdle()
+        assertEquals(ReadingStatus.READ, vm.state.value.shelves.values.single())
     }
 }

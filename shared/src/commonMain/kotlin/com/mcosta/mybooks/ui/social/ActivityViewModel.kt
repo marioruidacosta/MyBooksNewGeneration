@@ -25,6 +25,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 data class ActivityState(
@@ -62,6 +67,8 @@ data class ActivityState(
 class ActivityViewModel(
     private val services: SocialServices,
     private val repository: BookRepository,
+    /** Where the library is matched against the shown books (thousands of books: off the main thread). */
+    private val compute: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val _state = MutableStateFlow(ActivityState())
     val state: StateFlow<ActivityState> = _state.asStateFlow()
@@ -88,6 +95,7 @@ class ActivityViewModel(
                 repository.observeBooks(null, ""),
                 _state.map { s -> s.entries.map { it.book } + s.reading.map { it.book } }.distinctUntilChanged(),
             ) { library, books -> shelvesFor(books, library) }
+                .flowOn(compute)
                 .collect { shelves -> _state.update { it.copy(shelves = shelves) } }
         }
     }
@@ -129,9 +137,15 @@ class ActivityViewModel(
                 if (!hasProfile) return
             }
             val scope = _state.value.scope
-            val page = services.activity.feed(scope)
-            val hasFriends = if (scope == FeedScope.FRIENDS) services.friends.friends().isNotEmpty() else _state.value.hasFriends
-            val reading = if (scope == FeedScope.FRIENDS) friendsReading() else emptyList()
+            // The feed, the friends list and the friends row load at the same time.
+            val (page, hasFriends, reading) = coroutineScope {
+                val page = async { services.activity.feed(scope) }
+                val hasFriends = async {
+                    if (scope == FeedScope.FRIENDS) services.friends.friends().isNotEmpty() else _state.value.hasFriends
+                }
+                val reading = async { if (scope == FeedScope.FRIENDS) friendsReading() else emptyList() }
+                Triple(page.await(), hasFriends.await(), reading.await())
+            }
             _state.update {
                 if (it.scope != scope) it
                 else it.copy(entries = page.entries, next = page.next, hasFriends = hasFriends, reading = reading)
@@ -199,7 +213,8 @@ class ActivityViewModel(
     fun openBook(book: FeedBook) {
         _state.update { it.copy(openBook = book, openBookInLibrary = false) }
         viewModelScope.launch {
-            val inLibrary = shelf.contains(book)
+            // The same matching as the cards (another edition with the same title and author counts).
+            val inLibrary = libraryBookFor(book, repository.observeBooks(null, "").first()) != null
             _state.update { if (it.openBook == book) it.copy(openBookInLibrary = inLibrary) else it }
         }
     }
@@ -210,7 +225,7 @@ class ActivityViewModel(
     fun addToLibrary(status: ReadingStatus) {
         val book = _state.value.openBook ?: return
         viewModelScope.launch {
-            val added = shelf.add(book, status)
+            val added = adding.withLock { shelf.add(book, status) }
             _state.update {
                 it.copy(
                     message = LibraryShelf.message(added, status) ?: it.message,
