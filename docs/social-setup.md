@@ -102,6 +102,21 @@ values ('2026110900', 'suggested_readers', array[]::text[]);
 
 Until it's applied, BookNerd says it couldn't reach the community when asked for friends; books and abstracts work.
 
+### 3e. Library sync
+
+`supabase/migrations/2026111000_library_sync.sql` adds the private library tables (books, quotes, challenges, ebooks,
+bookmarks, preferences) and the functions `sync_push` and `sync_pull` that the phone's cloud sync calls, plus the
+Realtime ping that tells your other devices to pull. Apply it like 3d: `npx supabase db push --remote` from
+MyBooksNewGeneration, or, on a network that resets database connections, paste the file into the SQL Editor, run it,
+then record it:
+
+```sql
+insert into supabase_migrations.schema_migrations (version, name, statements)
+values ('2026111000', 'library_sync', array[]::text[]);
+```
+
+Until it's applied nothing uses it: the app keeps its library on the phone only.
+
 ## 4. Give the apps the URL and key
 
 - **Android** (your PC): add to `local.properties`, then rebuild:

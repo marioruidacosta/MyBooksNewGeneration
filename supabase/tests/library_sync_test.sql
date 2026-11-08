@@ -11,7 +11,7 @@ create function pg_temp.act_as(uid uuid) returns void language sql as $$
   select set_config('request.jwt.claims', json_build_object('sub', uid::text, 'role', 'authenticated')::text, true);
 $$;
 create function pg_temp.now_ms() returns bigint language sql as $$
-  select (extract(epoch from now()) * 1000)::bigint;
+  select (extract(epoch from clock_timestamp()) * 1000)::bigint;
 $$;
 create function pg_temp.push_book(p_id text, p_fields jsonb, p_times jsonb) returns jsonb language sql as $$
   select sync_push(jsonb_build_array(jsonb_build_object('table', 'books', 'id', p_id, 'fields', p_fields, 'times', p_times)));
@@ -52,6 +52,7 @@ select pg_temp.push_book('b4', '{"title":"Future"}', jsonb_build_object('title',
 select ok(
   (select (field_times->>'title')::bigint <= pg_temp.now_ms() + 60000 from library_books where id = 'b4'),
   'future_time_capped: stored time within now + 1 minute');
+select pg_sleep(0.01);
 select pg_temp.push_book('b4', '{"title":"Later"}', jsonb_build_object('title', pg_temp.now_ms() + 120000));
 select is(pg_temp.title_of('b4'), 'Later', 'future_time_capped: later edit wins');
 

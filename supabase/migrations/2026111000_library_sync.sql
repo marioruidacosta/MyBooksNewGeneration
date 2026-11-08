@@ -157,7 +157,7 @@ declare
   cols text[];
   f text;
   t bigint;
-  cap bigint := floor(extract(epoch from now()) * 1000)::bigint + 60000;
+  cap bigint := floor(extract(epoch from clock_timestamp()) * 1000)::bigint + 60000;
   changed boolean := false;
 begin
   if tbl is null then
