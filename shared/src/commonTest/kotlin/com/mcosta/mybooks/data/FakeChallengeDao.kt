@@ -10,8 +10,10 @@ import kotlinx.coroutines.flow.map
 class FakeChallengeDao : ChallengeDao {
     val rows = MutableStateFlow<Map<Int, ChallengeEntity>>(emptyMap())
 
-    override fun observeAll(): Flow<List<ChallengeEntity>> = rows.map { it.values.sortedByDescending { c -> c.year } }
-    override suspend fun getAll() = rows.value.values.sortedByDescending { it.year }
+    override fun observeAll(): Flow<List<ChallengeEntity>> = rows.map { it.values.filter { c -> !c.deleted }.sortedByDescending { c -> c.year } }
+    override suspend fun getAll() = rows.value.values.filter { !it.deleted }.sortedByDescending { it.year }
+    override suspend fun getAllAny() = rows.value.values.sortedByDescending { it.year }
+    override suspend fun getByYearAny(year: Int) = rows.value[year]
     override suspend fun upsert(challenge: ChallengeEntity) {
         rows.value = rows.value + (challenge.year to challenge)
     }

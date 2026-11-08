@@ -53,7 +53,7 @@ class EbookBackupTest {
         restore.importJson(json)
         val newId = restore.findByIsbn("9789722039994")!!.id
         val ebook = other.ebooks.get(newId)!!
-        assertEquals(EbookEntity(newId, EbookFormat.EPUB, "os-maias.epub", 512_000, 7, "{\"p\":3}", 9), ebook)
+        assertEquals(EbookEntity(newId, EbookFormat.EPUB, "os-maias.epub", 512_000, 7, "{\"p\":3}", 9, uuid = ebook.uuid), ebook)
         assertEquals(listOf("Capítulo I", "Capítulo II"), other.bookmarks.forBook(newId).map { it.label })
         assertEquals("{\"p\":2}", other.quotes.forBook(newId).single().position)
     }

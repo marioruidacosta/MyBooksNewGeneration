@@ -127,7 +127,8 @@ class MigrationTest {
         val dune = db.bookDao().findByIsbn("9780441013593")!!
         db.ebookDao().upsert(EbookEntity(dune.id, EbookFormat.EPUB, "dune.epub", 1234, dateAdded = 5))
         db.ebookDao().setPosition(dune.id, "{\"href\":\"ch2.xhtml\"}", lastOpened = 9)
-        assertEquals(EbookEntity(dune.id, EbookFormat.EPUB, "dune.epub", 1234, 5, "{\"href\":\"ch2.xhtml\"}", 9), db.ebookDao().get(dune.id))
+        val stored = db.ebookDao().get(dune.id)!!
+        assertEquals(EbookEntity(dune.id, EbookFormat.EPUB, "dune.epub", 1234, 5, "{\"href\":\"ch2.xhtml\"}", 9, uuid = stored.uuid), stored)
         val id = db.bookmarkDao().insert(BookmarkEntity(bookId = dune.id, position = "{\"href\":\"ch1.xhtml\"}", label = "Chapter 1", dateAdded = 6))
         assertEquals(listOf(id), db.bookmarkDao().forBook(dune.id).map { it.id })
 
@@ -200,6 +201,90 @@ class MigrationTest {
         assertEquals(listOf(ChallengeEntity(2026, 35), ChallengeEntity(2025, 25)), db.challengeDao().getAll())
         db.challengeDao().delete(2025)
         assertEquals(listOf(ChallengeEntity(2026, 35)), db.challengeDao().getAll())
+        db.close()
+    }
+
+    /** Version 8 adds sync columns (uuid, fieldTimes, deleted) and the sync tables; nothing is lost, every row gets a uuid. */
+    @Test
+    fun migrate7To8KeepsRowsAndGivesUuids() = runTest {
+        context.deleteDatabase(name)
+        val v7 = SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name), null)
+        // Exactly the version-7 schema (schemas/…/7.json).
+        v7.execSQL(
+            "CREATE TABLE IF NOT EXISTS `books` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `isbn` TEXT, " +
+                "`title` TEXT NOT NULL, `authors` TEXT NOT NULL, `publisher` TEXT, `publishedYear` INTEGER, " +
+                "`pageCount` INTEGER, `coverUrl` TEXT, `description` TEXT, `status` TEXT NOT NULL, `rating` INTEGER, " +
+                "`notes` TEXT NOT NULL, `dateAdded` INTEGER NOT NULL, `dateRead` INTEGER, `searchText` TEXT NOT NULL, " +
+                "`dateStarted` INTEGER, `currentPage` INTEGER, `progressPercent` INTEGER, `review` TEXT NOT NULL DEFAULT '', " +
+                "`tags` TEXT NOT NULL DEFAULT '', `series` TEXT, `seriesNumber` TEXT, `lentTo` TEXT, `lentOn` INTEGER)"
+        )
+        v7.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_books_isbn` ON `books` (`isbn`)")
+        v7.execSQL(
+            "CREATE TABLE IF NOT EXISTS `share_state` (`bookId` INTEGER NOT NULL, `shareId` TEXT NOT NULL, " +
+                "`owner` TEXT NOT NULL, `hasBefore` INTEGER NOT NULL, `beforeStatus` TEXT, `beforeRating` INTEGER, " +
+                "`beforeProgress` INTEGER, `beforeReview` TEXT, `pending` INTEGER NOT NULL, `excluded` INTEGER NOT NULL, " +
+                "`deleted` INTEGER NOT NULL, PRIMARY KEY(`bookId`))"
+        )
+        v7.execSQL("CREATE TABLE IF NOT EXISTS `challenges` (`year` INTEGER NOT NULL, `goal` INTEGER NOT NULL, PRIMARY KEY(`year`))")
+        v7.execSQL(
+            "CREATE TABLE IF NOT EXISTS `quotes` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `bookId` INTEGER NOT NULL, " +
+                "`text` TEXT NOT NULL, `page` INTEGER, `dateAdded` INTEGER NOT NULL, `position` TEXT)"
+        )
+        v7.execSQL("CREATE INDEX IF NOT EXISTS `index_quotes_bookId` ON `quotes` (`bookId`)")
+        v7.execSQL(
+            "CREATE TABLE IF NOT EXISTS `ebooks` (`bookId` INTEGER NOT NULL, `format` TEXT NOT NULL, `fileName` TEXT NOT NULL, " +
+                "`size` INTEGER NOT NULL, `dateAdded` INTEGER NOT NULL, `position` TEXT, `lastOpened` INTEGER, PRIMARY KEY(`bookId`))"
+        )
+        v7.execSQL(
+            "CREATE TABLE IF NOT EXISTS `bookmarks` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `bookId` INTEGER NOT NULL, " +
+                "`position` TEXT NOT NULL, `label` TEXT NOT NULL, `dateAdded` INTEGER NOT NULL)"
+        )
+        v7.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_bookId` ON `bookmarks` (`bookId`)")
+        val shareId = "1f0e5c1a-7b2d-4c3e-9a41-0d6f8e2b3c4d"
+        v7.execSQL(
+            "INSERT INTO books (id, isbn, title, authors, status, rating, notes, dateAdded, searchText) VALUES " +
+                "(1, '9780441013593', 'Dune', 'Frank Herbert', 'READ', 5, 'mine', 20, 'dune\nfrank herbert'), " +
+                "(2, NULL, 'Emma', 'Jane Austen', 'TO_READ', NULL, '', 21, 'emma\njane austen'), " +
+                "(3, '9789726084884', 'Shared', 'Someone', 'READING', 3, 'n', 22, 'shared\nsomeone')"
+        )
+        v7.execSQL(
+            "INSERT INTO share_state VALUES (3, '$shareId', 'user1', 0, NULL, NULL, NULL, NULL, 0, 0, 0)"
+        )
+        v7.execSQL(
+            "INSERT INTO quotes (id, bookId, text, page, dateAdded) VALUES (1, 1, 'Fear', 8, 1), (2, 1, 'Spice', NULL, 2)"
+        )
+        v7.execSQL("INSERT INTO ebooks VALUES (1, 'EPUB', 'dune.epub', 1234, 5, NULL, NULL)")
+        v7.execSQL("INSERT INTO bookmarks (id, bookId, position, label, dateAdded) VALUES (1, 1, '{}', 'Ch1', 6)")
+        v7.execSQL("INSERT INTO challenges VALUES (2026, 30)")
+        v7.version = 7
+        v7.close()
+
+        val db = createAndroidDatabase(context, name)
+        val books = db.bookDao().getAll().associateBy { it.title }
+        assertEquals(3, books.size)
+        assertEquals("mine", books.getValue("Dune").notes)
+        assertEquals(5, books.getValue("Dune").rating)
+        assertEquals(shareId, books.getValue("Shared").uuid)
+        val quotes = db.quoteDao().getAll()
+        assertEquals(listOf("Fear", "Spice"), quotes.map { it.text })
+        val ebook = db.ebookDao().getAll().single()
+        assertEquals("dune.epub", ebook.fileName)
+        assertEquals(books.getValue("Dune").uuid, ebook.uuid)
+        val bookmark = db.bookmarkDao().getAll().single()
+        assertEquals("Ch1", bookmark.label)
+        assertEquals(listOf(ChallengeEntity(2026, 30)), db.challengeDao().getAll())
+
+        val uuids = books.values.map { it.uuid } + quotes.map { it.uuid } + bookmark.uuid
+        val uuidShape = Regex("^[0-9a-f-]{36}$")
+        assertTrue(uuids.all { uuidShape.matches(it) })
+        assertEquals(uuids.size, uuids.toSet().size)
+        assertTrue(books.values.all { it.fieldTimes == "{}" && !it.deleted })
+        assertTrue(quotes.all { it.fieldTimes == "{}" && !it.deleted })
+        assertTrue(ebook.fieldTimes == "{}" && !ebook.deleted)
+        assertTrue(bookmark.fieldTimes == "{}" && !bookmark.deleted)
+        assertTrue(db.challengeDao().getAll().all { it.fieldTimes == "{}" && !it.deleted })
+        assertTrue(db.syncQueueDao().batch(10).isEmpty())
+        assertNull(db.syncStateDao().get("anything"))
         db.close()
     }
 }

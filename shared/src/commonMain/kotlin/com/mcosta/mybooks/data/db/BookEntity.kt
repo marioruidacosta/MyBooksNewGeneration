@@ -8,7 +8,7 @@ import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.searchKey
 
-@Entity(tableName = "books", indices = [Index(value = ["isbn"], unique = true)])
+@Entity(tableName = "books", indices = [Index(value = ["isbn"], unique = true), Index(value = ["uuid"], unique = true)])
 data class BookEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val isbn: String?,
@@ -38,6 +38,15 @@ data class BookEntity(
     val seriesNumber: String? = null,
     val lentTo: String? = null,
     val lentOn: Long? = null,
+    /** The book's id on every device (and on the server). */
+    @ColumnInfo(defaultValue = "")
+    val uuid: String = newUuid(),
+    /** Per field, when it last changed (JSON); drives the sync merge. */
+    @ColumnInfo(defaultValue = "{}")
+    val fieldTimes: String = "{}",
+    /** Deleted: kept as a tombstone until the deletion has synced; screens and backups skip it. */
+    @ColumnInfo(defaultValue = "0")
+    val deleted: Boolean = false,
 )
 
 fun BookEntity.toBook() = Book(

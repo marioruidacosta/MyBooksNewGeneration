@@ -135,4 +135,25 @@ class BookDaoTest {
         assertEquals(listOf("A Cidade e as Serras"), dao.observeByIsbn(ReadingStatus.READ, "9789722036504").first().map { it.title })
         assertEquals(emptyList<BookEntity>(), dao.observeByIsbn(ReadingStatus.WISHLIST, "9789722036504").first())
     }
+
+    /** A tombstoned row (deleted = 1) is invisible to every screen query, but sync still finds it. */
+    @Test
+    fun deletedRowsAreHidden() = runTest {
+        val id = dao.insert(book("Gone", authors = "A", isbn = "9780441013593"))
+        val noIsbnId = dao.insert(book("Nameless", authors = "B"))
+        dao.insert(book("Kept", authors = "C"))
+        for (gone in listOf(id, noIsbnId)) dao.update(dao.getAllAny().first { it.id == gone }.copy(deleted = true))
+
+        assertEquals(listOf("Kept"), dao.observe(null, "").first().map { it.title })
+        assertEquals(listOf("Kept"), dao.getAll().map { it.title })
+        assertNull(dao.findByIsbn("9780441013593"))
+        assertNull(dao.findWithoutIsbn("Nameless", "B"))
+        assertNull(dao.getById(id))
+        assertEquals(emptyList<BookEntity>(), dao.observeByIsbn(null, "9780441013593").first())
+        val hidden = dao.findByIsbnAny("9780441013593")
+        assertNotNull(hidden)
+        assertEquals("Gone", hidden!!.title)
+        assertEquals(hidden, dao.getByUuid(hidden.uuid))
+        assertEquals(3, dao.getAllAny().size)
+    }
 }

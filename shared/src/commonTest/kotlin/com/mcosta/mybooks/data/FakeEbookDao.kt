@@ -12,9 +12,11 @@ import kotlinx.coroutines.flow.map
 class FakeEbookDao : EbookDao {
     val rows = MutableStateFlow<Map<Long, EbookEntity>>(emptyMap())
 
-    override fun observe(bookId: Long): Flow<EbookEntity?> = rows.map { it[bookId] }
-    override suspend fun get(bookId: Long) = rows.value[bookId]
-    override suspend fun getAll() = rows.value.values.sortedBy { it.bookId }
+    override fun observe(bookId: Long): Flow<EbookEntity?> = rows.map { it[bookId]?.takeIf { e -> !e.deleted } }
+    override suspend fun get(bookId: Long) = rows.value[bookId]?.takeIf { !it.deleted }
+    override suspend fun getAll() = rows.value.values.filter { !it.deleted }.sortedBy { it.bookId }
+    override suspend fun getAllAny() = rows.value.values.sortedBy { it.bookId }
+    override suspend fun getByUuid(uuid: String) = rows.value.values.firstOrNull { it.uuid == uuid }
     /** Makes the next saves fail, like a database error. */
     var failUpsert = false
     override suspend fun upsert(ebook: EbookEntity) {
@@ -37,9 +39,11 @@ class FakeBookmarkDao : BookmarkDao {
     private val order = compareBy<BookmarkEntity> { it.dateAdded }.thenBy { it.id }
 
     override fun observe(bookId: Long): Flow<List<BookmarkEntity>> =
-        rows.map { m -> m.values.filter { it.bookId == bookId }.sortedWith(order) }
-    override suspend fun forBook(bookId: Long) = rows.value.values.filter { it.bookId == bookId }.sortedWith(order)
-    override suspend fun getAll() = rows.value.values.sortedWith(compareBy<BookmarkEntity> { it.bookId }.then(order))
+        rows.map { m -> m.values.filter { !it.deleted && it.bookId == bookId }.sortedWith(order) }
+    override suspend fun forBook(bookId: Long) = rows.value.values.filter { !it.deleted && it.bookId == bookId }.sortedWith(order)
+    override suspend fun getAll() = rows.value.values.filter { !it.deleted }.sortedWith(compareBy<BookmarkEntity> { it.bookId }.then(order))
+    override suspend fun getAllAny() = rows.value.values.sortedBy { it.id }
+    override suspend fun getByUuid(uuid: String) = rows.value.values.firstOrNull { it.uuid == uuid }
     override suspend fun insert(bookmark: BookmarkEntity): Long {
         val id = nextId++
         rows.value = rows.value + (id to bookmark.copy(id = id))

@@ -13,7 +13,7 @@ import com.mcosta.mybooks.domain.splitSeries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 
-@Database(entities = [BookEntity::class, ShareStateEntity::class, ChallengeEntity::class, QuoteEntity::class, EbookEntity::class, BookmarkEntity::class], version = 7, exportSchema = true)
+@Database(entities = [BookEntity::class, ShareStateEntity::class, ChallengeEntity::class, QuoteEntity::class, EbookEntity::class, BookmarkEntity::class, SyncQueueEntity::class, SyncStateEntity::class], version = 8, exportSchema = true)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
@@ -22,6 +22,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun quoteDao(): QuoteDao
     abstract fun ebookDao(): EbookDao
     abstract fun bookmarkDao(): BookmarkDao
+    abstract fun syncQueueDao(): SyncQueueDao
+    abstract fun syncStateDao(): SyncStateDao
 }
 
 /** Implemented by Room's code generator for each platform. */
@@ -33,7 +35,7 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
 /** Finishes a platform's database builder: migrations, SQLite driver and IO dispatcher. */
 fun createDatabase(builder: RoomDatabase.Builder<AppDatabase>, driver: SQLiteDriver): AppDatabase =
     builder
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
         .setDriver(driver)
         .setQueryCoroutineContext(Dispatchers.IO)
         .build()
@@ -129,5 +131,42 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
         )
         connection.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_bookId` ON `bookmarks` (`bookId`)")
         connection.execSQL("ALTER TABLE quotes ADD COLUMN position TEXT")
+    }
+}
+
+/** A random v4 uuid in SQL (lowercase, 8-4-4-4-12), evaluated once per row. */
+private const val SQL_UUID =
+    "lower(hex(randomblob(4)))||'-'||lower(hex(randomblob(2)))||'-4'||substr(lower(hex(randomblob(2))),2)||'-'||" +
+        "substr('89ab',abs(random())%4+1,1)||substr(lower(hex(randomblob(2))),2)||'-'||lower(hex(randomblob(6)))"
+
+/**
+ * v8: cloud sync. Rows get a uuid (a shared book keeps its share id), the time each field last changed and a
+ * deleted flag; the upload queue and the sync key/value store are new. An ebook's uuid is its book's.
+ */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(connection: SQLiteConnection) {
+        for (table in listOf("books", "quotes", "ebooks", "bookmarks")) {
+            connection.execSQL("ALTER TABLE $table ADD COLUMN uuid TEXT NOT NULL DEFAULT ''")
+        }
+        for (table in listOf("books", "quotes", "ebooks", "bookmarks", "challenges")) {
+            connection.execSQL("ALTER TABLE $table ADD COLUMN fieldTimes TEXT NOT NULL DEFAULT '{}'")
+            connection.execSQL("ALTER TABLE $table ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
+        }
+        for (table in listOf("books", "quotes", "bookmarks")) {
+            connection.execSQL("UPDATE $table SET uuid = $SQL_UUID")
+        }
+        connection.execSQL("UPDATE books SET uuid = (SELECT shareId FROM share_state WHERE share_state.bookId = books.id) " +
+            "WHERE id IN (SELECT bookId FROM share_state)")
+        connection.execSQL("UPDATE ebooks SET uuid = (SELECT uuid FROM books WHERE books.id = ebooks.bookId)")
+        // Exactly the indexes and tables Room generates (schemas/…/8.json).
+        connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_books_uuid` ON `books` (`uuid`)")
+        connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_quotes_uuid` ON `quotes` (`uuid`)")
+        connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_bookmarks_uuid` ON `bookmarks` (`uuid`)")
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `sync_queue` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`table` TEXT NOT NULL, `rowId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL)"
+        )
+        connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_sync_queue_table_rowId` ON `sync_queue` (`table`, `rowId`)")
+        connection.execSQL("CREATE TABLE IF NOT EXISTS `sync_state` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))")
     }
 }
