@@ -145,6 +145,43 @@ select is((select count(*)::int from library_books where id = 'fat'), 0, 'oversi
 select is(pg_temp.push_book('ok1', '{"title":"T"}', '{"title":1}')->'applied', '[{"table":"books","id":"ok1"}]'::jsonb,
   'applied_identified_by_table_and_id');
 
+-- merge_library
+select pg_temp.push_book('c1', '{"isbn":"9789722036504","title":"Old title","rating":3}', '{"isbn":1000,"title":1000,"rating":1000}');
+select is(
+  (select merge_library(jsonb_build_array(jsonb_build_object('id','l1',
+    'fields','{"isbn":"9789722036504","title":"Other","rating":5}'::jsonb,'times','{"rating":2000}'::jsonb)))->'ids'),
+  '{"l1":"c1"}'::jsonb, 'merge_matches_by_isbn_keeps_cloud_id: map');
+select is((select rating from library_books where id = 'c1'), 5, 'merge_matches_by_isbn_keeps_cloud_id: rating updated');
+select is((select count(*)::int from library_books where isbn = '9789722036504'), 1, 'merge_matches_by_isbn_keeps_cloud_id: one row');
+
+select pg_temp.push_book('c2', '{"title":"Ensaio sobre a Cegueira","authors":"José Saramago"}', '{"title":1000,"authors":1000}');
+select is(
+  (select merge_library(jsonb_build_array(jsonb_build_object('id','l2',
+    'fields','{"title":"ensaio sobre a cegueira: romance","authors":"Jose Saramago, Outro"}'::jsonb,'times','{}'::jsonb)))->'ids'),
+  '{"l2":"c2"}'::jsonb, 'merge_matches_by_title_and_first_author');
+
+select is(
+  (select merge_library(jsonb_build_array(jsonb_build_object('id','l3',
+    'fields','{"isbn":"111","title":"Brand new","authors":"Nobody"}'::jsonb,'times','{"title":1000}'::jsonb)))->'ids'),
+  '{"l3":"l3"}'::jsonb, 'merge_inserts_unmatched: own id');
+select is(pg_temp.title_of('l3'), 'Brand new', 'merge_inserts_unmatched: stored');
+
+select pg_temp.push_book('c4', '{"isbn":"222","deleted":true}', '{"isbn":1000,"deleted":1000}');
+select is(
+  (select merge_library(jsonb_build_array(jsonb_build_object('id','l4','fields','{"isbn":"222"}'::jsonb,'times','{}'::jsonb)))->'ids'),
+  '{"l4":"l4"}'::jsonb, 'merge_ignores_deleted_cloud_rows');
+
+select is(
+  (select jsonb_array_length(merge_library(jsonb_build_array(
+    jsonb_build_object('id','bad1','fields',jsonb_build_object('title', repeat('x', 301)),'times','{}'::jsonb),
+    jsonb_build_object('id','good1','fields','{"title":"Fine too"}'::jsonb,'times','{}'::jsonb)))->'set_aside')),
+  1, 'merge_sets_aside_bad_row');
+select is(pg_temp.title_of('good1'), 'Fine too', 'merge_sets_aside_bad_row: rest applied');
+select throws_ok(
+  $$select merge_library((select jsonb_agg(jsonb_build_object('id','m' || g,'fields','{}'::jsonb,'times','{}'::jsonb))
+                          from generate_series(1, 101) g))$$,
+  '22023', null, 'merge_over_100_rejected');
+
 -- rls_hides_other_owner
 select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
 select is(
@@ -155,6 +192,7 @@ select is(
 set local role anon;
 select throws_ok($$select sync_push('[]'::jsonb)$$, '42501', null, 'anon_cannot_call: sync_push');
 select throws_ok($$select sync_pull(0)$$, '42501', null, 'anon_cannot_call: sync_pull');
+select throws_ok($$select merge_library('[]'::jsonb)$$, '42501', null, 'merge_anon_cannot_call');
 
 -- catalogue checks (as the test owner again)
 reset role;
@@ -164,6 +202,10 @@ select is(
 select is(
   has_function_privilege('authenticated', '_merge_row(text,uuid,text,jsonb,jsonb)', 'execute'),
   false, 'merge_row_not_callable');
+
+select is((select public from storage.buckets where id = 'covers'), false, 'covers_bucket_private');
+select is((select count(*)::int from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'covers_%'),
+  4, 'covers_policies_exist');
 
 select * from finish();
 rollback;
