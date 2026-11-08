@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -68,6 +69,7 @@ fun ReaderBars(
     val finish by viewModel.finishPrompt.collectAsStateWithLifecycle()
     val marks by viewModel.bookmarks.collectAsStateWithLifecycle()
     val shown by viewModel.shownHighlight.collectAsStateWithLifecycle()
+    val found by viewModel.search.collectAsStateWithLifecycle()
     var sheet by remember { mutableStateOf<String?>(null) }
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(c.visible, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
@@ -76,6 +78,7 @@ fun ReaderBars(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                     Text(c.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     IconButton(onClick = { sheet = BOOKMARKS }) { Icon(Icons.Outlined.Bookmarks, "Bookmarks") }
+                    if (c.format == EbookFormat.EPUB) IconButton(onClick = { sheet = SEARCH }) { Icon(Icons.Filled.Search, "Search the book") }
                     if (c.contents.isNotEmpty()) IconButton(onClick = { sheet = CONTENTS }) { Icon(Icons.AutoMirrored.Filled.List, "Contents") }
                     if (c.format == EbookFormat.EPUB) IconButton(onClick = { sheet = LOOK }) { Icon(Icons.Filled.TextFields, "Text and colours") }
                 }
@@ -100,6 +103,13 @@ fun ReaderBars(
     when (sheet) {
         CONTENTS -> ContentsSheet(c.contents, onGo = { sheet = null; actions.goTo(it) }, onDismiss = { sheet = null })
         LOOK -> LookSheet(currentLook, onChange = actions::setLook, onDismiss = { sheet = null })
+        SEARCH -> SearchSheet(
+            found,
+            onSearch = viewModel::search,
+            onMore = viewModel::searchMore,
+            onOpen = { sheet = null; viewModel.goToPosition(it.position) },
+            onDismiss = { sheet = null },
+        )
         BOOKMARKS -> BookmarksSheet(
             marks,
             onAdd = { sheet = null; viewModel.bookmarkHere() },
@@ -131,3 +141,4 @@ fun ReaderBars(
 private const val CONTENTS = "contents"
 private const val LOOK = "look"
 private const val BOOKMARKS = "bookmarks"
+private const val SEARCH = "search"

@@ -3,6 +3,7 @@ package com.mcosta.mybooks.reader
 import androidx.lifecycle.ViewModel
 import com.mcosta.mybooks.domain.EbookFormat
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,9 +50,50 @@ class ReaderViewModel(
     quotes: Flow<List<Quote>> = emptyFlow(),
     private val addHighlight: suspend (text: String, position: String) -> Unit = { _, _ -> },
     private val deleteQuote: suspend (id: Long) -> Unit = {},
+    /** Searching the book's text (EPUB); null where it can't be searched. */
+    private val bookSearch: BookSearch? = null,
 ) : ViewModel() {
     private val _load = MutableStateFlow<ReaderLoad>(ReaderLoad.Loading)
     val load: StateFlow<ReaderLoad> = _load.asStateFlow()
+
+    private val _search = MutableStateFlow(SearchState())
+    val search: StateFlow<SearchState> = _search.asStateFlow()
+    private var searching: Job? = null
+
+    /** Starts searching for [query]: the first [SEARCH_PAGE] or so matches (whole chapters at a time). */
+    fun search(query: String) {
+        val engine = bookSearch ?: return
+        val q = query.trim()
+        if (q.isEmpty()) return
+        searching?.cancel()
+        _search.value = SearchState(query = q, searching = true, done = false)
+        searching = scope.launch {
+            engine.start(q)
+            fetch(engine)
+        }
+    }
+
+    /** "Show more": the next page of matches. */
+    fun searchMore() {
+        val engine = bookSearch ?: return
+        if (_search.value.done || _search.value.searching) return
+        _search.value = _search.value.copy(searching = true)
+        searching = scope.launch { fetch(engine) }
+    }
+
+    private suspend fun fetch(engine: BookSearch) {
+        val found = mutableListOf<SearchHit>()
+        var done = false
+        while (found.size < SEARCH_PAGE) {
+            val batch = engine.next()
+            if (batch == null) {
+                done = true
+                break
+            }
+            found += batch
+        }
+        _search.value = _search.value.copy(hits = _search.value.hits + found, searching = false, done = done)
+    }
 
     val bookmarks: StateFlow<List<Bookmark>> = bookmarks.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
@@ -103,6 +145,11 @@ class ReaderViewModel(
 
     fun open(bookmark: Bookmark) {
         _goTo.tryEmit(bookmark.position)
+    }
+
+    /** Goes to a place (locator JSON), such as a search result. */
+    fun goToPosition(position: String) {
+        _goTo.tryEmit(position)
     }
 
     private val _finishPrompt = MutableStateFlow(false)

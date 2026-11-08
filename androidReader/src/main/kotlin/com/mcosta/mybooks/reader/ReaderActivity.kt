@@ -101,6 +101,7 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
                     quotes = container.quotes.observe(bookId),
                     addHighlight = { text, position -> container.quotes.addHighlight(bookId, text, position) },
                     deleteQuote = { container.quotes.delete(it) },
+                    bookSearch = ReadiumSearch { publication },
                 )
             }
         }
