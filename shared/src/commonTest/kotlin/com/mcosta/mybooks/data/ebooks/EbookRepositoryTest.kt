@@ -23,6 +23,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFailsWith
 
 class EbookRepositoryTest {
     private val fs = FakeFileSystem()
@@ -69,16 +70,29 @@ class EbookRepositoryTest {
     }
 
     @Test
-    fun removeKeepsBookmarksAndQuotes() = runTest {
+    fun removeKeepsThePlaceBookmarksAndQuotes() = runTest {
+        // "Your place, bookmarks and highlights stay, for if you add it again."
         val id = book()
         repo.add(id, EbookFormat.EPUB, "b.epub", source(bytes(20)))
+        repo.savePosition(id, "{\"p\":5}", 0.5)
         repo.addBookmark(id, "{}", "Chapter 1")
         quoteDao.insert(QuoteEntity(bookId = id, text = "x", page = null, dateAdded = 1, position = "{}"))
         repo.remove(id)
-        assertNull(repo.observe(id).first())
+        val state = repo.observe(id).first()!!
+        assertFalse(state.fileOnPhone)
         assertFalse(files.exists(id, EbookFormat.EPUB))
         assertEquals(1, repo.observeBookmarks(id).first().size)
         assertEquals(1, quoteDao.forBook(id).size)
+        repo.add(id, EbookFormat.EPUB, "b.epub", source(bytes(20)))
+        assertEquals("{\"p\":5}", ebookDao.get(id)!!.position)
+    }
+
+    @Test
+    fun aFailedSaveLeavesNoFileBehind() = runTest {
+        val id = book()
+        ebookDao.failUpsert = true
+        assertFailsWith<IllegalStateException> { repo.add(id, EbookFormat.EPUB, "b.epub", source(bytes(20))) }
+        assertFalse(files.exists(id, EbookFormat.EPUB))
     }
 
     @Test
@@ -119,6 +133,28 @@ class EbookRepositoryTest {
         assertFalse(repo.savePosition(id, "{\"p\":1}", 0.424))
         assertEquals(42, books.getBook(id)!!.progressPercent)
         assertEquals("{\"p\":1}" to 2000L, ebookDao.get(id)!!.let { it.position to it.lastOpened })
+    }
+
+    /** Reaching the end as the reader closed: nobody saw "Finished?", so the next opening asks, once. */
+    @Test
+    fun finishedIsAskedOnOpeningWhenTheReaderClosedAtTheEnd() = runTest {
+        val id = book(ReadingStatus.READING)
+        repo.add(id, EbookFormat.EPUB, "b.epub", source(bytes(20)))
+        assertTrue(repo.savePosition(id, "{}", 0.995))
+        repo.forgetFinishPrompt(id)
+        assertTrue(repo.finishPromptOnOpen(id))
+        assertFalse(repo.finishPromptOnOpen(id))
+        assertFalse(repo.savePosition(id, "{}", 1.0))
+    }
+
+    @Test
+    fun notAskedOnOpeningBeforeTheEndOrWhenNotReading() = runTest {
+        val reading = book(ReadingStatus.READING)
+        repo.add(reading, EbookFormat.EPUB, "b.epub", source(bytes(20)))
+        repo.savePosition(reading, "{}", 0.5)
+        assertFalse(repo.finishPromptOnOpen(reading))
+        val read = book(ReadingStatus.READ)
+        assertFalse(repo.finishPromptOnOpen(read))
     }
 
     @Test

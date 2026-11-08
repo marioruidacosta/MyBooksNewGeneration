@@ -35,11 +35,19 @@ data class EbookMetadata(
     val language: String?,
 )
 
-/** "Queirós, Eça de" (as catalogues and many ebooks write names) → "Eça de Queirós"; other names are only trimmed. */
+/** Generational suffixes kept after a name ("Jr.", "III"); anything else after the given names is a title or dates. */
+private val NAME_SUFFIX = Regex("""(?i)(jr|sr)\.?|[ivx]{1,4}""")
+
+/**
+ * "Queirós, Eça de" (as catalogues and many ebooks write names) → "Eça de Queirós"; "King, Martin Luther, Jr." →
+ * "Martin Luther King Jr."; "Tolstoy, Leo, graf" → "Leo Tolstoy". Never keeps a comma, as the library reads a comma
+ * as the start of another author. Other names are only trimmed.
+ */
 fun personName(raw: String): String {
-    val name = raw.trim()
-    val parts = name.split(',').map { it.trim() }
-    return if (parts.size == 2 && parts.all { it.isNotEmpty() }) "${parts[1]} ${parts[0]}" else name
+    val parts = raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    if (parts.size < 2) return parts.firstOrNull().orEmpty()
+    val suffixes = parts.drop(2).filter { NAME_SUFFIX.matches(it) }
+    return (listOf(parts[1], parts[0]) + suffixes).joinToString(" ")
 }
 
 /** A title from a file name: "Os_Maias.epub" → "Os Maias". */

@@ -15,7 +15,10 @@ class FakeEbookDao : EbookDao {
     override fun observe(bookId: Long): Flow<EbookEntity?> = rows.map { it[bookId] }
     override suspend fun get(bookId: Long) = rows.value[bookId]
     override suspend fun getAll() = rows.value.values.sortedBy { it.bookId }
+    /** Makes the next saves fail, like a database error. */
+    var failUpsert = false
     override suspend fun upsert(ebook: EbookEntity) {
+        check(!failUpsert) { "database error" }
         rows.value = rows.value + (ebook.bookId to ebook)
     }
     override suspend fun delete(bookId: Long) {
