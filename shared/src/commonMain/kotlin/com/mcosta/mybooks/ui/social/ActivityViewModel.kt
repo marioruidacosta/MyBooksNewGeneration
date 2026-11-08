@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 data class ActivityState(
@@ -95,6 +96,11 @@ class ActivityViewModel(
     fun wantToRead(book: FeedBook) = add(book, ReadingStatus.TO_READ)
 
     fun wantToBuy(book: FeedBook) = add(book, ReadingStatus.WISHLIST)
+
+    /** "✓ In your library": opens the user's copy of [book] with [open] (its library id). */
+    fun openMine(book: FeedBook, open: (Long) -> Unit) {
+        viewModelScope.launch { libraryBookFor(book, repository.observeBooks(null, "").first())?.let { open(it.id) } }
+    }
 
     private fun add(book: FeedBook, status: ReadingStatus) {
         viewModelScope.launch {

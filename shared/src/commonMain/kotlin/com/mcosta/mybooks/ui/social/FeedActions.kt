@@ -82,3 +82,10 @@ internal fun shelvesFor(books: List<FeedBook>, library: List<Book>): Map<String,
         status?.let { b.shareId to it }
     }.toMap()
 }
+
+/** The user's copy of [book]: the same ISBN, or the same title (before any subtitle) and first author. */
+internal fun libraryBookFor(book: FeedBook, library: List<Book>): Book? {
+    fun key(title: String, authors: String) = catalogTitleKey(title) + "|" + searchKey(authors.substringBefore(',').trim())
+    return book.isbn?.let { isbn -> library.firstOrNull { it.isbn == isbn } }
+        ?: key(book.title, book.authors).let { k -> library.firstOrNull { key(it.title, it.authors) == k } }
+}

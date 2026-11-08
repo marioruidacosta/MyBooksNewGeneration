@@ -51,10 +51,13 @@ fun ActivityScreen(
     onOpenPerson: (String) -> Unit,
     /** Friends and requests (the Community tab's second screen). */
     onOpenFriends: (() -> Unit)? = null,
+    /** Opens a book of the user's library (from "✓ In your library"). */
+    onOpenLibraryBook: (Long) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var reporting by remember { mutableStateOf<FeedEntry?>(null) }
+    var seeAllReading by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); viewModel.dismissMessage() }
@@ -101,25 +104,21 @@ fun ActivityScreen(
                         noFriends = state.scope == FeedScope.FRIENDS && !state.hasFriends,
                         onFindPeople = onFindPeople,
                     )
-                    else -> LazyColumn(Modifier.fillMaxSize()) {
-                        itemsIndexed(state.entries, key = { _, e -> e.id }) { index, entry ->
-                            if (index == state.entries.lastIndex) LaunchedEffect(entry.id) { viewModel.loadMore() }
-                            FeedEntryCard(
-                                entry = entry,
-                                onPerson = { onOpenPerson(entry.actor.id) },
-                                onBook = { viewModel.openBook(entry.book) },
-                                onLike = if (entry.actor.id == state.myId) null else ({ viewModel.toggleLike(entry.id) }),
-                                onLikers = { viewModel.showLikers(entry.id) },
-                                onReport = if (entry.actor.id == state.myId) null else ({ reporting = entry }),
-                            )
-                            HorizontalDivider()
-                        }
-                        if (state.loadingMore) {
-                            item {
-                                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                            }
-                        }
-                    }
+                    else -> CommunityFeed(
+                        state,
+                        FeedCallbacks(
+                            onPerson = onOpenPerson,
+                            onBook = viewModel::openBook,
+                            onWantToRead = viewModel::wantToRead,
+                            onWantToBuy = viewModel::wantToBuy,
+                            onOpenMine = { book -> viewModel.openMine(book, onOpenLibraryBook) },
+                            onLike = viewModel::toggleLike,
+                            onLikers = viewModel::showLikers,
+                            onReport = { reporting = it },
+                            onLoadMore = viewModel::loadMore,
+                            onSeeAllReading = { seeAllReading = true },
+                        ),
+                    )
                 }
             }
         }
@@ -130,6 +129,9 @@ fun ActivityScreen(
     }
     state.openBook?.let { book ->
         FeedBookSheet(book, state.openBookInLibrary, onAdd = viewModel::addToLibrary, onDismiss = viewModel::closeBook)
+    }
+    if (seeAllReading) {
+        FriendsReadingSheet(state.reading, onBook = { seeAllReading = false; viewModel.openBook(it) }, onDismiss = { seeAllReading = false })
     }
     reporting?.let { entry ->
         ReportDialog(

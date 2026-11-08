@@ -90,4 +90,11 @@ class FeedTextTest {
         assertEquals("wants to read it", friendWithBookText(FriendWithBook(ana, ReadingStatus.TO_READ, null, null, "")))
         assertEquals("wants to buy it", friendWithBookText(FriendWithBook(ana, ReadingStatus.WISHLIST, null, null, "")))
     }
+
+    @Test
+    fun readingLabelUsesFirstName() {
+        val r = com.mcosta.mybooks.social.model.FriendReading(Person("id", "ana", "Ana Silva", null), FeedBook("s", null, "Dune", "", null), 53, Instant.fromEpochSeconds(0))
+        assertEquals("Ana · 53%", readingLabel(r))
+        assertEquals("Ana", readingLabel(r.copy(progress = null)))
+    }
 }
