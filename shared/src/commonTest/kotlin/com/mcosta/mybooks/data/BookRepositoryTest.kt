@@ -273,4 +273,12 @@ class BookRepositoryTest {
         assertEquals(listOf("A Cidade e as Serras"), repo.observeBooks(null, "972-20-3650-5").first().map { it.title })
         assertEquals(listOf("A Cidade e as Serras"), repo.observeBooks(null, "978-972-20-3650-4").first().map { it.title })
     }
+
+    /** A shelf searched by ISBN: only that shelf's copy. */
+    @Test
+    fun shelfSearchByIsbn() = runTest {
+        saveOk(Book(title = "A Cidade e as Serras", authors = "Eça de Queirós", isbn = "9789722036504", status = ReadingStatus.READ))
+        assertEquals(1, repo.observeBooks(ReadingStatus.READ, "972-20-3650-5").first().size)
+        assertEquals(0, repo.observeBooks(ReadingStatus.WISHLIST, "972-20-3650-5").first().size)
+    }
 }

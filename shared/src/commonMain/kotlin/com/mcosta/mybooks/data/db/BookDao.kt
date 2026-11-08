@@ -21,6 +21,10 @@ interface BookDao {
     )
     fun observe(status: ReadingStatus?, query: String): Flow<List<BookEntity>>
 
+    /** The books with [isbn] (ISBN-13) and [status] (null = all), for a search by ISBN. */
+    @Query("SELECT * FROM books WHERE isbn = :isbn AND (:status IS NULL OR status = :status) ORDER BY title COLLATE NOCASE")
+    fun observeByIsbn(status: ReadingStatus?, isbn: String): Flow<List<BookEntity>>
+
     @Query("SELECT * FROM books WHERE id = :id")
     fun observeById(id: Long): Flow<BookEntity?>
 

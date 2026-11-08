@@ -91,7 +91,7 @@ class BookRepository(
     fun observeBooks(status: ReadingStatus?, query: String): Flow<List<Book>> {
         val isbn = (isbnQuery(query) as? IsbnQuery.Valid)?.isbn13
             ?: return dao.observe(status, searchPattern(query)).map { list -> list.map { it.toBook() } }
-        return dao.observe(status, searchPattern("")).map { list -> list.filter { it.isbn == isbn }.map { it.toBook() } }
+        return dao.observeByIsbn(status, isbn).map { list -> list.map { it.toBook() } }
     }
 
     fun observeBook(id: Long): Flow<Book?> = dao.observeById(id).map { it?.toBook() }

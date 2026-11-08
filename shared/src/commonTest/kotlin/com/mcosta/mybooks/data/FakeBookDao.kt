@@ -14,6 +14,10 @@ class FakeBookDao : BookDao {
 
     private fun unescape(q: String) = q.replace("\\%", "%").replace("\\_", "_").replace("\\\\", "\\")
 
+    override fun observeByIsbn(status: ReadingStatus?, isbn: String): Flow<List<BookEntity>> = rows.map { m ->
+        m.values.filter { it.isbn == isbn && (status == null || it.status == status) }.sortedBy { it.title.lowercase() }
+    }
+
     override fun observe(status: ReadingStatus?, query: String): Flow<List<BookEntity>> = rows.map { m ->
         val q = unescape(query)
         m.values
