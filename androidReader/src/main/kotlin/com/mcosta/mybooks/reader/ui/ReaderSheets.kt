@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -90,6 +91,45 @@ private fun <T> Choices(title: String, options: List<T>, selected: T, label: (T)
         Text(title, style = MaterialTheme.typography.titleSmall)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             for (option in options) FilterChip(selected = option == selected, onClick = { onPick(option) }, label = { Text(label(option)) })
+        }
+    }
+}
+
+/** Bookmarks: keep the current page, go to one, or delete it. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun BookmarksSheet(
+    bookmarks: List<com.mcosta.mybooks.domain.Bookmark>,
+    onAdd: () -> Unit,
+    onOpen: (com.mcosta.mybooks.domain.Bookmark) -> Unit,
+    onDelete: (com.mcosta.mybooks.domain.Bookmark) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Bookmarks", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            androidx.compose.material3.FilledTonalButton(onClick = onAdd) { Text("Bookmark this page") }
+        }
+        if (bookmarks.isEmpty()) {
+            Text(
+                "No bookmarks yet.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+            )
+        }
+        LazyColumn(Modifier.padding(bottom = 24.dp)) {
+            items(bookmarks, key = { it.id }) { mark ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { onOpen(mark) }.padding(start = 24.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(mark.label, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(vertical = 12.dp))
+                    androidx.compose.material3.IconButton(onClick = { onDelete(mark) }) {
+                        Icon(Icons.Filled.Close, "Delete bookmark ${mark.label}")
+                    }
+                }
+            }
         }
     }
 }

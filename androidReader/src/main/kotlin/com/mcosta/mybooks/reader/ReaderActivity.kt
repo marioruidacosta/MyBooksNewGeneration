@@ -93,6 +93,9 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
                     save = { position, progression -> container.ebooks.savePosition(bookId, position, progression) },
                     markRead = { container.repository.setStatus(bookId, ReadingStatus.READ) },
                     scope = container.applicationScope,
+                    bookmarks = container.ebooks.observeBookmarks(bookId),
+                    addBookmark = { position, label -> container.ebooks.addBookmark(bookId, position, label) },
+                    deleteBookmark = { container.ebooks.deleteBookmark(it) },
                 )
             }
         }
@@ -167,10 +170,18 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
             }
         })
         lifecycleScope.launch {
+            viewModel.goTo.collect { json ->
+                runCatching { Locator.fromJSON(JSONObject(json)) }.getOrNull()?.let { nav.go(it, animated = false) }
+            }
+        }
+        lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 nav.currentLocator.collect { locator ->
                     val progression = locator.locations.totalProgression ?: locator.locations.progression ?: 0.0
-                    viewModel.position(locator.toJSON().toString(), progression)
+                    viewModel.position(
+                        locator.toJSON().toString(), progression,
+                        bookmarkLabel(file.format, locator.title, locator.locations.position, progression),
+                    )
                     chrome.value = chrome.value.copy(
                         progression = progression,
                         label = positionLabel(file.format, locator.title, locator.locations.position, progression, pages),

@@ -76,3 +76,10 @@ data class TocRow(val entry: TocEntry, val depth: Int)
 fun flattenContents(toc: List<TocEntry>, depth: Int = 0): List<TocRow> = toc.flatMap { e ->
     (if (e.title.isBlank()) emptyList() else listOf(TocRow(e, depth))) + flattenContents(e.children, depth + 1)
 }
+
+/** A bookmark's name: the chapter for an EPUB, the page for a PDF, else how far through the book. */
+fun bookmarkLabel(format: EbookFormat, chapter: String?, page: Int?, progression: Double): String = when {
+    format == EbookFormat.PDF && page != null -> "Page $page"
+    !chapter.isNullOrBlank() -> chapter.trim()
+    else -> "${(progression * 100).roundToInt().coerceIn(0, 100)}%"
+}
