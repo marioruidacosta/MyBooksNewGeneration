@@ -188,6 +188,17 @@ select is(
     'fields','{"title":"valka s mloky","authors":"Karel Capek"}'::jsonb,'times','{}'::jsonb)))->'ids'),
   '{"l5":"c5"}'::jsonb, 'merge_matches_non_portuguese_accents');
 
+-- Two different ISBNs are two books (or editions), whatever their titles; a side without ISBN still matches by title.
+select pg_temp.push_book('c6', '{"isbn":"333","title":"Os Maias","authors":"Eça de Queirós"}', '{"isbn":1000,"title":1000,"authors":1000}');
+select is(
+  (select merge_library(jsonb_build_array(jsonb_build_object('id','l6',
+    'fields','{"isbn":"444","title":"Os Maias: episódios","authors":"Eça de Queirós"}'::jsonb,'times','{}'::jsonb)))->'ids'),
+  '{"l6":"l6"}'::jsonb, 'merge_does_not_match_different_isbns');
+select is(
+  (select merge_library(jsonb_build_array(jsonb_build_object('id','l7',
+    'fields','{"isbn":"555","title":"Válka s mloky","authors":"Karel Čapek"}'::jsonb,'times','{}'::jsonb)))->'ids'),
+  '{"l7":"c5"}'::jsonb, 'merge_matches_title_when_cloud_has_no_isbn');
+
 -- covers_storage_isolation
 select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
 insert into storage.objects (bucket_id, name) values ('covers', '22222222-2222-2222-2222-222222222222/b.jpg');
