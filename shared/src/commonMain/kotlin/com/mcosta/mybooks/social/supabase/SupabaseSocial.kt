@@ -13,6 +13,7 @@ import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
 import com.mcosta.mybooks.social.model.CommunitySuggestion
 import com.mcosta.mybooks.social.model.FriendReading
+import com.mcosta.mybooks.social.model.SuggestedReader
 import com.mcosta.mybooks.social.model.FriendWithBook
 import com.mcosta.mybooks.social.model.FeedCursor
 import com.mcosta.mybooks.social.model.FeedPage
@@ -301,6 +302,10 @@ internal class SupabaseSocial(
                 }
             }
             Unit
+        }
+
+        override suspend fun suggestedReaders(): List<SuggestedReader> = call {
+            client.postgrest.rpc("suggested_readers").decodeList<SuggestedReaderRow>().map { it.toReader(::avatarUrl) }
         }
     }
 

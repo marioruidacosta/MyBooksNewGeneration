@@ -87,6 +87,10 @@ fun androidPlatformServices(
         documents = AndroidDocumentPicker(activity, results),
         pageReader = AndroidPageReader(),
         imageSharer = AndroidImageSharer(activity),
+        shareText = { text ->
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, text)
+            activity.startActivity(android.content.Intent.createChooser(send, null))
+        },
         monthlyAlerts = monthlyAlerts,
         ebooks = ebooks?.invoke(results),
     )

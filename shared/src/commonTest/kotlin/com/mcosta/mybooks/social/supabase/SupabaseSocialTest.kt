@@ -260,6 +260,18 @@ class SupabaseSocialTest : MainDispatcherTest() {
     }
 
     @Test
+    fun suggestedReadersParsed() = runTest {
+        val row = """[{"id":"id-carla","username":"carla","display_name":"Carla","avatar_path":null,"shared_books":2,
+            |"mutual_friends":1,"mutual_names":["Bruno"],"top_title":"Os Maias"}]""".trimMargin()
+        val social = social(mapOf("/rest/v1/rpc/suggested_readers" to listOf(200 to row)))
+        val r = social.services.friends.suggestedReaders().single()
+        assertEquals("carla", r.person.username)
+        assertEquals(listOf(2, 1), listOf(r.sharedBooks, r.mutualFriends))
+        assertEquals(listOf("Bruno"), r.mutualNames)
+        assertEquals("Os Maias", r.topTitle)
+    }
+
+    @Test
     fun personActivitySendsPerson() = runTest {
         val social = social(mapOf("/rest/v1/rpc/person_activity" to listOf(200 to "[${feedRow(1)}]")))
         val page = social.services.activity.personActivity("id-bruno")

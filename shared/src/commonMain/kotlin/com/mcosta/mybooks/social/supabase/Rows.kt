@@ -235,3 +235,24 @@ internal fun FriendWithBookRow.toFriend(avatarUrl: (String?) -> String?) = Frien
     progress = progress,
     review = review,
 )
+
+/** A row of suggested_readers. */
+@Serializable
+internal data class SuggestedReaderRow(
+    val id: String,
+    val username: String,
+    @SerialName("display_name") val displayName: String,
+    @SerialName("avatar_path") val avatarPath: String? = null,
+    @SerialName("shared_books") val sharedBooks: Int = 0,
+    @SerialName("mutual_friends") val mutualFriends: Int = 0,
+    @SerialName("mutual_names") val mutualNames: List<String> = emptyList(),
+    @SerialName("top_title") val topTitle: String? = null,
+)
+
+internal fun SuggestedReaderRow.toReader(avatarUrl: (String?) -> String?) = com.mcosta.mybooks.social.model.SuggestedReader(
+    person = Person(id, username, displayName, avatarUrl(avatarPath)),
+    sharedBooks = sharedBooks,
+    mutualFriends = mutualFriends,
+    mutualNames = mutualNames,
+    topTitle = topTitle,
+)

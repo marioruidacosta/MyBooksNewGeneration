@@ -88,6 +88,7 @@ import kotlinx.datetime.atStartOfDayIn
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import org.junit.After
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -375,6 +376,56 @@ class ScreenshotTest {
         }
         for (text in listOf("Ana Silva read it", "is reading it · 40%", "wants to read it")) compose.onNodeWithText(text, substring = true).assertExists()
     }
+
+    /** BookNerd suggesting books (light) and writing an abstract (dark). */
+    private fun bookNerd(dark: Boolean, abstract: Boolean) {
+        val greeting = com.mcosta.mybooks.ui.booknerd.BotMessage.BotText(0, "Olá! I'm BookNerd. I can suggest books, find you fellow readers, or write an abstract for a book idea.")
+        val state = if (!abstract) {
+            val books = listOf(
+                com.mcosta.mybooks.data.suggestions.Suggestion(com.mcosta.mybooks.data.suggestions.SuggestionSource.AUTHORS, "k1", "Ensaio sobre a Lucidez", "José Saramago", null, "Because you loved Saramago"),
+                com.mcosta.mybooks.data.suggestions.Suggestion(com.mcosta.mybooks.data.suggestions.SuggestionSource.NEW_IN_PORTUGAL, "k2", "A Cidade e as Serras", "Eça de Queirós", null, "New in Portugal this month"),
+                com.mcosta.mybooks.data.suggestions.Suggestion(com.mcosta.mybooks.data.suggestions.SuggestionSource.COMMUNITY, "k3", "Jalan Jalan", "Afonso Cruz", null, "Readers like you loved it"),
+            )
+            com.mcosta.mybooks.ui.booknerd.BookNerdState(
+                messages = listOf(
+                    greeting,
+                    com.mcosta.mybooks.ui.booknerd.BotMessage.UserText(1, "suggest a book"),
+                    com.mcosta.mybooks.ui.booknerd.BotMessage.BotText(2, "Here are some books you might like:"),
+                    com.mcosta.mybooks.ui.booknerd.BotMessage.BookCards(3, books),
+                ),
+                chips = listOf("More", "Something else"),
+                added = mapOf("k2" to ReadingStatus.TO_READ),
+            )
+        } else {
+            val idea = com.mcosta.mybooks.ui.booknerd.IdeaAnswers(
+                com.mcosta.mybooks.ui.booknerd.Genre.MYSTERY, "Teodoro, a shy pharmacist", "Lisbon, in 1910",
+                "he finds a letter he was never meant to read", com.mcosta.mybooks.ui.booknerd.Tone.DARK,
+            )
+            com.mcosta.mybooks.ui.booknerd.BookNerdState(
+                messages = listOf(
+                    "What genre is it?" to "Mystery",
+                    "Who is the main character? (a name and a few words)" to idea.character,
+                    "Where and when does it happen?" to idea.setting,
+                    "What goes wrong, or what do they want?" to idea.conflict,
+                    "What tone?" to "Dark",
+                ).flatMapIndexed { i, (q, a) ->
+                    listOf(com.mcosta.mybooks.ui.booknerd.BotMessage.BotText(2L * i, q), com.mcosta.mybooks.ui.booknerd.BotMessage.UserText(2L * i + 1, a))
+                } + listOf(
+                    com.mcosta.mybooks.ui.booknerd.BotMessage.AbstractCard(10, com.mcosta.mybooks.ui.booknerd.writeAbstract(idea, com.mcosta.mybooks.ui.booknerd.BotLanguage.EN, 0)),
+                ),
+                chips = listOf("Another version", "Start over"),
+            )
+        }
+        shoot(if (abstract) "booknerd-abstract" else "booknerd-books", dark, ready = { true }) {
+            androidx.compose.material3.Surface {
+                com.mcosta.mybooks.ui.booknerd.BookNerdChat(state, com.mcosta.mybooks.ui.booknerd.BookNerdActions(onShare = {}))
+            }
+        }
+        val expected = if (abstract) listOf("What genre is it?", "Where and when does it happen?", "Another version", "Copy", "Share", "Start over") else listOf("To read", "To buy", "More", "Something else", "In your library")
+        for (text in expected) {
+            assertTrue(text, compose.onAllNodes(androidx.compose.ui.test.hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty())
+        }
+    }
     @Config(qualifiers = TALL) @Test fun homeLight() = home(dark = false)
     @Config(qualifiers = TALL) @Test fun homeDark() = home(dark = true)
     @Test fun shelfLight() = shelf(dark = false)
@@ -400,4 +451,6 @@ class ScreenshotTest {
     @Config(qualifiers = TALL) @Test fun communityLight() = community(dark = false)
     @Config(qualifiers = TALL) @Test fun communityDark() = community(dark = true)
     @Test fun friendsWithBookLight() = friendsWithBook(dark = false)
+    @Config(qualifiers = TALL) @Test fun booknerdBooksLight() = bookNerd(dark = false, abstract = false)
+    @Config(qualifiers = TALL) @Test fun booknerdAbstractDark() = bookNerd(dark = true, abstract = true)
 }

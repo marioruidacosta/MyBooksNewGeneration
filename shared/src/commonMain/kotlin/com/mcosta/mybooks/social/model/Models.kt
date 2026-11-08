@@ -41,3 +41,15 @@ sealed interface SessionState {
     data object SignedOut : SessionState
     data class SignedIn(val userId: String, val email: String?) : SessionState
 }
+
+/**
+ * Someone BookNerd suggests as a friend: [sharedBooks] books both loved (4–5 stars), the latest of them [topTitle];
+ * [mutualFriends] friends in common, up to two of them named in [mutualNames].
+ */
+data class SuggestedReader(
+    val person: Person,
+    val sharedBooks: Int,
+    val mutualFriends: Int,
+    val mutualNames: List<String>,
+    val topTitle: String?,
+)

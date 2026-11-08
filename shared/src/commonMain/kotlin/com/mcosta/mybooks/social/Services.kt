@@ -14,6 +14,7 @@ import com.mcosta.mybooks.social.model.Profile
 import com.mcosta.mybooks.social.model.Relationship
 import com.mcosta.mybooks.social.model.ReportReason
 import com.mcosta.mybooks.social.model.SearchResult
+import com.mcosta.mybooks.social.model.SuggestedReader
 import com.mcosta.mybooks.social.model.SessionState
 import com.mcosta.mybooks.social.model.Visibility
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +60,8 @@ interface FriendsService {
     suspend fun respond(requesterId: String, accept: Boolean)
     suspend fun cancelRequest(userId: String)
     suspend fun removeFriend(userId: String)
+    /** People to suggest as friends: similar taste and friends of friends (BookNerd). */
+    suspend fun suggestedReaders(): List<SuggestedReader> = emptyList()
 }
 
 interface SafetyService {

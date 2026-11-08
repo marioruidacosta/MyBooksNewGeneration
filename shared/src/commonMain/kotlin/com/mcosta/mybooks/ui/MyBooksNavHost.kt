@@ -113,6 +113,7 @@ object Routes {
     /** A catalogue book (from "More by …"); {key} finds it in [com.mcosta.mybooks.AppContainer.catalogBooks]. */
     const val CATALOG_BOOK = "catalog/{key}"
     const val SUGGESTIONS = "suggestions"
+    const val BOOKNERD = "booknerd"
     /** The books read in {year}, or "undated" for read books without a read date. */
     const val READ_YEAR = "reading-activity/{year}"
     /** A year of reading as a shareable review. */
@@ -188,6 +189,14 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
 
     val celebrations = viewModel { CelebrationViewModel(container.repository, container.challenges, container.events) }
     val celebration by celebrations.celebration.collectAsStateWithLifecycle()
+    // BookNerd's conversation lasts while the app is open: its view model belongs to the activity, not the screen.
+    val bookNerd = viewModel {
+        com.mcosta.mybooks.ui.booknerd.BookNerdViewModel(
+            { container.suggestions.suggestions().without(container.hiddenSuggestions.keys.value) },
+            social,
+            container.repository,
+        )
+    }
     /** A suggestion opens as a New in Portugal book or a catalogue book. */
     val openSuggestion: (Suggestion) -> Unit = { s ->
         val release = s.release
@@ -231,6 +240,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     snackbarHostState = snackbar,
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     onOpenShelf = { nav.navigate(Routes.shelf(it)) },
+                    onOpenBookNerd = { nav.navigate(Routes.BOOKNERD) },
                     onOpenReadingActivity = { nav.navigate(Routes.READING_ACTIVITY) },
                     suggestions = suggestions,
                     onOpenSuggestion = openSuggestion,
@@ -349,6 +359,14 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     onOpenRelease = { month, id -> nav.navigate(Routes.releaseBook(month, id)) },
                     onOpenCatalogBook = { nav.navigate("catalog/${container.catalogBooks.put(it)}") },
                     onAddYourself = { nav.navigate(Routes.add(it)) },
+                )
+            }
+            composable(Routes.BOOKNERD) {
+                com.mcosta.mybooks.ui.booknerd.BookNerdScreen(
+                    viewModel = bookNerd,
+                    onBack = { nav.popBackStack() },
+                    onOpenProfile = { nav.navigate(Routes.profile(it)) },
+                    onJoin = { nav.navigate(Routes.ACCOUNT) },
                 )
             }
             composable(Routes.SUGGESTIONS) {
