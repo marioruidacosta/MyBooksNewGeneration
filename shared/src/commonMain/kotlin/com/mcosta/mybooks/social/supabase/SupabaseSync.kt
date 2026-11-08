@@ -16,6 +16,7 @@ import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.broadcastFlow
 import io.github.jan.supabase.realtime.channel
+import io.github.jan.supabase.realtime.realtime
 import io.github.jan.supabase.storage.storage
 import io.ktor.client.plugins.HttpRequestTimeoutException
 import kotlinx.coroutines.CancellationException
@@ -23,6 +24,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.io.IOException
@@ -58,7 +60,10 @@ internal fun mapSyncError(e: Throwable): SyncException {
     }
 }
 
-internal class SupabaseSync(private val client: SupabaseClient) : SyncApi {
+internal class SupabaseSync(
+    private val client: SupabaseClient,
+    private val pingChannel: (topic: String) -> PingChannel = { topic -> RealtimePingChannel(client, topic) },
+) : SyncApi {
     private suspend fun <T> call(block: suspend () -> T): T = try {
         block()
     } catch (e: CancellationException) {
@@ -128,15 +133,16 @@ internal class SupabaseSync(private val client: SupabaseClient) : SyncApi {
     }
 
     override fun pings(owner: String): Flow<Unit> = channelFlow {
-        val channel: RealtimeChannel = client.channel("library:$owner") { isPrivate = true }
-        val changes = channel.broadcastFlow<JsonObject>("changed")
-        val collector = launch { changes.collect { send(Unit) } }
+        val channel = pingChannel("library:$owner")
+        // Collect before subscribing so no early event is missed.
+        val collector = launch { channel.events.collect { send(Unit) } }
         try {
-            call { channel.subscribe(blockUntilSubscribed = true) }
+            call { channel.subscribe() }
             awaitClose()
         } finally {
             collector.cancel()
-            withContext(NonCancellable) { runCatching { channel.unsubscribe() } }
+            // Removes the channel from the client too, so repeated collection doesn't leave channels behind.
+            withContext(NonCancellable) { runCatching { channel.remove() } }
         }
     }
 
@@ -148,6 +154,27 @@ internal class SupabaseSync(private val client: SupabaseClient) : SyncApi {
     override suspend fun downloadCover(owner: String, bookUuid: String): ByteArray? = try {
         call { client.storage.from("covers").downloadAuthenticated("$owner/$bookUuid.jpg") }
     } catch (e: SyncException) {
-        if ((e.cause as? RestException)?.statusCode == 404) null else throw e
+        if (isNotFound(e)) null else throw e
     }
+}
+
+/** The realtime channel behind [SyncApi.pings], so its lifecycle can be tested without a websocket. */
+internal interface PingChannel {
+    val events: Flow<Unit>
+    suspend fun subscribe()
+    suspend fun remove()
+}
+
+private class RealtimePingChannel(private val client: SupabaseClient, topic: String) : PingChannel {
+    private val channel: RealtimeChannel = client.channel(topic) { isPrivate = true }
+    override val events: Flow<Unit> = channel.broadcastFlow<JsonObject>("changed").map { }
+    override suspend fun subscribe() = channel.subscribe(blockUntilSubscribed = true)
+    override suspend fun remove() = client.realtime.removeChannel(channel)
+}
+
+/** A missing object: a real 404, or (older storage-api) a 400 whose body says statusCode 404. */
+private fun isNotFound(e: SyncException): Boolean {
+    val rest = generateSequence(e as Throwable) { it.cause }.filterIsInstance<RestException>().firstOrNull() ?: return false
+    return rest.statusCode == 404 ||
+        (rest.statusCode == 400 && "${rest.message} ${rest.description}".let { "404" in it || "not found" in it.lowercase() })
 }

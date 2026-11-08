@@ -2,6 +2,7 @@ package com.mcosta.mybooks.social
 
 import com.mcosta.mybooks.MainDispatcherTest
 import com.mcosta.mybooks.social.supabase.SupabaseSync
+import com.mcosta.mybooks.social.supabase.PingChannel
 import com.mcosta.mybooks.social.supabase.supabaseClient
 import com.mcosta.mybooks.sync.FakeSyncServer
 import com.mcosta.mybooks.sync.SyncException
@@ -114,6 +115,46 @@ class SupabaseSyncTest : MainDispatcherTest() {
     fun missingCoverIsNull() = runTest {
         val api = sync(404, """{"statusCode":"404","error":"not_found","message":"Object not found"}""")
         assertEquals(null, api.downloadCover("o", "b"))
+    }
+
+    @Test
+    fun missingCoverAs400WithStatusCode404IsNull() = runTest {
+        val api = sync(400, """{"statusCode":"404","error":"not_found","message":"Object not found"}""")
+        assertEquals(null, api.downloadCover("o", "b"))
+    }
+
+    private class FakePingChannel : PingChannel {
+        val shared = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 8)
+        override val events: kotlinx.coroutines.flow.Flow<Unit> = shared
+        var subscribed = 0
+        var removed = 0
+        override suspend fun subscribe() { subscribed++ }
+        override suspend fun remove() { removed++ }
+    }
+
+    @Test
+    fun pingsSubscribeOnCollectAndRemoveOnCancel() = runTest {
+        val channels = mutableListOf<Pair<String, FakePingChannel>>()
+        val api = SupabaseSync(
+            supabaseClient(SocialConfig("https://test.supabase.co", "anon-key"), MockEngine { respond("{}") }, persistSession = false),
+        ) { topic -> FakePingChannel().also { channels += topic to it } }
+        val got = mutableListOf<Unit>()
+        val job = backgroundScope.launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)) { api.pings("me").collect { got += it } }
+        val (topic, first) = channels.single()
+        assertEquals("library:me", topic)
+        assertEquals(1, first.subscribed)
+        first.shared.emit(Unit)
+        assertEquals(1, got.size)
+        job.cancel()
+        job.join()
+        assertEquals(1, first.removed)
+        val job2 = backgroundScope.launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)) { api.pings("me").collect { got += it } }
+        assertEquals(2, channels.size)
+        assertEquals(1, channels[1].second.subscribed)
+        job2.cancel()
+        job2.join()
+        assertEquals(1, channels[1].second.removed)
+        assertEquals(1, first.removed)
     }
 
     @Test
