@@ -13,6 +13,8 @@ import com.mcosta.mybooks.data.goodreads.GoodreadsFormatException
 import com.mcosta.mybooks.data.lookup.BookLookupService
 import com.mcosta.mybooks.data.lookup.LookupResult
 import com.mcosta.mybooks.data.suggestions.HiddenSuggestions
+import com.mcosta.mybooks.domain.IsbnQuery
+import com.mcosta.mybooks.domain.isbnQuery
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.Isbn
 import com.mcosta.mybooks.domain.MAX_GOAL
@@ -85,8 +87,12 @@ class BookRepository(
     private val bookmarks: BookmarkDao? = null,
     private val ebookFiles: EbookFiles? = null,
 ) {
-    fun observeBooks(status: ReadingStatus?, query: String): Flow<List<Book>> =
-        dao.observe(status, searchPattern(query)).map { list -> list.map { it.toBook() } }
+    /** The books with [status] (all for null) matching [query]: by title or author, or by ISBN when it is one. */
+    fun observeBooks(status: ReadingStatus?, query: String): Flow<List<Book>> {
+        val isbn = (isbnQuery(query) as? IsbnQuery.Valid)?.isbn13
+            ?: return dao.observe(status, searchPattern(query)).map { list -> list.map { it.toBook() } }
+        return dao.observe(status, searchPattern("")).map { list -> list.filter { it.isbn == isbn }.map { it.toBook() } }
+    }
 
     fun observeBook(id: Long): Flow<Book?> = dao.observeById(id).map { it?.toBook() }
 

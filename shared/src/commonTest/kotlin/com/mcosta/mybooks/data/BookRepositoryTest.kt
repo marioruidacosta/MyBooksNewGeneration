@@ -265,4 +265,12 @@ class BookRepositoryTest {
         assertEquals(listOf("100% Wolf"), repo.observeBooks(null, "100%").first().map { it.title })
         assertEquals(listOf("Dune"), repo.observeBooks(ReadingStatus.READ, "").first().map { it.title })
     }
+
+    @Test
+    fun searchFindsABookByIsbn() = runTest {
+        saveOk(Book(title = "A Cidade e as Serras", authors = "Eça de Queirós", isbn = "9789722036504"))
+        saveOk(Book(title = "Os Maias", authors = "Eça de Queirós"))
+        assertEquals(listOf("A Cidade e as Serras"), repo.observeBooks(null, "972-20-3650-5").first().map { it.title })
+        assertEquals(listOf("A Cidade e as Serras"), repo.observeBooks(null, "978-972-20-3650-4").first().map { it.title })
+    }
 }
