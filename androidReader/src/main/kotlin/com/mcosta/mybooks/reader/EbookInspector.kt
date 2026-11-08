@@ -34,7 +34,7 @@ class EbookInspector {
 
     private fun inspectNow(file: File): Inspection {
         if (file.length() == 0L) return Inspection.Unreadable
-        val head = file.inputStream().use { it.readNBytes(5) }
+        val head = readBytes(file, 0, 5)
         return when {
             head.startsWith("PK") -> epub(file)
             head.startsWith("%PDF") -> pdf(file)
