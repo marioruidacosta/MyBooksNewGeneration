@@ -21,13 +21,26 @@ class SyncRecorder(
     /** Emits after each queued change; wakes the sync engine. */
     val changes: SharedFlow<Unit> = _changes.asSharedFlow()
 
+    private var depth = 0
+    private var pendingWake = false
+
     fun now(): Long = clock()
 
     /** Runs [block] atomically (the app passes a Room write transaction) and returns its result. */
     @Suppress("UNCHECKED_CAST")
     suspend fun <T> transaction(block: suspend () -> T): T {
         var result: Any? = null
-        runTransaction { result = block() }
+        depth++
+        try {
+            runTransaction { result = block() }
+        } finally {
+            depth--
+        }
+        // Wake the engine only once the outermost transaction has committed, so it can see the queue entry.
+        if (depth == 0 && pendingWake) {
+            pendingWake = false
+            _changes.tryEmit(Unit)
+        }
         return result as T
     }
 
@@ -35,6 +48,6 @@ class SyncRecorder(
     suspend fun record(table: SyncTable, rowId: String) {
         if (!enabled()) return
         queue.enqueue(table.wire, rowId, clock())
-        _changes.tryEmit(Unit)
+        if (depth > 0) pendingWake = true else _changes.tryEmit(Unit)
     }
 }

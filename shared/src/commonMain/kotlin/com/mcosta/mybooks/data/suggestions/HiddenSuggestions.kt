@@ -3,6 +3,7 @@ package com.mcosta.mybooks.data.suggestions
 import com.mcosta.mybooks.data.Preferences
 import com.mcosta.mybooks.data.authors.catalogTitleKey
 import com.mcosta.mybooks.domain.searchKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,7 +34,7 @@ class HiddenSuggestions(
         if (all == _keys.value) return
         _keys.value = all
         prefs?.set(KEY, all.sorted().joinToString("\n"))
-        onChanged?.let { scope.launch { it(KEY) } }
+        onChanged?.let { scope.launch { try { it(KEY) } catch (e: CancellationException) { throw e } catch (_: Exception) { /* sync is best effort */ } } }
     }
 
     private companion object {

@@ -63,9 +63,16 @@ class SyncingBookDao(private val raw: BookDao, private val recorder: SyncRecorde
 
     override suspend fun update(book: BookEntity) = recorder.transaction {
         val stored = raw.getById(book.id) ?: return@transaction
-        val next = book.copy(uuid = stored.uuid, deleted = false).stampedFrom(stored, recorder.now())
+        val now = recorder.now()
+        // A deleted book still holds its ISBN in the unique index: release it (the deletion still syncs).
+        book.isbn?.let { raw.findByIsbnAny(it) }?.takeIf { it.deleted && it.id != book.id }?.let { tomb ->
+            raw.update(tomb.copy(isbn = null).stampedFrom(tomb, now))
+            recorder.record(SyncTable.BOOKS, tomb.uuid)
+        }
+        val next = book.copy(uuid = stored.uuid, deleted = false).stampedFrom(stored, now)
         raw.update(next)
-        if (next.fields() != stored.fields()) recorder.record(SyncTable.BOOKS, next.uuid)
+        // Compare times too: a photo replaced by another photo has equal fields but a newer cover_url time.
+        if (next.fields() != stored.fields() || next.fieldTimes != stored.fieldTimes) recorder.record(SyncTable.BOOKS, next.uuid)
     }
 
     override suspend fun delete(id: Long) {

@@ -1,5 +1,6 @@
 package com.mcosta.mybooks.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,7 +27,7 @@ class PinnedTags(
         if (all == _tags.value) return
         _tags.value = all
         prefs?.set(KEY, all.joinToString("\n"))
-        onChanged?.let { scope.launch { it(KEY) } }
+        onChanged?.let { scope.launch { try { it(KEY) } catch (e: CancellationException) { throw e } catch (_: Exception) { /* sync is best effort */ } } }
     }
 
     private companion object {

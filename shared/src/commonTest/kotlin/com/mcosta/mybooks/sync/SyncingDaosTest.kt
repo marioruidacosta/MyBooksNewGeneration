@@ -18,6 +18,9 @@ import com.mcosta.mybooks.domain.EbookFormat
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -64,6 +67,7 @@ class SyncingDaosTest {
     fun updateStampsOnlyChangedFieldsKeepsUuid() = runTest {
         val id = saveOk(Book(title = "Dune"))
         val uuid = stored(id).uuid
+        queue.clear()
         now = 5000L
         repo.setRating(id, 4)
         val row = stored(id)
@@ -71,15 +75,17 @@ class SyncingDaosTest {
         val times = parseTimes(row.fieldTimes)
         assertEquals(5000L, times["rating"])
         assertEquals(1000L, times["title"])
+        assertEquals(listOf("books" to uuid), queued())
     }
 
     @Test
     fun repeatedEditsQueueOnce() = runTest {
         val id = saveOk(Book(title = "Dune"))
+        queue.clear()
         repo.setRating(id, 4)
         repo.setNotes(id, "x")
         repo.setReview(id, "y")
-        assertEquals(1, queue.rows.value.size)
+        assertEquals(listOf("books" to stored(id).uuid), queued())
     }
 
     @Test
@@ -174,5 +180,63 @@ class SyncingDaosTest {
         scope.advanceUntilIdle()
         assertEquals(listOf("prefs" to "home.pinnedTags"), queued())
         assertEquals("1000", saved["prefs/home.pinnedTags"])
+    }
+
+    @Test
+    fun photoReplacedByPhotoQueuesTheBook() = runTest {
+        val id = saveOk(Book(title = "Dune", coverUrl = "cover:a.jpg"))
+        queue.clear()
+        now = 4000L
+        SyncingBookDao(rawBooks, recorder).update(stored(id).copy(coverUrl = "cover:b.jpg"))
+        assertEquals(listOf("books" to stored(id).uuid), queued())
+        assertEquals(4000L, parseTimes(stored(id).fieldTimes)["cover_url"])
+    }
+
+    @Test
+    fun editingToADeletedBooksIsbnFreesIt() = runTest {
+        val a = saveOk(Book(title = "A", isbn = "9789722036504"))
+        val b = saveOk(Book(title = "B"))
+        repo.delete(a)
+        queue.clear()
+        assertEquals(SaveResult.Saved(b), repo.save(repo.getBook(b)!!.copy(isbn = "9789722036504")))
+        assertEquals("9789722036504", stored(b).isbn)
+        assertEquals(null, stored(a).isbn)
+        assertTrue(stored(a).deleted)
+        assertTrue(("books" to stored(a).uuid) in queued())
+    }
+
+    @Test
+    fun changesEmitOnlyAfterTheTransactionCommits() = runTest(UnconfinedTestDispatcher()) {
+        var committed = false
+        var depth = 0
+        val rec = SyncRecorder(queue, { now }, { true }) { block ->
+            depth++
+            block()
+            depth--
+            committed = depth == 0
+        }
+        val seen = mutableListOf<Boolean>()
+        backgroundScope.launch { rec.changes.collect { seen += committed } }
+        SyncingBookDao(rawBooks, rec).insert(
+            com.mcosta.mybooks.data.db.BookEntity(
+                isbn = null, title = "T", authors = "", publisher = null, publishedYear = null, pageCount = null, coverUrl = null,
+                description = null, status = com.mcosta.mybooks.domain.ReadingStatus.TO_READ, rating = null, notes = "",
+                dateAdded = 1, dateRead = null, searchText = "t",
+            ),
+        )
+        assertEquals(listOf(true), seen)
+    }
+
+    @Test
+    fun aFailingPrefCallbackDoesNotCrash() = runTest {
+        val uncaught = mutableListOf<Throwable>()
+        val scope = kotlinx.coroutines.CoroutineScope(
+            SupervisorJob() + StandardTestDispatcher(testScheduler) + kotlinx.coroutines.CoroutineExceptionHandler { _, e -> uncaught += e },
+        )
+        val pinned = PinnedTags(prefs = null, onChanged = { error("sync_state is locked") }, scope = scope)
+        pinned.setPinned("classics", true)
+        testScheduler.advanceUntilIdle()
+        assertEquals(listOf("classics"), pinned.tags.value)
+        assertTrue(uncaught.isEmpty(), "uncaught: $uncaught")
     }
 }
