@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -102,6 +104,9 @@ fun HomeScreen(
     onOpenLent: () -> Unit = {},
     /** Scan several books in a row. */
     onScanSeveral: () -> Unit = {},
+    /** Pick an EPUB or PDF from the phone, and Free classics; null where there is no reader. */
+    onAddEbook: (() -> Unit)? = null,
+    onClassics: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var addMenuOpen by remember { mutableStateOf(false) }
@@ -132,6 +137,16 @@ fun HomeScreen(
                         text = { Text("Enter manually") },
                         leadingIcon = { Icon(Icons.Filled.Edit, null) },
                         onClick = { addMenuOpen = false; onAddManually() },
+                    )
+                    if (onAddEbook != null) DropdownMenuItem(
+                        text = { Text("Add an ebook") },
+                        leadingIcon = { Icon(Icons.Filled.FileOpen, null) },
+                        onClick = { addMenuOpen = false; onAddEbook() },
+                    )
+                    if (onClassics != null) DropdownMenuItem(
+                        text = { Text("Free classics") },
+                        leadingIcon = { Icon(Icons.Filled.AutoStories, null) },
+                        onClick = { addMenuOpen = false; onClassics() },
                     )
                 }
             }

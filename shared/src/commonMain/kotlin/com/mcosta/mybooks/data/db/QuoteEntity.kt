@@ -18,10 +18,12 @@ data class QuoteEntity(
     val text: String,
     val page: Int?,
     val dateAdded: Long,
+    /** Where a highlight is in its ebook (a Readium locator as JSON); null for quotes typed or photographed. */
+    val position: String? = null,
 )
 
-fun QuoteEntity.toQuote() = Quote(id, bookId, text, page, dateAdded)
-fun Quote.toEntity() = QuoteEntity(id, bookId, text, page, dateAdded)
+fun QuoteEntity.toQuote() = Quote(id, bookId, text, page, dateAdded, position)
+fun Quote.toEntity() = QuoteEntity(id, bookId, text, page, dateAdded, position)
 
 @Dao
 interface QuoteDao {

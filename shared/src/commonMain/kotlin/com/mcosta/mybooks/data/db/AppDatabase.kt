@@ -13,13 +13,15 @@ import com.mcosta.mybooks.domain.splitSeries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 
-@Database(entities = [BookEntity::class, ShareStateEntity::class, ChallengeEntity::class, QuoteEntity::class], version = 6, exportSchema = true)
+@Database(entities = [BookEntity::class, ShareStateEntity::class, ChallengeEntity::class, QuoteEntity::class, EbookEntity::class, BookmarkEntity::class], version = 7, exportSchema = true)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun shareStateDao(): ShareStateDao
     abstract fun challengeDao(): ChallengeDao
     abstract fun quoteDao(): QuoteDao
+    abstract fun ebookDao(): EbookDao
+    abstract fun bookmarkDao(): BookmarkDao
 }
 
 /** Implemented by Room's code generator for each platform. */
@@ -31,7 +33,7 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
 /** Finishes a platform's database builder: migrations, SQLite driver and IO dispatcher. */
 fun createDatabase(builder: RoomDatabase.Builder<AppDatabase>, driver: SQLiteDriver): AppDatabase =
     builder
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
         .setDriver(driver)
         .setQueryCoroutineContext(Dispatchers.IO)
         .build()
@@ -110,5 +112,22 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
                 "`text` TEXT NOT NULL, `page` INTEGER, `dateAdded` INTEGER NOT NULL)"
         )
         connection.execSQL("CREATE INDEX IF NOT EXISTS `index_quotes_bookId` ON `quotes` (`bookId`)")
+    }
+}
+
+/** v7: ebook files and bookmarks, and where a highlight is in its ebook. */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(connection: SQLiteConnection) {
+        // Exactly the tables and index Room generates (schemas/…/7.json).
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `ebooks` (`bookId` INTEGER NOT NULL, `format` TEXT NOT NULL, `fileName` TEXT NOT NULL, " +
+                "`size` INTEGER NOT NULL, `dateAdded` INTEGER NOT NULL, `position` TEXT, `lastOpened` INTEGER, PRIMARY KEY(`bookId`))"
+        )
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS `bookmarks` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `bookId` INTEGER NOT NULL, " +
+                "`position` TEXT NOT NULL, `label` TEXT NOT NULL, `dateAdded` INTEGER NOT NULL)"
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_bookId` ON `bookmarks` (`bookId`)")
+        connection.execSQL("ALTER TABLE quotes ADD COLUMN position TEXT")
     }
 }

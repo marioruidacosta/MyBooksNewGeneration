@@ -79,6 +79,8 @@ import com.mcosta.mybooks.share.SharingState
 import com.mcosta.mybooks.ui.components.BookCover
 import com.mcosta.mybooks.ui.components.RatingStars
 import com.mcosta.mybooks.ui.components.StatusSelector
+import com.mcosta.mybooks.ui.ebooks.EbookCard
+import com.mcosta.mybooks.ui.ebooks.ReadButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,6 +102,9 @@ fun BookDetailScreen(
     /** All the books with a tag, or of a series. */
     onOpenTag: (String) -> Unit = {},
     onOpenSeries: (String) -> Unit = {},
+    /** Opens the reader; null where there is no reader (the Read button and Ebook card are then hidden). */
+    onRead: (() -> Unit)? = null,
+    onAddEbookFile: (() -> Unit)? = null,
 ) {
     val community by (extras?.community ?: remember { MutableStateFlow<CommunityState>(CommunityState.Hidden) }).collectAsStateWithLifecycle()
     val moreBy by (extras?.moreBy ?: remember { MutableStateFlow<MoreByState?>(null) }).collectAsStateWithLifecycle()
@@ -110,6 +115,7 @@ fun BookDetailScreen(
     val allTags by viewModel.allTags.collectAsStateWithLifecycle()
     val seriesBooks by viewModel.seriesBooks.collectAsStateWithLifecycle()
     val quotes by viewModel.quotes.collectAsStateWithLifecycle()
+    val ebook by viewModel.ebook.collectAsStateWithLifecycle()
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
     var pickingReadDate by remember { mutableStateOf(false) }
@@ -157,6 +163,7 @@ fun BookDetailScreen(
             Header(b, onAddPhoto = takePhoto, author = author, onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook)
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatusSelector(b.status, viewModel::setStatus, Modifier.fillMaxWidth())
+                if (ebook?.fileOnPhone == true && onRead != null) ReadButton(onRead)
                 SectionCard("Your score") { RatingStars(b.rating, onRate = viewModel::rate, size = 32.dp) }
                 if (b.status == ReadingStatus.READ) SectionCard("Reading dates") {
                     val read = b.dateRead
@@ -185,6 +192,7 @@ fun BookDetailScreen(
                 SeriesSection(b, seriesBooks, onOpenBook, onOpenSeries)
                 TagsSection(b, allTags, onAdd = viewModel::addTag, onRemove = viewModel::removeTag, onOpen = onOpenTag)
                 if (b.status != ReadingStatus.WISHLIST || b.lentTo != null) LoanSection(b, onLend = viewModel::lend, onReturned = viewModel::returned)
+                if (onAddEbookFile != null) EbookCard(ebook, onAdd = onAddEbookFile, onRemove = viewModel::removeEbook)
                 b.description?.takeIf { it.isNotBlank() }?.let { SectionCard("Description") { Description(it) } }
                 if (community != CommunityState.Hidden && extras != null) {
                     SectionCard("Community reviews") {

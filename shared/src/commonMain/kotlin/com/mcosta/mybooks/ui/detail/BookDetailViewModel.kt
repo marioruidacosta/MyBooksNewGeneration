@@ -11,6 +11,8 @@ import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.BookFilter
 import com.mcosta.mybooks.domain.Quote
 import com.mcosta.mybooks.data.QuoteRepository
+import com.mcosta.mybooks.data.ebooks.EbookRepository
+import com.mcosta.mybooks.data.ebooks.EbookState
 import com.mcosta.mybooks.domain.searchKey
 import com.mcosta.mybooks.domain.seriesOrder
 import kotlinx.coroutines.CoroutineScope
@@ -48,7 +50,19 @@ class BookDetailViewModel(
     private val authors: AuthorInfoSource? = null,
     /** The book's quotes; null shows none (tests that don't involve them). */
     private val quoteRepo: QuoteRepository? = null,
+    /** The book's ebook file; null shows no Ebook card (tests that don't involve it). */
+    private val ebookRepo: EbookRepository? = null,
 ) : ViewModel() {
+    /** The book's ebook and whether its file is on this phone; null without one. */
+    val ebook: StateFlow<EbookState?> = (ebookRepo?.observe(id) ?: flowOf(null))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Deletes the ebook file; bookmarks and highlights stay. */
+    fun removeEbook() {
+        val repo = ebookRepo ?: return
+        saveScope.launch { repo.remove(id) }
+    }
+
     private val _author = MutableStateFlow<AuthorPanel?>(null)
     /** The header's author panel, loaded when first shown ([loadAuthor]). */
     val author: StateFlow<AuthorPanel?> = _author.asStateFlow()

@@ -15,6 +15,21 @@ import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.ChallengeRepository
 import com.mcosta.mybooks.data.PinnedTags
 import com.mcosta.mybooks.data.QuoteRepository
+import com.mcosta.mybooks.data.ebooks.Classic
+import com.mcosta.mybooks.data.ebooks.ClassicsSource
+import com.mcosta.mybooks.data.ebooks.EbookFiles
+import com.mcosta.mybooks.data.ebooks.EbookMatcher
+import com.mcosta.mybooks.data.ebooks.EbookRepository
+import com.mcosta.mybooks.domain.EbookFormat
+import com.mcosta.mybooks.domain.EbookMetadata
+import com.mcosta.mybooks.platform.IncomingFile
+import com.mcosta.mybooks.platform.Inspection
+import com.mcosta.mybooks.ui.ebooks.AddEbookScreen
+import com.mcosta.mybooks.ui.ebooks.AddEbookState
+import com.mcosta.mybooks.ui.ebooks.AddEbookViewModel
+import com.mcosta.mybooks.ui.ebooks.ClassicsScreen
+import com.mcosta.mybooks.ui.ebooks.ClassicsViewModel
+import okio.Buffer
 import com.mcosta.mybooks.ui.scan.BatchScanScreen
 import com.mcosta.mybooks.ui.scan.BatchScanViewModel
 import com.mcosta.mybooks.ui.scan.ScanResult
@@ -168,9 +183,45 @@ class ScreenshotTest {
             quotes.add(id, "Sem a vontade não se levanta nem um convento nem uma passarola.", 152)
             quotes.add(id, "Os olhos de Blimunda viam por dentro das pessoas.", 78)
         }
-        val vm = BookDetailViewModel(repo, id, CoroutineScope(SupervisorJob() + Dispatchers.Default), quoteRepo = quotes)
-        shoot("book", dark, ready = { vm.book.value != null && vm.quotes.value.size == 2 }) {
-            BookDetailScreen(vm, onBack = {}, onEdit = {})
+        // The book has an EPUB on the phone: the Read button and the Ebook card show.
+        val ebooks = EbookRepository(db.ebookDao(), db.bookmarkDao(), EbookFiles(FileSystem.SYSTEM, context.filesDir.toOkioPath() / "ebooks"), repo)
+        runBlocking { ebooks.add(id, EbookFormat.EPUB, "memorial-do-convento.epub", Buffer().write(ByteArray(1_234_567))) }
+        val vm = BookDetailViewModel(repo, id, CoroutineScope(SupervisorJob() + Dispatchers.Default), quoteRepo = quotes, ebookRepo = ebooks)
+        shoot("book", dark, ready = { vm.book.value != null && vm.quotes.value.size == 2 && vm.ebook.value != null }) {
+            BookDetailScreen(vm, onBack = {}, onEdit = {}, onRead = {}, onAddEbookFile = {})
+        }
+    }
+
+    /** Free classics after a search: one downloaded (Read), one to download. */
+    private fun classics(dark: Boolean) {
+        sampleLibrary()
+        val found = listOf(
+            Classic(18220, "Os Maias: episodios da vida romantica", listOf("Eça de Queirós"), listOf("pt"), "https://g/18220.epub", null),
+            Classic(27637, "A Cidade e as Serras", listOf("Eça de Queirós"), listOf("pt"), "https://g/27637.epub", null),
+            Classic(1342, "Pride and Prejudice", listOf("Jane Austen"), listOf("en"), "https://g/1342.epub", null),
+        )
+        val source = object : ClassicsSource {
+            override suspend fun search(query: String) = found
+            override suspend fun download(classic: Classic, into: suspend (okio.Source) -> Unit) = into(Buffer().write(ByteArray(10)))
+        }
+        val ebooks = EbookRepository(db.ebookDao(), db.bookmarkDao(), EbookFiles(FileSystem.SYSTEM, context.filesDir.toOkioPath() / "ebooks"), repo)
+        val vm = ClassicsViewModel(source, EbookMatcher(repo), ebooks, repo)
+        vm.search("queirós")
+        vm.download(found[1])
+        shoot("classics", dark, ready = { found[1].id in vm.state.value.downloaded }) {
+            ClassicsScreen(vm, onBack = {}, onOpenBook = {}, onRead = {})
+        }
+    }
+
+    /** An Adobe-protected file: why it can't be read here, and adding the book without it. */
+    private fun protectedFile(dark: Boolean) {
+        sampleLibrary()
+        val ebooks = EbookRepository(db.ebookDao(), db.bookmarkDao(), EbookFiles(FileSystem.SYSTEM, context.filesDir.toOkioPath() / "ebooks"), repo)
+        val file = IncomingFile(context.cacheDir.resolve("ticket.acsm").apply { writeText("x") }.path, "URLLink.acsm", 1)
+        val inspection = Inspection.AdobeProtected(EbookMetadata("O Ano da Morte de Ricardo Reis", listOf("Saramago, José"), null, "pt"))
+        val vm = AddEbookViewModel(file, { inspection }, EbookMatcher(repo), ebooks, repo, FileSystem.SYSTEM)
+        shoot("protected", dark, ready = { vm.state.value is AddEbookState.AdobeProtected }) {
+            AddEbookScreen(vm, onBack = {}, onDone = { _, _ -> })
         }
     }
 
@@ -244,6 +295,9 @@ class ScreenshotTest {
     @Config(qualifiers = TALL) @Test fun yearReviewLight() = yearReview(dark = false)
     @Config(qualifiers = TALL) @Test fun yearReviewDark() = yearReview(dark = true)
     @Test fun scanSeveralDark() = batchScan(dark = true)
+    @Test fun classicsLight() = classics(dark = false)
+    @Test fun protectedLight() = protectedFile(dark = false)
+    @Test fun protectedDark() = protectedFile(dark = true)
 
     private companion object {
         const val TALL = "w411dp-h1600dp-xxhdpi"
