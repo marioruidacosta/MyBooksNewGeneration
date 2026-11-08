@@ -67,6 +67,8 @@ class FakeSocial {
     var suggested = emptyList<SuggestedReader>()
     var failSuggested = false
     var suggestedCalls = 0
+    /** When set, suggestedReaders() waits for it before answering. */
+    var suggestedGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     /** Runs inside publish, before it succeeds (e.g. to change the book mid-upload). */
     var onPublish: suspend () -> Unit = {}
     /** Runs inside like and unlike before they take effect (e.g. to hold the call in flight). */
@@ -255,6 +257,7 @@ class FakeSocial {
         override suspend fun suggestedReaders(): List<SuggestedReader> {
             check()
             suggestedCalls++
+            suggestedGate?.await()
             if (failSuggested) throw SocialException(SocialException.Kind.OFFLINE, "offline")
             return suggested
         }

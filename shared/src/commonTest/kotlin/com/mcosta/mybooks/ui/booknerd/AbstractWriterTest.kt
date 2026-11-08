@@ -68,6 +68,34 @@ class AbstractWriterTest {
         assertFalse("!." in text)
     }
 
+    /** Final review, Important 2: a place typed with its own preposition or article keeps it, in every template. */
+    @Test
+    fun placeKeepsItsPreposition() {
+        val cases = listOf(
+            BotLanguage.PT to listOf(
+                "no Porto, nos anos 60" to "no Porto, nos anos 60",
+                "na aldeia da avó" to "na aldeia da avó",
+                "numa aldeia do Alentejo" to "numa aldeia do Alentejo",
+                "durante a guerra" to "durante a guerra",
+                "o Porto" to "no Porto",
+                "Lisboa" to "em Lisboa",
+            ),
+            BotLanguage.EN to listOf(
+                "on Mars" to "on Mars",
+                "at sea" to "at sea",
+                "during the war" to "during the war",
+                "Lisbon" to "in Lisbon",
+            ),
+        )
+        val wrong = listOf("em no ", "em na ", "em numa ", "em durante", "em o ", "em porto", "a porto", "in on ", "in at ", "in during", "in mars", "in sea")
+        for ((language, settings) in cases) for ((typed, phrase) in settings) for (genre in Genre.entries) for (v in 0..2) {
+            val text = writeAbstract(IdeaAnswers(genre, "Ana", typed, "perde tudo", Tone.LIGHT), language, v)
+            val lower = text.lowercase()
+            assertTrue(phrase.lowercase() in lower, "$language $genre $v '$typed': $text")
+            wrong.forEach { assertFalse(" $it" in " $lower", "$language $genre $v '$typed' has '$it': $text") }
+        }
+    }
+
     @Test
     fun genreAndToneFromChipsAndWords() {
         assertEquals(Genre.SCIENCE_FICTION, genreOf("Science fiction"))

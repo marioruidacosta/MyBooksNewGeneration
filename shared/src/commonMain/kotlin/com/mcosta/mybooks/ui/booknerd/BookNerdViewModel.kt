@@ -74,6 +74,9 @@ class BookNerdViewModel(
     private val shelf = LibraryShelf(repository)
     private var nextId = 0L
     private var language = BotLanguage.EN
+    /** Bumped by every user message: a load started under an older value finished too late and must not show. */
+    private var generation = 0L
+    private var loads = 0
 
     private sealed interface Flow {
         data object Idle : Flow
@@ -95,14 +98,17 @@ class BookNerdViewModel(
     fun send(text: String) {
         user(text)
         val asking = flow as? Flow.Asking
-        if (asking != null) return answer(asking, text)
+        if (asking != null) return answer(asking, text, typed = true)
         val understood = understand(text)
         language = understood.language
         when (understood.intent) {
             BotIntent.BOOKS -> startBooks()
             BotIntent.FRIENDS -> startFriends()
             BotIntent.ABSTRACT -> startAbstract()
-            null -> {
+            null -> if (understood.options.isNotEmpty()) {
+                say(pick("Do you mean…?", "Queres dizer…?"))
+                chips(understood.options.map(::chipFor))
+            } else {
                 say(pick("I can help with three things:", "Posso ajudar com três coisas:"))
                 chips(MAIN_CHIPS)
             }
@@ -120,7 +126,7 @@ class BookNerdViewModel(
                 say(pick("What would you like to do?", "O que queres fazer?"))
                 chips(MAIN_CHIPS)
             }
-            asking != null -> answer(asking, label)
+            asking != null -> answer(asking, label, typed = false)
             label == CHIP_BOOKS -> startBooks()
             label == CHIP_FRIENDS || label == CHIP_RETRY -> startFriends()
             label == CHIP_ABSTRACT -> startAbstract()
@@ -141,19 +147,22 @@ class BookNerdViewModel(
         flow = Flow.Books(0)
         val known = books
         if (known != null) return showBooks()
-        _state.update { it.copy(busy = true) }
+        val mine = generation
+        loading(true)
         viewModelScope.launch {
             try {
                 books = suggestions().mix(Int.MAX_VALUE)
+                if (mine != generation) return@launch
                 showBooks()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (mine != generation) return@launch
                 flow = Flow.Idle
                 say(pick("I couldn't load suggestions right now.", "Não consegui carregar sugestões agora."))
                 chips(MAIN_CHIPS)
             } finally {
-                _state.update { it.copy(busy = false) }
+                loading(false)
             }
         }
     }
@@ -200,10 +209,12 @@ class BookNerdViewModel(
             add(BotMessage.JoinPrompt(id()))
             return chips(MAIN_CHIPS)
         }
-        _state.update { it.copy(busy = true) }
+        val mine = generation
+        loading(true)
         viewModelScope.launch {
             try {
                 val readers = s.friends.suggestedReaders()
+                if (mine != generation) return@launch
                 if (readers.isEmpty()) {
                     say(pick("I couldn't find anyone yet — invite your friends!", "Ainda não encontrei ninguém — convida os teus amigos!"))
                 } else {
@@ -213,10 +224,11 @@ class BookNerdViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (mine != generation) return@launch
                 say(pick("Couldn't reach the community.", "Não consegui chegar à comunidade."))
                 chips(listOf(CHIP_RETRY, CHIP_ELSE))
             } finally {
-                _state.update { it.copy(busy = false) }
+                loading(false)
             }
         }
     }
@@ -257,7 +269,8 @@ class BookNerdViewModel(
         )
     }
 
-    private fun answer(asking: Flow.Asking, text: String) {
+    private fun answer(asking: Flow.Asking, text: String, typed: Boolean) {
+        if (typed && soundsPortuguese(text)) language = BotLanguage.PT
         if (text.isBlank()) {
             say(pick("Tell me a little more?", "Conta-me um pouco mais?"))
             return ask(asking.step)
@@ -285,10 +298,23 @@ class BookNerdViewModel(
     // Conversation -----------------------------------------------------------------------------------------------
 
     private fun pick(en: String, pt: String) = if (language == BotLanguage.PT) pt else en
+    private fun chipFor(intent: BotIntent) = when (intent) {
+        BotIntent.BOOKS -> CHIP_BOOKS
+        BotIntent.FRIENDS -> CHIP_FRIENDS
+        BotIntent.ABSTRACT -> CHIP_ABSTRACT
+    }
     private fun id() = nextId++
     private fun add(message: BotMessage) = _state.update { it.copy(messages = it.messages + message) }
     private fun say(text: String) = add(BotMessage.BotText(id(), text))
-    private fun user(text: String) = add(BotMessage.UserText(id(), text))
+    private fun user(text: String) {
+        generation++
+        add(BotMessage.UserText(id(), text))
+    }
+
+    private fun loading(on: Boolean) {
+        loads += if (on) 1 else -1
+        _state.update { it.copy(busy = loads > 0) }
+    }
     private fun chips(labels: List<String>) = _state.update { it.copy(chips = labels) }
 
     private companion object {

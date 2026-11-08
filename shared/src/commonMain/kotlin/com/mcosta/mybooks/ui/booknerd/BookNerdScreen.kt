@@ -134,7 +134,7 @@ fun BookNerdChat(state: BookNerdState, actions: BookNerdActions, modifier: Modif
             }
         }
         if (state.chips.isNotEmpty()) Chips(state.chips, enabled = !state.busy, onChip = actions.onChip)
-        Input(onSend = actions.onSend)
+        Input(enabled = !state.busy, onSend = actions.onSend)
     }
 }
 
@@ -232,7 +232,7 @@ private fun Chips(labels: List<String>, enabled: Boolean, onChip: (String) -> Un
 }
 
 @Composable
-private fun Input(onSend: (String) -> Unit) {
+private fun Input(enabled: Boolean, onSend: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
@@ -242,7 +242,7 @@ private fun Input(onSend: (String) -> Unit) {
             modifier = Modifier.weight(1f),
             maxLines = 3,
         )
-        IconButton(onClick = { if (text.isNotBlank()) { onSend(text); text = "" } }) {
+        IconButton(onClick = { if (text.isNotBlank()) { onSend(text); text = "" } }, enabled = enabled) {
             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
         }
     }

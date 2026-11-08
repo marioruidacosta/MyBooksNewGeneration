@@ -231,6 +231,62 @@ class BookNerdViewModelTest : MainDispatcherTest() {
         assertTrue(cards[0].text != cards[1].text)
     }
 
+    /** Final review, Important 1: books that arrive after the user moved on don't take the conversation back. */
+    @Test
+    fun lateBooksDoNotTakeOverTheAbstract() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        books = { gate.await(); Suggestions(listOf(SuggestionSource.AUTHORS to (1..12).map { book(it) })) }
+        val vm = vm()
+        vm.chip("Suggest books")
+        vm.send("write a blurb")
+        gate.complete(Unit)
+        assertEquals("What genre is it?", vm.lastText())
+        assertTrue("Romance" in vm.state.value.chips)
+        assertTrue(vm.shownBooks().isEmpty())
+        assertEquals(false, vm.state.value.busy)
+        vm.chip("Mystery")
+        assertEquals("Who is the main character? (a name and a few words)", vm.lastText())
+    }
+
+    /** Final review, Important 1: a late friends answer neither shows nor turns its chips into abstract answers. */
+    @Test
+    fun lateFriendsDoNotTakeOverTheAbstract() = runTest {
+        fake.signInAs(fake.addUser("ana"))
+        fake.suggested = listOf(reader("carla"))
+        val gate = CompletableDeferred<Unit>()
+        fake.suggestedGate = gate
+        val vm = vm()
+        vm.chip("Suggest friends")
+        vm.send("write a blurb")
+        gate.complete(Unit)
+        assertTrue(vm.state.value.messages.none { it is BotMessage.PersonCards })
+        assertTrue("Romance" in vm.state.value.chips)
+        assertEquals(false, vm.state.value.busy)
+    }
+
+    /** Final review, Important 3: a chip-started abstract answered in Portuguese is written in Portuguese. */
+    @Test
+    fun abstractFollowsTheLanguageOfTheAnswers() = runTest {
+        val vm = vm()
+        vm.chip("Write an abstract")
+        vm.chip("Drama")
+        vm.send("Teodoro, um farmacêutico tímido")
+        assertEquals("Onde e quando acontece?", vm.lastText())
+        vm.answerAll("Lisboa, em 1910", "descobre uma carta")
+        vm.chip("Dark")
+        val card = assertIs<BotMessage.AbstractCard>(vm.state.value.messages.last())
+        assertTrue("Conheça" in card.text || "Passado" in card.text || "Há vidas" in card.text, card.text)
+    }
+
+    /** Final review, Important 4: a message that could mean two things asks which. */
+    @Test
+    fun ambiguousRequestAsksWhichOne() = runTest {
+        val vm = vm()
+        vm.send("a book for my friend's birthday")
+        assertEquals("Do you mean…?", vm.lastText())
+        assertEquals(listOf("Suggest books", "Suggest friends"), vm.state.value.chips)
+    }
+
     @Test
     fun startOverReturnsToChips() = runTest {
         val vm = vm()
