@@ -364,5 +364,8 @@ class FakeSocial {
         }
     }
 
-    val services = SocialServices(auth, profileService, friendsService, safetyService, activityService)
+    /** The cloud library the signed-in user syncs with. */
+    val sync = com.mcosta.mybooks.sync.FakeSyncServer()
+
+    val services = SocialServices(auth, profileService, friendsService, safetyService, activityService, sync)
 }

@@ -45,6 +45,8 @@ import io.github.jan.supabase.postgrest.exception.PostgrestRestException
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.Storage
+import io.github.jan.supabase.storage.resumable.MemoryResumableCache
+import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.storage.storage
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.network.sockets.ConnectTimeoutException
@@ -111,7 +113,9 @@ internal fun supabaseClient(
             }
         }
         install(Postgrest)
-        install(Storage)
+        // Only plain uploads are used; the default resumable-upload cache would need platform Settings.
+        install(Storage) { resumable { cache = MemoryResumableCache() } }
+        install(Realtime)
     }
 
 /** Maps any failure to the [SocialException] kinds the screens explain. */
@@ -426,5 +430,5 @@ internal class SupabaseSocial(
         }
     }
 
-    val services = SocialServices(auth, profiles, friends, safety, activity)
+    val services = SocialServices(auth, profiles, friends, safety, activity, SupabaseSync(client))
 }

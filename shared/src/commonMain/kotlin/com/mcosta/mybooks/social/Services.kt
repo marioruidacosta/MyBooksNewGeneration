@@ -103,4 +103,6 @@ class SocialServices(
     val friends: FriendsService,
     val safety: SafetyService,
     val activity: ActivityService,
+    /** The library sync endpoint; null where sync is unavailable. */
+    val sync: com.mcosta.mybooks.sync.SyncApi? = null,
 )
