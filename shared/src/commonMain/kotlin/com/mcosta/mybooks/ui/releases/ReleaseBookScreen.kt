@@ -39,13 +39,19 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.domain.ReadingStatus
-import com.mcosta.mybooks.ui.components.BookCover
+import com.mcosta.mybooks.ui.detail.BookHeader
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReleaseBookScreen(viewModel: ReleaseBookViewModel, onBack: () -> Unit) {
+fun ReleaseBookScreen(
+    viewModel: ReleaseBookViewModel,
+    onBack: () -> Unit,
+    /** Opens one of the library's books by the author (from the header's author panel). */
+    onOpenBook: (Long) -> Unit = {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val author by viewModel.author.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val uri = LocalUriHandler.current
     val scope = rememberCoroutineScope()
@@ -69,46 +75,36 @@ fun ReleaseBookScreen(viewModel: ReleaseBookViewModel, onBack: () -> Unit) {
             }
             return@Scaffold
         }
-        Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                BookCover(state.coverUrl, Modifier.width(100.dp).height(150.dp), title = book.title, authors = book.authors.joinToString(", "))
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(book.title, style = MaterialTheme.typography.titleLarge)
-                    if (book.authors.isNotEmpty()) Text(book.authors.joinToString(", "), style = MaterialTheme.typography.bodyLarge)
-                    if (book.translators.isNotEmpty()) {
-                        Text("Translated by ${book.translators.joinToString(", ")}", style = MaterialTheme.typography.bodySmall)
+        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
+            BookHeader(
+                state.coverUrl, book.title, book.authors.joinToString(", "), releaseDetails(book), author,
+                onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook,
+            )
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                state.description?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+
+                HorizontalDivider()
+                Text("Add to my books", style = MaterialTheme.typography.titleSmall)
+                if (state.inLibrary) {
+                    Text("Already in your library", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { viewModel.addToLibrary(ReadingStatus.TO_READ) }) { Text("To read") }
+                        OutlinedButton(onClick = { viewModel.addToLibrary(ReadingStatus.WISHLIST) }) { Text("To buy") }
                     }
-                    val imprint = listOfNotNull(book.publisher, book.place, book.year?.toString()).joinToString(" · ")
-                    if (imprint.isNotEmpty()) Text(imprint, style = MaterialTheme.typography.bodySmall)
-                    Text("ISBN ${book.isbn}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            }
-            state.description?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
 
-            HorizontalDivider()
-            Text("Add to my books", style = MaterialTheme.typography.titleSmall)
-            if (state.inLibrary) {
-                Text("Already in your library", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { viewModel.addToLibrary(ReadingStatus.TO_READ) }) { Text("To read") }
-                    OutlinedButton(onClick = { viewModel.addToLibrary(ReadingStatus.WISHLIST) }) { Text("To buy") }
+                HorizontalDivider()
+                Text("Where to buy", style = MaterialTheme.typography.titleSmall)
+                state.stores.forEach { store ->
+                    OutlinedButton(onClick = { if (!uri.tryOpen(store.url)) cantOpen() }, modifier = Modifier.fillMaxWidth()) {
+                        Text(store.name, modifier = Modifier.weight(1f))
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
+                    }
                 }
-            }
-
-            HorizontalDivider()
-            Text("Where to buy", style = MaterialTheme.typography.titleSmall)
-            state.stores.forEach { store ->
-                OutlinedButton(onClick = { if (!uri.tryOpen(store.url)) cantOpen() }, modifier = Modifier.fillMaxWidth()) {
-                    Text(store.name, modifier = Modifier.weight(1f))
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
+                book.link?.let { link ->
+                    TextButton(onClick = { if (!uri.tryOpen(link)) cantOpen() }) { Text("View at the National Library") }
                 }
-            }
-            book.link?.let { link ->
-                TextButton(onClick = { if (!uri.tryOpen(link)) cantOpen() }) { Text("View at the National Library") }
             }
         }
     }

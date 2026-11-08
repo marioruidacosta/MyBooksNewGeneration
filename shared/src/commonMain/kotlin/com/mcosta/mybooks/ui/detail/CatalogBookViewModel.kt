@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.authors.AuthorBook
+import com.mcosta.mybooks.data.authors.AuthorInfoSource
+import com.mcosta.mybooks.data.authors.catalogTitleKey
 import com.mcosta.mybooks.data.authors.findInLibrary
 import com.mcosta.mybooks.data.releases.StoreLink
 import com.mcosta.mybooks.data.releases.storeLinksFor
@@ -27,7 +29,25 @@ data class CatalogBookState(
  * A catalogue book (from "More by …") on its own page: add it to To read or To buy, and where to buy it. [book]
  * is null when the page was reopened after the app closed (the book is no longer known).
  */
-class CatalogBookViewModel(private val repo: BookRepository, val book: AuthorBook?) : ViewModel() {
+class CatalogBookViewModel(
+    private val repo: BookRepository,
+    val book: AuthorBook?,
+    /** Author biographies for the header's third panel; null shows only the library's books by them. */
+    authors: AuthorInfoSource? = null,
+) : ViewModel() {
+    private val authorLoader = AuthorPanelLoader(repo, authors)
+
+    /** The header's author panel, loaded when first shown ([loadAuthor]). */
+    val author: StateFlow<AuthorPanel?> = authorLoader.panel
+
+    /** Loads the author panel once, when the header shows it. */
+    fun loadAuthor() {
+        val b = book ?: return
+        viewModelScope.launch {
+            authorLoader.load(b.authors) { (b.isbn != null && it.isbn == b.isbn) || catalogTitleKey(it.title) == catalogTitleKey(b.title) }
+        }
+    }
+
     val state: StateFlow<CatalogBookState> = repo.observeBooks(null, "")
         .map { library ->
             val copy = book?.let { findInLibrary(it, library) }
@@ -50,3 +70,11 @@ class CatalogBookViewModel(private val repo: BookRepository, val book: AuthorBoo
     }
 
 }
+
+/** The header's details panel for a catalogue book: label and value per line, only what is known. */
+fun catalogDetails(book: AuthorBook): List<Pair<String, String>> = listOfNotNull(
+    book.publisher?.takeIf { it.isNotBlank() }?.let { "Publisher" to it },
+    book.year?.let { "Published" to it.toString() },
+    book.pageCount?.let { "Pages" to it.toString() },
+    book.isbn?.let { "ISBN" to it },
+)

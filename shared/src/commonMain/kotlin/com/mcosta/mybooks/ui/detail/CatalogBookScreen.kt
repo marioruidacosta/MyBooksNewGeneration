@@ -60,6 +60,7 @@ fun CatalogBookScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val book = viewModel.book
+    val author by viewModel.author.collectAsStateWithLifecycle()
     val uri = LocalUriHandler.current
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -76,30 +77,10 @@ fun CatalogBookScreen(
             return@Scaffold
         }
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
-            Box(Modifier.fillMaxWidth()) {
-                BookCover(book.coverUrl, Modifier.matchParentSize().blur(28.dp).alpha(0.5f), title = book.title, authors = book.authors)
-                Box(
-                    Modifier.matchParentSize().background(
-                        Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface.copy(alpha = 0.2f), MaterialTheme.colorScheme.surface)),
-                    ),
-                )
-                Column(
-                    Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 10.dp) {
-                        BookCover(book.coverUrl, Modifier.width(150.dp).height(225.dp), title = book.title, authors = book.authors)
-                    }
-                    Text(book.title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
-                    Text(book.authors, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-                    val facts = listOfNotNull(book.publisher, book.year?.toString(), book.pageCount?.let { "$it pages" })
-                    if (facts.isNotEmpty()) {
-                        Text(facts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    book.isbn?.let { Text("ISBN $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                }
-            }
+            BookHeader(
+                book.coverUrl, book.title, book.authors, catalogDetails(book), author,
+                onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook,
+            )
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 val copy = state.inLibrary
                 if (copy != null) {

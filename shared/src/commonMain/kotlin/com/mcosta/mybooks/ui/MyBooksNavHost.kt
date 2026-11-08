@@ -354,7 +354,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     focusSearch = true,
                     outside = viewModel {
-                        com.mcosta.mybooks.ui.library.OutsideSearchViewModel({ progress -> container.releases.allMonths(progress) }, container.publicSearch::search)
+                        com.mcosta.mybooks.ui.library.OutsideSearchViewModel({ progress -> container.releases.allMonths(progress) }, container.publicSearch::search, library = container.repository.observeBooks(null, ""))
                     },
                     onOpenRelease = { month, id -> nav.navigate(Routes.releaseBook(month, id)) },
                     onOpenCatalogBook = { nav.navigate("catalog/${container.catalogBooks.put(it)}") },
@@ -437,7 +437,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
             composable(Routes.CATALOG_BOOK, arguments = listOf(navArgument("key") { type = NavType.StringType })) { entry ->
                 val key = entry.savedStateHandle.get<String>("key").orEmpty()
                 CatalogBookScreen(
-                    viewModel = viewModel { CatalogBookViewModel(container.repository, container.catalogBooks.get(key)) },
+                    viewModel = viewModel { CatalogBookViewModel(container.repository, container.catalogBooks.get(key), container.authors) },
                     onBack = { nav.popBackStack() },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     onNotInterested = container.catalogBooks.get(key)?.let { book ->
@@ -508,8 +508,9 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                 val month = entry.savedStateHandle.get<String>("month")!!
                 val id = entry.savedStateHandle.get<String>("id")!!
                 ReleaseBookScreen(
-                    viewModel = viewModel { ReleaseBookViewModel(container.releases, container.repository, month, id) },
+                    viewModel = viewModel { ReleaseBookViewModel(container.releases, container.repository, month, id, container.authors) },
                     onBack = { nav.popBackStack() },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
             composable(Routes.SETTINGS) {

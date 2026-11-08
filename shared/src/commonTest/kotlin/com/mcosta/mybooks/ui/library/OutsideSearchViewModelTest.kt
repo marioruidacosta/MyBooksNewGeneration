@@ -7,6 +7,8 @@ import com.mcosta.mybooks.data.releases.MonthBooks
 import com.mcosta.mybooks.data.releases.ReleaseBook
 import com.mcosta.mybooks.data.releases.ReleaseHit
 import com.mcosta.mybooks.data.releases.ReleasesUnavailable
+import com.mcosta.mybooks.domain.Book
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceTimeBy
@@ -27,6 +29,7 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
     private var monthsFail = false
     private var monthsGate: CompletableDeferred<Unit>? = null
     private var monthsLoaded: () -> AllMonths = { AllMonths(listOf(MonthBooks("2026-11", true, listOf(cegueira))), emptyList(), null) }
+    private val library = MutableStateFlow<List<Book>>(emptyList())
     private val onlineQueries = mutableListOf<String>()
     private val gates = mutableMapOf<String, CompletableDeferred<Unit>>()
     private var onlineFound: (String) -> List<AuthorBook> = { q -> if (q == "cegu") listOf(other) else listOf(blindness) }
@@ -43,13 +46,14 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
             gates[q]?.await()
             onlineFound(q)
         },
+        library = library,
         compute = mainDispatcher,
     )
 
     @Test
     fun waitsForThePause() = runTest {
         val vm = vm()
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         advanceTimeBy(799)
         runCurrent()
         assertEquals(Section.Idle, vm.state.value.releases)
@@ -62,32 +66,47 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
         assertEquals(Section.Results(listOf(blindness)), vm.state.value.online)
     }
 
+    /** Search everywhere: the outside sources are searched even when the library has matches. */
     @Test
-    fun onlyWhenTheLibraryHasNoMatch() = runTest {
+    fun searchesEvenWhenTheLibraryHasMatches() = runTest {
+        library.value = listOf(Book(title = "Ensaio sobre a Cegueira", authors = "José Saramago"))
         val vm = vm()
-        vm.onQuery("cegueira", libraryHasMatch = true)
-        advanceTimeBy(1_000)
-        runCurrent()
-        assertEquals(0, monthsCalls)
-        assertTrue(onlineQueries.isEmpty())
-        assertFalse(vm.state.value.shown)
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         advanceTimeBy(1_000)
         runCurrent()
         assertTrue(vm.state.value.shown)
-        vm.onQuery("cegueira", libraryHasMatch = true)        // the library now has it
-        assertFalse(vm.state.value.shown)
+        assertEquals(1, monthsCalls)
+        assertEquals(listOf("cegueira"), onlineQueries)
+    }
+
+    /** Outside results already in the library (same ISBN, or same title and first author) are marked. */
+    @Test
+    fun marksBooksAlreadyInTheLibrary() = runTest {
+        library.value = listOf(
+            Book(title = "Ensaio sobre a Cegueira (edição de bolso)", authors = "Saramago", isbn = "9789722036504"),
+            Book(title = "Blindness", authors = "Jose Saramago"),
+        )
+        val vm = vm()
+        vm.onQuery("cegueira")
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertTrue(vm.state.value.owns(ReleaseHit("2026-11", cegueira)))
+        assertTrue(vm.state.value.owns(blindness))
+        assertFalse(vm.state.value.owns(other))
+        library.value = emptyList()
+        runCurrent()
+        assertFalse(vm.state.value.owns(blindness))
     }
 
     @Test
     fun shortQueriesWaitUnlessIsbn() = runTest {
         val vm = vm()
-        vm.onQuery("ab", libraryHasMatch = false)
+        vm.onQuery("ab")
         advanceTimeBy(1_000)
         runCurrent()
         assertTrue(onlineQueries.isEmpty())
         assertFalse(vm.state.value.shown)
-        vm.onQuery("972-20-3650-5", libraryHasMatch = false)
+        vm.onQuery("972-20-3650-5")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(listOf("972-20-3650-5"), onlineQueries)
@@ -98,13 +117,13 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
     @Test
     fun invalidIsbnHint() = runTest {
         val vm = vm()
-        vm.onQuery("9789722036505", libraryHasMatch = false)
+        vm.onQuery("9789722036505")
         assertTrue(vm.state.value.invalidIsbn)
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(listOf("9789722036505"), onlineQueries)       // searched as text
         assertEquals(null, vm.state.value.isbn)
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         assertFalse(vm.state.value.invalidIsbn)
     }
 
@@ -113,11 +132,11 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
     fun staleResultsAreDropped() = runTest {
         val vm = vm()
         gates["cegu"] = CompletableDeferred()
-        vm.onQuery("cegu", libraryHasMatch = false)
+        vm.onQuery("cegu")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(listOf("cegu"), onlineQueries)
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         advanceTimeBy(1_000)
         runCurrent()
         gates.getValue("cegu").complete(Unit)
@@ -129,11 +148,11 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
     @Test
     fun sameQueryDoesNotSearchAgain() = runTest {
         val vm = vm()
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         advanceTimeBy(1_000)
         runCurrent()
         val before = vm.state.value
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         assertEquals(before, vm.state.value)
         advanceTimeBy(1_000)
         runCurrent()
@@ -146,7 +165,7 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
     fun releasesFailThenRetry() = runTest {
         monthsFail = true
         val vm = vm()
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(Section.Failed, vm.state.value.releases)
@@ -155,7 +174,7 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
         vm.retry(OutsideSection.RELEASES)
         runCurrent()
         assertEquals(Section.Results(listOf(ReleaseHit("2026-11", cegueira))), vm.state.value.releases)
-        vm.onQuery("saramago", libraryHasMatch = false)
+        vm.onQuery("saramago")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(2, monthsCalls)                                 // the failed load and the retry; not again
@@ -165,7 +184,7 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
     fun onlineFailsAndRetries() = runTest {
         onlineFound = { throw IllegalStateException("offline") }
         val vm = vm()
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(Section.Failed, vm.state.value.online)
@@ -179,7 +198,7 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
     fun emptyResults() = runTest {
         onlineFound = { emptyList() }
         val vm = vm()
-        vm.onQuery("passarola", libraryHasMatch = false)
+        vm.onQuery("passarola")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(Section.Empty, vm.state.value.releases)
@@ -191,16 +210,16 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
     fun partialMonthsAreLoadedAgain() = runTest {
         monthsLoaded = { AllMonths(listOf(MonthBooks("2026-11", true, emptyList())), listOf("2026-10"), null) }
         val vm = vm()
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(Section.Empty, vm.state.value.releases)
         monthsLoaded = { AllMonths(listOf(MonthBooks("2026-11", true, listOf(cegueira))), emptyList(), null) }
-        vm.onQuery("saramago", libraryHasMatch = false)
+        vm.onQuery("saramago")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(Section.Results(listOf(ReleaseHit("2026-11", cegueira))), vm.state.value.releases)
-        vm.onQuery("blimunda", libraryHasMatch = false)
+        vm.onQuery("blimunda")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(2, monthsCalls)                                 // the complete load is kept
@@ -211,7 +230,7 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
     fun noMonthsLoadedIsAFailure() = runTest {
         monthsLoaded = { AllMonths(emptyList(), listOf("2026-11", "2026-10"), null) }
         val vm = vm()
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(Section.Failed, vm.state.value.releases)
@@ -222,7 +241,7 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
     fun monthsProgressIsShown() = runTest {
         monthsGate = CompletableDeferred()
         val vm = vm()
-        vm.onQuery("cegueira", libraryHasMatch = false)
+        vm.onQuery("cegueira")
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(Section.Searching, vm.state.value.releases)

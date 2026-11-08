@@ -11,7 +11,10 @@ import com.mcosta.mybooks.data.releases.ReleaseGenre
 import com.mcosta.mybooks.data.releases.openLibraryCover
 import com.mcosta.mybooks.data.releases.ReleasesClient
 import com.mcosta.mybooks.data.releases.ReleasesRepository
+import com.mcosta.mybooks.data.authors.AuthorInfo
+import com.mcosta.mybooks.data.releases.ReleaseBook
 import com.mcosta.mybooks.domain.Book
+import kotlinx.coroutines.test.advanceUntilIdle
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.testing.fixture
 import io.ktor.client.HttpClient
@@ -144,6 +147,38 @@ class ReleasesViewModelsTest : MainDispatcherTest() {
         assertEquals("https://books.google.com/c.jpg", s.coverUrl)
         assertEquals(listOf("Bertrand", "Almedina", "Wook", "Fnac"), s.stores.map { it.name })
         assertEquals("https://www.wook.pt/pesquisa?keyword=9789895682799", s.stores[2].url)
+    }
+
+    /** The header's third panel: the author's biography and the library's other books by them, loaded once, when shown. */
+    @Test
+    fun bookAuthorPanelLoadsOnceWhenShown() = runTest {
+        releases.books("2026-10")
+        library.save(Book(title = "Extinção", authors = "Thomas Bernhard", status = ReadingStatus.READ))
+        library.save(Book(title = "A casa de cal", authors = "Thomas Bernhard", isbn = "9789895682799"))   // this very book
+        val asked = mutableListOf<String>()
+        val bio = AuthorInfo("Thomas Bernhard", "escritor austríaco", "Foi um escritor.", null, null)
+        val vm = ReleaseBookViewModel(releases, library, "2026-10", "2293200", authors = { asked += it; bio })
+        assertNull(vm.author.value)
+        vm.loadAuthor()
+        advanceUntilIdle()
+        val panel = vm.author.value!!
+        assertEquals("Thomas Bernhard", panel.name)
+        assertEquals(bio, panel.info)
+        assertEquals(listOf("Extinção"), panel.otherBooks.map { it.title })
+        vm.loadAuthor()
+        advanceUntilIdle()
+        assertEquals(listOf("Thomas Bernhard"), asked)
+    }
+
+    /** The header's second panel for a new book. */
+    @Test
+    fun releaseDetailsPanel() {
+        val b = ReleaseBook("1", "9789895682799", "A casa de cal", listOf("Thomas Bernhard"), listOf("José A. Palma Caetano"), "Documenta", "Lisboa", 2026)
+        assertEquals(
+            listOf("Publisher" to "Documenta", "Published" to "Lisboa · 2026", "Translated by" to "José A. Palma Caetano", "ISBN" to "9789895682799"),
+            releaseDetails(b),
+        )
+        assertEquals(listOf("ISBN" to "9789895682799"), releaseDetails(ReleaseBook("2", "9789895682799", "X")))
     }
 
     @Test

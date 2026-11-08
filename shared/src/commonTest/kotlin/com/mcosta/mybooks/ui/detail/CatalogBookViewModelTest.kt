@@ -9,6 +9,7 @@ import com.mcosta.mybooks.data.lookup.BookLookupService
 import com.mcosta.mybooks.data.lookup.LookupResult
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -20,6 +21,30 @@ class CatalogBookViewModelTest : MainDispatcherTest() {
         override suspend fun lookup(isbn: String): LookupResult = LookupResult.NotFound
     })
     private val caim = AuthorBook("Caim", "José Saramago", 2009, "Caminho", "9789722120005", "https://c/caim.jpg", "Sobre Caim.", 180)
+
+    /** The header's third panel: the author and the library's other books by them (not this one), loaded when shown. */
+    @Test
+    fun authorPanelLoadsWhenShown() = runTest {
+        repo.save(Book(title = "Memorial do Convento", authors = "José Saramago", status = ReadingStatus.READ))
+        repo.save(Book(title = "Caim", authors = "Jose Saramago"))                     // this very book
+        val vm = CatalogBookViewModel(repo, caim, authors = { null })
+        assertNull(vm.author.value)
+        vm.loadAuthor()
+        advanceUntilIdle()
+        val panel = vm.author.value!!
+        assertEquals("José Saramago", panel.name)
+        assertEquals(listOf("Memorial do Convento"), panel.otherBooks.map { it.title })
+        assertEquals(false, panel.loading)
+    }
+
+    /** The header's second panel for a catalogue book. */
+    @Test
+    fun catalogDetailsPanel() {
+        assertEquals(
+            listOf("Publisher" to "Caminho", "Published" to "2009", "Pages" to "180", "ISBN" to "9789722120005"),
+            catalogDetails(caim),
+        )
+    }
 
     @Test
     fun notInTheLibraryOffersAddingAndWhereToBuy() = runTest {

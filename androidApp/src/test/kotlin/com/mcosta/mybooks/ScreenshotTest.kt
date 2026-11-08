@@ -11,6 +11,9 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
+import io.ktor.client.engine.mock.respondError
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTextInput
 import com.mcosta.mybooks.data.authors.AuthorBook
@@ -304,28 +307,74 @@ class ScreenshotTest {
 
     // Home and the book page are drawn tall, to show their lower sections.
 
-    /** Search with no library match: New in Portugal and public sources below. */
+    /** Search for "saramago": the library's two books, then New in Portugal and public sources, one already owned. */
     private fun searchEverywhere(dark: Boolean) {
         sampleLibrary()
         val vm = LibraryViewModel(repo, null, null)
-        val lucidez = ReleaseBook("b1", "9789722036504", "Ensaio sobre a Lucidez", listOf("José Saramago"), publisher = "Porto Editora")
+        val lucidez = ReleaseBook("b1", "9789722116959", "Ensaio sobre a Lucidez", listOf("José Saramago"), publisher = "Porto Editora")
+        val cegueira = ReleaseBook("b2", "9789722036504", "Ensaio sobre a Cegueira", listOf("José Saramago"), publisher = "Porto Editora")
         val outside = OutsideSearchViewModel(
-            releases = { AllMonths(listOf(MonthBooks("2026-11", true, listOf(lucidez))), emptyList(), null) },
+            releases = { AllMonths(listOf(MonthBooks("2026-11", true, listOf(lucidez, cegueira))), emptyList(), null) },
             online = {
                 listOf(
                     AuthorBook("Ensaio sobre a Lucidez", "José Saramago", 2004, "Caminho", "9789722116959", null, null, null),
                     AuthorBook("Seeing", "José Saramago", 2006, "Harvill Secker", "9781843432470", null, null, null),
                 )
             },
+            library = repo.observeBooks(null, ""),
         )
         shoot(
             "search-everywhere", dark,
-            ready = { outside.state.value.online is Section.Results && outside.state.value.releases is Section.Results },
-            act = { compose.onNodeWithText("Search title, author or ISBN").performTextInput("lucidez") },
+            ready = { outside.state.value.online is Section.Results && outside.state.value.releases is Section.Results && outside.state.value.library != null },
+            act = { compose.onNodeWithText("Search title, author or ISBN").performTextInput("saramago") },
         ) {
             LibraryScreen(vm, title = "Search", onBack = null, onOpenBook = {}, outside = outside)
         }
-        for (text in listOf("New in Portugal", "Public sources", "Not here?", "Add it yourself")) compose.onNodeWithText(text).assertExists()
+        for (text in listOf("In your library (2)", "New in Portugal", "Public sources", "✓ In your library")) compose.onNodeWithText(text).assertExists()
+    }
+
+    /** Swipes the book header (the horizontal pager) [times] panels to the left, once it is on screen. */
+    private fun swipeHeader(times: Int) {
+        val pager = androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.HorizontalScrollAxisRange)
+        compose.waitUntil(10_000) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50)); compose.onAllNodes(pager).fetchSemanticsNodes().isNotEmpty() }
+        repeat(times) {
+            compose.onAllNodes(pager)[0].performTouchInput { swipeLeft() }
+            compose.waitForIdle()
+        }
+    }
+
+    /** A New in Portugal book with the header swiped to the author: their biography and the library's books by them. */
+    private fun releaseBookAuthor(dark: Boolean) {
+        sampleLibrary()
+        val dir = context.filesDir.toOkioPath() / "releases-shot"
+        FileSystem.SYSTEM.createDirectories(dir)
+        FileSystem.SYSTEM.write(dir / "2026-11.json") {
+            writeUtf8("""{"version":1,"month":"2026-11","updated":"2026-11-03T03:00:00Z","books":[{"id":"7","isbn":"9789722116959","title":"Ensaio sobre a Lucidez","authors":["José Saramago"],"translators":[],"publisher":"Porto Editora","place":"Porto","year":2026,"genre":"novel"}]}""")
+        }
+        FileSystem.SYSTEM.write(dir / "2026-11.at") { writeUtf8("1") }
+        val http = io.ktor.client.HttpClient(io.ktor.client.engine.mock.MockEngine { respondError(io.ktor.http.HttpStatusCode.NotFound) })
+        val releases = com.mcosta.mybooks.data.releases.ReleasesRepository(com.mcosta.mybooks.data.releases.ReleasesClient(http), FileSystem.SYSTEM, dir)
+        val bio = com.mcosta.mybooks.data.authors.AuthorInfo(
+            "José Saramago", "escritor português, Nobel da Literatura de 1998 (1922-2010)",
+            "José de Sousa Saramago foi um escritor, argumentista, teatrólogo, ensaísta, jornalista, dramaturgo, contista, romancista e poeta português.",
+            null, "https://pt.wikipedia.org/wiki/Jos%C3%A9_Saramago",
+        )
+        val vm = com.mcosta.mybooks.ui.releases.ReleaseBookViewModel(releases, repo, "2026-11", "7", authors = { bio })
+        shoot("release-book-author", dark, ready = { vm.author.value?.loading == false }, act = { swipeHeader(2) }) {
+            com.mcosta.mybooks.ui.releases.ReleaseBookScreen(vm, onBack = {})
+        }
+        for (text in listOf("Memorial do Convento", "Where to buy")) compose.onNodeWithText(text, substring = true).assertExists()
+    }
+
+    /** A catalogue book (from Search's public sources) with the header swiped to its details. */
+    private fun catalogBookDetails(dark: Boolean) {
+        sampleLibrary()
+        val book = AuthorBook("Ensaio sobre a Lucidez", "José Saramago", 2004, "Caminho", "9789722116959", null, "Num país sem nome, a maioria dos eleitores vota em branco.", 336)
+        val vm = com.mcosta.mybooks.ui.detail.CatalogBookViewModel(repo, book, authors = { null })
+        shoot("catalog-book-details", dark, ready = { vm.state.value.loaded }, act = { swipeHeader(1) }) {
+            com.mcosta.mybooks.ui.detail.CatalogBookScreen(vm, onBack = {}, onOpenBook = {})
+        }
+        for (text in listOf("Publisher", "Caminho", "Pages", "336")) compose.onNodeWithText(text).assertExists()
     }
 
     /** Community: friends reading, a progress card with pages, a review of a book already read, a group of five. */
@@ -448,6 +497,8 @@ class ScreenshotTest {
     @Test fun readingActivityLight() = readingActivity(dark = false)
     @Test fun readingActivityDark() = readingActivity(dark = true)
     @Config(qualifiers = TALL) @Test fun searchEverywhereLight() = searchEverywhere(dark = false)
+    @Config(qualifiers = TALL) @Test fun releaseBookAuthorDark() = releaseBookAuthor(dark = true)
+    @Config(qualifiers = TALL) @Test fun catalogBookDetailsLight() = catalogBookDetails(dark = false)
     @Config(qualifiers = TALL) @Test fun communityLight() = community(dark = false)
     @Config(qualifiers = TALL) @Test fun communityDark() = community(dark = true)
     @Test fun friendsWithBookLight() = friendsWithBook(dark = false)
