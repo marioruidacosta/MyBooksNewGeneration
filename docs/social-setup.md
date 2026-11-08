@@ -75,7 +75,8 @@ they're uploaded as soon as the server has the new functions.
 
 `supabase/migrations/2026110800_community_feed.sql` adds each shared book's blurb, page count and current
 page, and the "Friends are reading" and "Friends who have this book" functions. It lives in this repository
-(MyBooksNewGeneration), so push from here:
+(MyBooksNewGeneration), so push from here. **From now on, push migrations only from MyBooksNewGeneration:** the
+MyBooks folder doesn't have this migration, and `db push` there would refuse once the server has it.
 
 ```powershell
 cd C:\Users\mcosta\GIT\MyBooksNewGeneration
