@@ -67,6 +67,7 @@ fun ReaderBars(
     val currentLook by look.collectAsStateWithLifecycle()
     val finish by viewModel.finishPrompt.collectAsStateWithLifecycle()
     val marks by viewModel.bookmarks.collectAsStateWithLifecycle()
+    val shown by viewModel.shownHighlight.collectAsStateWithLifecycle()
     var sheet by remember { mutableStateOf<String?>(null) }
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(c.visible, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
@@ -105,6 +106,15 @@ fun ReaderBars(
             onOpen = { sheet = null; viewModel.open(it) },
             onDelete = viewModel::deleteBookmark,
             onDismiss = { sheet = null },
+        )
+    }
+    shown?.let { quote ->
+        AlertDialog(
+            onDismissRequest = viewModel::closeHighlight,
+            title = { Text("Highlight") },
+            text = { Text("“${quote.text}”") },
+            confirmButton = { TextButton(onClick = viewModel::closeHighlight) { Text("Close") } },
+            dismissButton = { TextButton(onClick = viewModel::deleteShownHighlight) { Text("Delete") } },
         )
     }
     if (finish) {

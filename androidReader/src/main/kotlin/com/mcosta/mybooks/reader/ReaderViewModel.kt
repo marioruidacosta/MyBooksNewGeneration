@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import com.mcosta.mybooks.domain.Bookmark
+import com.mcosta.mybooks.domain.Quote
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -43,11 +45,44 @@ class ReaderViewModel(
     bookmarks: Flow<List<Bookmark>> = emptyFlow(),
     private val addBookmark: suspend (position: String, label: String) -> Unit = { _, _ -> },
     private val deleteBookmark: suspend (id: Long) -> Unit = {},
+    /** The book's quotes (those with a position are highlights), and adding or deleting one. */
+    quotes: Flow<List<Quote>> = emptyFlow(),
+    private val addHighlight: suspend (text: String, position: String) -> Unit = { _, _ -> },
+    private val deleteQuote: suspend (id: Long) -> Unit = {},
 ) : ViewModel() {
     private val _load = MutableStateFlow<ReaderLoad>(ReaderLoad.Loading)
     val load: StateFlow<ReaderLoad> = _load.asStateFlow()
 
     val bookmarks: StateFlow<List<Bookmark>> = bookmarks.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /** Quotes highlighted in this ebook, to draw on its pages; typed or photographed quotes have no place. */
+    val highlights: StateFlow<List<Quote>> =
+        quotes.map { list -> list.filter { it.position != null } }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    private val _shownHighlight = MutableStateFlow<Quote?>(null)
+    /** A highlight tapped in the book, shown with Delete. */
+    val shownHighlight: StateFlow<Quote?> = _shownHighlight.asStateFlow()
+
+    /** Saves selected [text] at [position] as a quote; blank text is ignored. */
+    fun highlight(text: String, position: String) {
+        val clean = text.trim()
+        if (clean.isEmpty()) return
+        scope.launch { addHighlight(clean, position) }
+    }
+
+    fun showHighlight(id: Long) {
+        _shownHighlight.value = highlights.value.firstOrNull { it.id == id }
+    }
+
+    fun closeHighlight() {
+        _shownHighlight.value = null
+    }
+
+    fun deleteShownHighlight() {
+        val quote = _shownHighlight.value ?: return
+        _shownHighlight.value = null
+        scope.launch { deleteQuote(quote.id) }
+    }
 
     /** Places to go to (locator JSON), for the reader to follow: a bookmark opened. */
     private val _goTo = MutableSharedFlow<String>(extraBufferCapacity = 1)

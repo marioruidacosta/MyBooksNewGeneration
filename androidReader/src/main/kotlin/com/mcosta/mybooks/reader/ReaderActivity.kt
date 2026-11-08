@@ -31,6 +31,8 @@ import org.json.JSONObject
 import org.readium.adapter.pdfium.document.PdfiumDocumentFactory
 import org.readium.adapter.pdfium.navigator.PdfiumEngineProvider
 import org.readium.r2.navigator.OverflowableNavigator
+import org.readium.r2.navigator.DecorableNavigator
+import org.readium.r2.navigator.SelectableNavigator
 import org.readium.r2.navigator.VisualNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
@@ -96,6 +98,9 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
                     bookmarks = container.ebooks.observeBookmarks(bookId),
                     addBookmark = { position, label -> container.ebooks.addBookmark(bookId, position, label) },
                     deleteBookmark = { container.ebooks.deleteBookmark(it) },
+                    quotes = container.quotes.observe(bookId),
+                    addHighlight = { text, position -> container.quotes.addHighlight(bookId, text, position) },
+                    deleteQuote = { container.quotes.delete(it) },
                 )
             }
         }
@@ -149,7 +154,11 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
             contents = flattenContents(publication.tableOfContents.map(::tocEntry)),
         )
         supportFragmentManager.fragmentFactory = when (file.format) {
-            EbookFormat.EPUB -> EpubNavigatorFactory(publication).createFragmentFactory(initialLocator = start, initialPreferences = looks.look.value.toEpub())
+            EbookFormat.EPUB -> EpubNavigatorFactory(publication).createFragmentFactory(
+                initialLocator = start,
+                initialPreferences = looks.look.value.toEpub(),
+                configuration = EpubNavigatorFragment.Configuration { selectionActionModeCallback = HighlightActionMode(::highlightSelection) },
+            )
             EbookFormat.PDF -> PdfNavigatorFactory(publication, PdfiumEngineProvider()).createFragmentFactory(initialLocator = start)
         }
         val fragmentClass = when (file.format) {
@@ -160,6 +169,19 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
         val nav = supportFragmentManager.findFragmentByTag(NAVIGATOR) as VisualNavigator
         navigator = nav
         (nav as? OverflowableNavigator)?.let { nav.addInputListener(DirectionalNavigationAdapter(it)) }
+        (nav as? DecorableNavigator)?.let { decorable ->
+            decorable.addDecorationListener(
+                HIGHLIGHTS,
+                object : DecorableNavigator.Listener {
+                    override fun onDecorationActivated(event: DecorableNavigator.OnActivatedEvent): Boolean {
+                        val id = quoteIdOf(event.decoration.id) ?: return false
+                        viewModel.showHighlight(id)
+                        return true
+                    }
+                },
+            )
+            lifecycleScope.launch { viewModel.highlights.collect { decorable.applyDecorations(highlightDecorations(it), HIGHLIGHTS) } }
+        }
         nav.addInputListener(object : InputListener {
             override fun onTap(event: TapEvent): Boolean {
                 val width = window.decorView.width.takeIf { it > 0 } ?: return false
@@ -188,6 +210,16 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
                     )
                 }
             }
+        }
+    }
+
+    /** "Highlight" in the selection menu: the selected text becomes a quote at its place. */
+    private fun highlightSelection() {
+        val selectable = navigator as? SelectableNavigator ?: return
+        lifecycleScope.launch {
+            val selection = selectable.currentSelection() ?: return@launch
+            viewModel.highlight(selection.locator.text.highlight.orEmpty(), selection.locator.toJSON().toString())
+            selectable.clearSelection()
         }
     }
 

@@ -23,6 +23,12 @@ class QuoteRepository(
         return true
     }
 
+    /** Saves text highlighted in the reader as a quote with its [position] in the ebook; null (nothing saved) for blank text. */
+    suspend fun addHighlight(bookId: Long, text: String, position: String): Long? {
+        val clean = clean(text) ?: return null
+        return dao.insert(Quote(bookId = bookId, text = clean, dateAdded = clock(), position = position).toEntity())
+    }
+
     /** Changes a quote's text and page; blank text is not saved (returns false). */
     suspend fun update(quote: Quote): Boolean {
         val clean = clean(quote.text) ?: return false
