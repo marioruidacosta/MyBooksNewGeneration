@@ -32,6 +32,7 @@ import org.readium.adapter.pdfium.document.PdfiumDocumentFactory
 import org.readium.adapter.pdfium.navigator.PdfiumEngineProvider
 import org.readium.r2.navigator.OverflowableNavigator
 import org.readium.r2.navigator.DecorableNavigator
+import org.readium.r2.navigator.Decoration
 import org.readium.r2.navigator.SelectableNavigator
 import org.readium.r2.navigator.VisualNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
@@ -73,6 +74,8 @@ data class ReaderChrome(
 class ReaderActivity : FragmentActivity(), ReaderActions {
     private val bookId by lazy { intent.getLongExtra(EXTRA_BOOK, -1L) }
     private val chrome = MutableStateFlow(ReaderChrome())
+    private val readAloudUi = MutableStateFlow(ReadAloudUi())
+    private var readAloud: ReadiumReadAloud? = null
     private val container by lazy { (application as ContainerOwner).container }
     private val looks by lazy { ReadingLooks(container.preferences) }
     private var publication: Publication? = null
@@ -114,7 +117,7 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
         val frame = FragmentContainerView(this).apply { id = View.generateViewId() }
         val bars = ComposeView(this).apply {
             setContent {
-                MyBooksTheme { ReaderBars(chrome, looks.look, viewModel, this@ReaderActivity, onBack = { finish() }) }
+                MyBooksTheme { ReaderBars(chrome, looks.look, readAloudUi, viewModel, this@ReaderActivity, onBack = { finish() }) }
             }
         }
         setContentView(
@@ -224,6 +227,55 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
         }
     }
 
+    override fun toggleReadAloud() {
+        if (readAloudUi.value.active) return stopReadAloud()
+        val pub = publication ?: return
+        val nav = navigator ?: return
+        val aloud = ReadiumReadAloud(
+            application, pub, lifecycleScope,
+            onUtterance = { locator ->
+                // The sentence being read is marked, and the page follows it.
+                lifecycleScope.launch {
+                    (nav as? DecorableNavigator)?.applyDecorations(
+                        listOf(Decoration("tts", locator, Decoration.Style.Highlight(tint = READING_TINT))), READ_ALOUD,
+                    )
+                }
+                nav.go(locator, animated = false)
+            },
+            onEnded = { stopReadAloud() },
+        )
+        readAloud = aloud
+        lifecycleScope.launch {
+            if (aloud.start(nav.currentLocator.value, readAloudUi.value.speed)) {
+                readAloudUi.value = readAloudUi.value.copy(active = true, playing = true)
+            } else {
+                readAloud = null
+                Toast.makeText(this@ReaderActivity, "This book can't be read aloud on this phone", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    override fun playPause() {
+        val aloud = readAloud ?: return
+        val playing = !readAloudUi.value.playing
+        if (playing) aloud.play() else aloud.pause()
+        readAloudUi.value = readAloudUi.value.copy(playing = playing)
+    }
+
+    override fun cycleSpeed() {
+        val speed = nextSpeed(readAloudUi.value.speed)
+        readAloud?.setSpeed(speed)
+        readAloudUi.value = readAloudUi.value.copy(speed = speed)
+    }
+
+    private fun stopReadAloud() {
+        readAloud?.stop()
+        readAloud = null
+        readAloudUi.value = readAloudUi.value.copy(active = false, playing = false)
+        val nav = navigator as? DecorableNavigator ?: return
+        lifecycleScope.launch { nav.applyDecorations(emptyList(), READ_ALOUD) }
+    }
+
     override fun goTo(entry: TocEntry) {
         links[entry.target]?.let { navigator?.go(it, animated = false) }
     }
@@ -262,6 +314,7 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
     }
 
     override fun onStop() {
+        stopReadAloud()
         viewModel.leave()
         super.onStop()
     }
@@ -274,6 +327,8 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
     companion object {
         private const val EXTRA_BOOK = "book-id"
         private const val NAVIGATOR = "navigator"
+        private const val READ_ALOUD = "read-aloud"
+        private val READING_TINT = android.graphics.Color.rgb(127, 207, 197)
 
         fun start(context: Context, bookId: Long) {
             context.startActivity(Intent(context, ReaderActivity::class.java).putExtra(EXTRA_BOOK, bookId))
