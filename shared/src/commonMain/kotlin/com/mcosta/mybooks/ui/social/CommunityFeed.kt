@@ -46,7 +46,8 @@ fun CommunityFeed(state: ActivityState, callbacks: FeedCallbacks, modifier: Modi
             }
         }
         itemsIndexed(items, key = { _, item -> item.key }) { index, item ->
-            if (index == items.lastIndex) LaunchedEffect(item.key) { callbacks.onLoadMore() }
+            // Keyed on the number of entries too: a new page can join the last (grouped) card without changing its key.
+            if (index == items.lastIndex) LaunchedEffect(item.key, state.entries.size) { callbacks.onLoadMore() }
             when (item) {
                 is FeedItem.Single -> {
                     val entry = item.entry
