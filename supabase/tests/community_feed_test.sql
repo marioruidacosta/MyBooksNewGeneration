@@ -54,11 +54,11 @@ select results_eq(
   $$select book_blurb, book_pages, book_current_page from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000003'$$,
   $$values ('Baltasar e Blimunda.'::text, 464, 93)$$,
   'blurb_pages_and_current_page_returned_by_feed');
-select is((select count(*)::int from activities where book = 'bbbbbbbb-0000-0000-0000-000000000003'), 1, 'started_once');
+select is((select count(*)::int from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000003'), 1, 'started_once');
 select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000003","title":"Memorial do Convento",
   "authors":"José Saramago","status":"reading","progress":20,"review":"","blurb":"Outra sinopse.","pages":465,
   "current_page":93}'::jsonb)$$, 'publish_new_blurb');
-select is((select count(*)::int from activities where book = 'bbbbbbbb-0000-0000-0000-000000000003'), 1,
+select is((select count(*)::int from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000003'), 1,
   'blurb_or_pages_alone_create_no_activity');
 select lives_ok(format($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000003","title":"Memorial do Convento",
   "status":"reading","progress":20,"blurb":"%s","pages":0,"current_page":-3}'::jsonb)$$, repeat('y', 700)),
