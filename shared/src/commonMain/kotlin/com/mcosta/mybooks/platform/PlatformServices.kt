@@ -81,4 +81,6 @@ class PlatformServices(
     val monthlyAlerts: MonthlyAlerts? = null,
     /** Null where there is no ebook reader (iPhone for now): reading options are then hidden. */
     val ebooks: EbookPlatform? = null,
+    /** Shares text through the platform's share sheet (BookNerd's abstracts); null hides Share. */
+    val shareText: (suspend (String) -> Unit)? = null,
 )

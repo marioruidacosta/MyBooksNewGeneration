@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -91,6 +92,8 @@ fun HomeScreen(
     /** A shelf's list ([ReadingStatus] null is All books). */
     onOpenShelf: (ReadingStatus?) -> Unit,
     onOpenReadingActivity: () -> Unit,
+    /** BookNerd, the book bot (top bar); null hides it. */
+    onOpenBookNerd: (() -> Unit)? = null,
     /** "Suggested for you" (state from [com.mcosta.mybooks.ui.suggestions.SuggestionsViewModel]). */
     suggestions: SuggestionsState = SuggestionsState(loading = false),
     onOpenSuggestion: (Suggestion) -> Unit = {},
@@ -116,7 +119,12 @@ fun HomeScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("MyBooks", style = MaterialTheme.typography.headlineSmall) })
+            TopAppBar(
+                title = { Text("MyBooks", style = MaterialTheme.typography.headlineSmall) },
+                actions = {
+                    if (onOpenBookNerd != null) IconButton(onClick = onOpenBookNerd) { Icon(Icons.Filled.SmartToy, "BookNerd") }
+                },
+            )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
