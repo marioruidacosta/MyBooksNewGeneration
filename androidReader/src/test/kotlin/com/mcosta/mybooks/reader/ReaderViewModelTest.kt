@@ -118,4 +118,28 @@ class ReaderViewModelTest {
         assertEquals(0, bookmarks.subscriptionCount.value)
         assertEquals(0, quotes.subscriptionCount.value)
     }
+
+    /** The end reached as the reader closes: the question waits for the next opening instead of being lost. */
+    @Test
+    fun finishedReachedWhileLeavingIsKeptForNextTime() {
+        finishAt = "end"
+        var forgotten = 0
+        val vm = ReaderViewModel(
+            load = { file }, save = { position, _ -> saved += position; position == finishAt }, markRead = {},
+            scope = scope, clock = { now }, forgetFinish = { forgotten++ },
+        )
+        vm.position("opened", 0.5)
+        vm.position("mid", 0.6)
+        now = 1_000
+        vm.position("end", 1.0)                      // not saved yet: less than 3 s since the last save
+        vm.leave()
+        assertEquals(1, forgotten)
+        assertTrue(vm.finishPrompt.value)            // shown if the reader comes back
+    }
+
+    @Test
+    fun opensWithTheFinishQuestionWhenTheBookIsAtTheEnd() {
+        assertTrue(vm(load = file.copy(askFinished = true)).finishPrompt.value)
+        assertFalse(vm().finishPrompt.value)
+    }
 }

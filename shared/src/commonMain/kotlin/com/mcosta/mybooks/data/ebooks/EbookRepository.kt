@@ -108,6 +108,18 @@ class EbookRepository(
         return prompted.add(bookId)
     }
 
+    /** "Finished?" was due but nobody saw it (the reader closed at that moment): the next opening asks. */
+    fun forgetFinishPrompt(bookId: Long) {
+        prompted -= bookId
+    }
+
+    /** Whether opening the reader should ask "Finished?" at once: a book being read, at the end, not yet asked. */
+    suspend fun finishPromptOnOpen(bookId: Long): Boolean {
+        val book = books.getBook(bookId) ?: return false
+        if (book.status != ReadingStatus.READING || (book.progressPercent ?: 0) < FINISH_PERCENT) return false
+        return prompted.add(bookId)
+    }
+
     fun observeBookmarks(bookId: Long): Flow<List<Bookmark>> = bookmarks.observe(bookId).map { list -> list.map { it.toBookmark() } }
 
     suspend fun addBookmark(bookId: Long, position: String, label: String): Long =

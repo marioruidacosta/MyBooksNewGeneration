@@ -20,8 +20,11 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.stateIn
 
-/** The ebook file to open and where reading stopped (a Readium locator as JSON). */
-data class ReaderFile(val format: EbookFormat, val path: String, val position: String?)
+/**
+ * The ebook file to open and where reading stopped (a Readium locator as JSON); [askFinished] when the book was left
+ * at its end without being asked "Finished?".
+ */
+data class ReaderFile(val format: EbookFormat, val path: String, val position: String?, val askFinished: Boolean = false)
 
 sealed interface ReaderLoad {
     data object Loading : ReaderLoad
@@ -53,6 +56,8 @@ class ReaderViewModel(
     private val deleteQuote: suspend (id: Long) -> Unit = {},
     /** Searching the book's text (EPUB); null where it can't be searched. */
     private var bookSearch: BookSearch? = null,
+    /** "Finished?" came due as the reader closed: let the next opening ask it. */
+    private val forgetFinish: suspend () -> Unit = {},
 ) : ViewModel() {
     /** Watching the book and searching it end with the reader; only saves run on in [scope] after it closes. */
     private val ownJob = SupervisorJob(scope.coroutineContext[Job])
@@ -179,7 +184,9 @@ class ReaderViewModel(
 
     init {
         scope.launch {
-            _load.value = load()?.let { ReaderLoad.Ready(it) } ?: ReaderLoad.Failed("Couldn't open this book")
+            val file = load()
+            if (file?.askFinished == true) _finishPrompt.value = true
+            _load.value = file?.let { ReaderLoad.Ready(it) } ?: ReaderLoad.Failed("Couldn't open this book")
         }
     }
 
@@ -215,14 +222,22 @@ class ReaderViewModel(
         if (last == null || clock() - last >= SAVE_EVERY_MS) flush()
     }
 
-    /** Leaving the reader (or the app going to the background): the place is saved now. */
-    fun leave() = flush()
+    /**
+     * Leaving the reader (or the app going to the background): the place is saved now. If that save reaches the end,
+     * the question is shown should the reader come back, and otherwise asked the next time the book opens.
+     */
+    fun leave() = flush(leaving = true)
 
-    private fun flush() {
+    private fun flush(leaving: Boolean = false) {
         val (position, progression) = pending ?: return
         pending = null
         lastSaved = clock()
-        scope.launch { if (save(position, progression)) _finishPrompt.value = true }
+        scope.launch {
+            if (save(position, progression)) {
+                _finishPrompt.value = true
+                if (leaving) forgetFinish()
+            }
+        }
     }
 
     fun markFinished() {

@@ -93,7 +93,10 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
                         if (state == null || !state.fileOnPhone) null
                         else {
                             container.ebooks.opened(bookId)
-                            ReaderFile(state.ebook.format, container.ebooks.fileOf(state.ebook).toString(), state.ebook.position)
+                            ReaderFile(
+                                state.ebook.format, container.ebooks.fileOf(state.ebook).toString(), state.ebook.position,
+                                askFinished = container.ebooks.finishPromptOnOpen(bookId),
+                            )
                         }
                     },
                     save = { position, progression -> container.ebooks.savePosition(bookId, position, progression) },
@@ -105,6 +108,7 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
                     quotes = container.quotes.observe(bookId),
                     addHighlight = { text, position -> container.quotes.addHighlight(bookId, text, position) },
                     deleteQuote = { container.quotes.delete(it) },
+                    forgetFinish = { container.ebooks.forgetFinishPrompt(bookId) },
                 )
             }
         }

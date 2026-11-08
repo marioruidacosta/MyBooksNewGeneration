@@ -135,6 +135,28 @@ class EbookRepositoryTest {
         assertEquals("{\"p\":1}" to 2000L, ebookDao.get(id)!!.let { it.position to it.lastOpened })
     }
 
+    /** Reaching the end as the reader closed: nobody saw "Finished?", so the next opening asks, once. */
+    @Test
+    fun finishedIsAskedOnOpeningWhenTheReaderClosedAtTheEnd() = runTest {
+        val id = book(ReadingStatus.READING)
+        repo.add(id, EbookFormat.EPUB, "b.epub", source(bytes(20)))
+        assertTrue(repo.savePosition(id, "{}", 0.995))
+        repo.forgetFinishPrompt(id)
+        assertTrue(repo.finishPromptOnOpen(id))
+        assertFalse(repo.finishPromptOnOpen(id))
+        assertFalse(repo.savePosition(id, "{}", 1.0))
+    }
+
+    @Test
+    fun notAskedOnOpeningBeforeTheEndOrWhenNotReading() = runTest {
+        val reading = book(ReadingStatus.READING)
+        repo.add(reading, EbookFormat.EPUB, "b.epub", source(bytes(20)))
+        repo.savePosition(reading, "{}", 0.5)
+        assertFalse(repo.finishPromptOnOpen(reading))
+        val read = book(ReadingStatus.READ)
+        assertFalse(repo.finishPromptOnOpen(read))
+    }
+
     @Test
     fun finishPromptAt99OnceUntilBelowAgain() = runTest {
         val id = book(ReadingStatus.READING)

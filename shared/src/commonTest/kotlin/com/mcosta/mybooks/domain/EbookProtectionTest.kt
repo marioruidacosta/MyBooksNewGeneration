@@ -2,6 +2,7 @@ package com.mcosta.mybooks.domain
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 
 class EbookProtectionTest {
@@ -61,5 +62,16 @@ class EbookProtectionTest {
         assertEquals("Os Maias", titleFromFileName("Os_Maias.epub"))
         assertEquals("a-b", titleFromFileName("a-b.pdf"))
         assertEquals("Memorial do Convento", titleFromFileName("Memorial do Convento"))
+    }
+
+    /** Catalogue names with a third part stay one author: a suffix is kept, a title or dates are dropped. */
+    @Test
+    fun threePartNamesStayOneAuthor() {
+        assertEquals("Martin Luther King Jr.", personName("King, Martin Luther, Jr."))
+        assertEquals("Leo Tolstoy", personName("Tolstoy, Leo, graf"))
+        assertEquals("José Saramago", personName("Saramago, José, 1922-2010"))
+        assertEquals("John Smith III", personName("Smith, John, III"))
+        assertEquals("Homer", personName("Homer,"))
+        for (raw in listOf("King, Martin Luther, Jr.", "Tolstoy, Leo, graf", "A, B, C, D")) assertFalse(',' in personName(raw), raw)
     }
 }
