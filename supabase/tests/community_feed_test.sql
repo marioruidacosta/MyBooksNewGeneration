@@ -64,7 +64,7 @@ select lives_ok(format($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000
   "status":"reading","progress":20,"blurb":"%s","pages":0,"current_page":-3}'::jsonb)$$, repeat('y', 700)),
   'odd_values_are_not_rejected');
 select results_eq(
-  $$select char_length(blurb), pages, current_page from shared_books where id = 'bbbbbbbb-0000-0000-0000-000000000003'$$,
+  $$select char_length(book_blurb), book_pages, book_current_page from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000003'$$,
   $$values (600, null::int, null::int)$$,
   'long_blurb_cut_and_out_of_range_dropped');
 
