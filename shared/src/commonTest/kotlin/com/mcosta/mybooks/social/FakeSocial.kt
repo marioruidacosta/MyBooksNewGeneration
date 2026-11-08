@@ -6,6 +6,7 @@ import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
 import com.mcosta.mybooks.social.model.CommunitySuggestion
 import com.mcosta.mybooks.social.model.FriendReading
+import com.mcosta.mybooks.social.model.SuggestedReader
 import com.mcosta.mybooks.social.model.FriendWithBook
 import com.mcosta.mybooks.social.model.FEED_PAGE_SIZE
 import com.mcosta.mybooks.social.model.FeedBook
@@ -62,6 +63,10 @@ class FakeSocial {
     /** friendsWithBook() answers by ISBN; [failWithBook] makes it fail. */
     var withBook = mapOf<String, List<FriendWithBook>>()
     var failWithBook = false
+    /** suggestedReaders() answers; [failSuggested] makes it fail. */
+    var suggested = emptyList<SuggestedReader>()
+    var failSuggested = false
+    var suggestedCalls = 0
     /** Runs inside publish, before it succeeds (e.g. to change the book mid-upload). */
     var onPublish: suspend () -> Unit = {}
     /** Runs inside like and unlike before they take effect (e.g. to hold the call in flight). */
@@ -247,6 +252,12 @@ class FakeSocial {
         }
         override suspend fun cancelRequest(userId: String) { check(); pending -= (me() to userId) }
         override suspend fun removeFriend(userId: String) { check(); friendsSet -= setOf(me(), userId) }
+        override suspend fun suggestedReaders(): List<SuggestedReader> {
+            check()
+            suggestedCalls++
+            if (failSuggested) throw SocialException(SocialException.Kind.OFFLINE, "offline")
+            return suggested
+        }
     }
 
     val safetyService = object : SafetyService {
