@@ -37,3 +37,25 @@ object Isbn {
         return (10 - sum % 10) % 10
     }
 }
+
+/** What a search query is, as an ISBN. */
+sealed interface IsbnQuery {
+    /** A valid ISBN-10 or ISBN-13, as [isbn13]. */
+    data class Valid(val isbn13: String) : IsbnQuery
+
+    /** Shaped like an ISBN (10 characters, the last may be X, or 13 digits) but its check digit is wrong. */
+    data object Invalid : IsbnQuery
+
+    data object NotIsbn : IsbnQuery
+}
+
+/** Reads [raw] (hyphens and spaces allowed) as an ISBN query. */
+fun isbnQuery(raw: String): IsbnQuery {
+    val s = raw.filterNot { it == '-' || it.isWhitespace() }.uppercase()
+    // Ten digits starting 978/979 are a 13-digit ISBN still being typed, even when they happen to be a valid ISBN-10.
+    if (s.length == 10 && s.all { it.isDigit() } && (s.startsWith("978") || s.startsWith("979"))) return IsbnQuery.NotIsbn
+    Isbn.normalize(raw)?.let { return IsbnQuery.Valid(it) }
+    val shaped = (s.length == 13 && s.all { it.isDigit() }) ||
+        (s.length == 10 && s.take(9).all { it.isDigit() } && (s[9].isDigit() || s[9] == 'X'))
+    return if (shaped) IsbnQuery.Invalid else IsbnQuery.NotIsbn
+}

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material3.FilterChip
+import com.mcosta.mybooks.data.authors.AuthorBook
 import com.mcosta.mybooks.domain.BookFilter
 import com.mcosta.mybooks.ui.formatDate
 import androidx.compose.material3.DropdownMenu
@@ -99,9 +100,17 @@ fun LibraryScreen(
     onOpenBook: (Long) -> Unit,
     /** Opened from the home screen's search: the search box takes the keyboard. */
     focusSearch: Boolean = false,
+    /** The Search tab: when the library has no match, New in Portugal and public sources are searched too. */
+    outside: OutsideSearchViewModel? = null,
+    onOpenRelease: (month: String, id: String) -> Unit = { _, _ -> },
+    onOpenCatalogBook: (AuthorBook) -> Unit = {},
+    onAddYourself: (isbn: String?) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf(state.query) }
+    if (outside != null) {
+        LaunchedEffect(state.query, state.books.isEmpty()) { outside.onQuery(state.query, libraryHasMatch = state.books.isNotEmpty()) }
+    }
     var sortMenuOpen by remember { mutableStateOf(false) }
     val searchFocus = remember { FocusRequester() }
     var searchFocused by rememberSaveable { mutableStateOf(false) }
@@ -201,13 +210,16 @@ fun LibraryScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it; viewModel.setQuery(it) },
-                placeholder = { Text("Search title or author") },
+                placeholder = { Text("Search title, author or ISBN") },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).focusRequester(searchFocus),
             )
             if (state.tags.isNotEmpty()) TagChips(state.tags, state.tag, viewModel::chooseTag)
-            if (state.books.isEmpty()) {
+            if (state.books.isEmpty() && outside != null && query.isNotBlank()) {
+                val outsideState by outside.state.collectAsStateWithLifecycle()
+                OutsideResults(outsideState, outside::retry, onOpenRelease, onOpenCatalogBook, onAddYourself, Modifier.fillMaxSize())
+            } else if (state.books.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(if (query.isBlank()) "No books here yet" else "No books match", style = MaterialTheme.typography.bodyLarge)
                 }

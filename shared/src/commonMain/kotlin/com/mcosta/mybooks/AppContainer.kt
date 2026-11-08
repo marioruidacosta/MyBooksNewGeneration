@@ -141,6 +141,15 @@ class AppContainer(
         ebookFiles = ebookFiles,
     )
 
+    /** Public catalogues searched from Search when the library has no match (Google Books, Open Library; ISBNs through the lookup chain). */
+    val publicSearch = com.mcosta.mybooks.data.lookup.PublicBookSearch(
+        listOf(
+            com.mcosta.mybooks.data.lookup.GoogleBooksTextSearch(http, apiKey = googleBooksApiKey),
+            com.mcosta.mybooks.data.lookup.OpenLibraryTextSearch(http),
+        ),
+        repository::lookup,
+    )
+
     /** Book suggestions from the library (worked out once per session, or on refresh). */
     val suggestions = SuggestionEngine(
         library = { repository.observeBooks(null, "").first() },

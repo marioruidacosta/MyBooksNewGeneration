@@ -343,6 +343,12 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     onBack = null,
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     focusSearch = true,
+                    outside = viewModel {
+                        com.mcosta.mybooks.ui.library.OutsideSearchViewModel({ progress -> container.releases.allMonths(progress) }, container.publicSearch::search)
+                    },
+                    onOpenRelease = { month, id -> nav.navigate(Routes.releaseBook(month, id)) },
+                    onOpenCatalogBook = { nav.navigate("catalog/${container.catalogBooks.put(it)}") },
+                    onAddYourself = { nav.navigate(Routes.add(it)) },
                 )
             }
             composable(Routes.SUGGESTIONS) {

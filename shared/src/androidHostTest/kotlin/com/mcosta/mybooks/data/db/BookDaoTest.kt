@@ -126,4 +126,13 @@ class BookDaoTest {
         )
         assertEquals(original, original.toEntity().toBook())
     }
+
+    @Test
+    fun observeByIsbnWithStatus() = runTest {
+        dao.insert(book("A Cidade e as Serras", isbn = "9789722036504", status = ReadingStatus.READ))
+        dao.insert(book("Os Maias", isbn = "9789722039994", status = ReadingStatus.READ))
+        assertEquals(listOf("A Cidade e as Serras"), dao.observeByIsbn(null, "9789722036504").first().map { it.title })
+        assertEquals(listOf("A Cidade e as Serras"), dao.observeByIsbn(ReadingStatus.READ, "9789722036504").first().map { it.title })
+        assertEquals(emptyList<BookEntity>(), dao.observeByIsbn(ReadingStatus.WISHLIST, "9789722036504").first())
+    }
 }
