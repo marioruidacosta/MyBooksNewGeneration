@@ -11,6 +11,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTextInput
 import com.mcosta.mybooks.data.authors.AuthorBook
 import com.mcosta.mybooks.data.releases.AllMonths
@@ -18,6 +19,15 @@ import com.mcosta.mybooks.data.releases.MonthBooks
 import com.mcosta.mybooks.data.releases.ReleaseBook
 import com.mcosta.mybooks.ui.library.OutsideSearchViewModel
 import com.mcosta.mybooks.ui.library.Section
+import com.mcosta.mybooks.social.model.ActivityKind
+import com.mcosta.mybooks.social.model.FeedBook
+import com.mcosta.mybooks.social.model.FeedEntry
+import com.mcosta.mybooks.social.model.FriendReading
+import com.mcosta.mybooks.social.model.Person
+import com.mcosta.mybooks.ui.social.ActivityState
+import com.mcosta.mybooks.ui.social.CommunityFeed
+import com.mcosta.mybooks.ui.social.FeedCallbacks
+import kotlin.time.Duration.Companion.minutes
 import androidx.test.core.app.ApplicationProvider
 import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.ChallengeRepository
@@ -316,6 +326,55 @@ class ScreenshotTest {
         }
         for (text in listOf("New in Portugal", "Public sources", "Not here?", "Add it yourself")) compose.onNodeWithText(text).assertExists()
     }
+
+    /** Community: friends reading, a progress card with pages, a review of a book already read, a group of five. */
+    private fun community(dark: Boolean) {
+        val ana = Person("a", "ana", "Ana Silva", null)
+        val rui = Person("r", "rui", "Rui Costa", null)
+        val marta = Person("m", "marta", "Marta Lopes", null)
+        val now = kotlin.time.Clock.System.now()
+        val reliquia = FeedBook(
+            "s1", "9789722036504", "A Relíquia", "Eça de Queirós", null,
+            blurb = "Teodorico Raposo viaja à Terra Santa para agradar à tia beata e herdar a sua fortuna.", pages = 344, currentPage = 182,
+        )
+        val memorial = FeedBook("s2", "9789720046857", "Memorial do Convento", "José Saramago", null,
+            blurb = "Baltasar e Blimunda, a passarola do padre Bartolomeu e a construção do convento de Mafra.", pages = 464)
+        fun entry(id: Long, who: Person, kind: ActivityKind, book: FeedBook, minutes: Long, rating: Int? = null, progress: Int? = null, review: String? = null) =
+            FeedEntry(id, who, kind, rating, progress, now - minutes.minutes, book, review, likeCount = if (id == 10L) 2 else 0, likedByMe = false)
+        val added = listOf("Os Maias", "Ensaio sobre a Cegueira", "Livro do Desassossego", "A Cidade e as Serras", "Jalan Jalan")
+            .mapIndexed { i, t -> entry(20L - i, marta, ActivityKind.WANT_TO_READ, FeedBook("g$i", null, t, "Vários", null), 300L + i) }
+        val state = ActivityState(
+            signedIn = true, myId = "me",
+            entries = listOf(entry(10, ana, ActivityKind.PROGRESS, reliquia, 120, progress = 53)) + added +
+                entry(5, rui, ActivityKind.REVIEWED, memorial, 600, rating = 4, review = "Blimunda é das personagens mais bonitas que já li. A passarola, o convento, tudo."),
+            reading = listOf(
+                FriendReading(ana, reliquia, 53, now),
+                FriendReading(rui, FeedBook("r2", null, "O Desaparecido", "Franz Kafka", null), 26, now),
+                FriendReading(marta, FeedBook("r3", null, "Jalan Jalan", "Afonso Cruz", null), 15, now),
+            ),
+            shelves = mapOf("s2" to ReadingStatus.READ),
+        )
+        shoot("community", dark, ready = { true }) { androidx.compose.material3.Surface { CommunityFeed(state, FeedCallbacks()) } }
+        for (text in listOf("Friends are reading", "Want to read", "✓ In your library · Read", "added 5 books to To read")) {
+            compose.onNodeWithText(text, substring = true).assertExists()
+        }
+        compose.onNodeWithText("is on page 182 of 344", substring = true).assertExists()
+        compose.onNodeWithContentDescription("More for this book").assertExists()
+        compose.onNodeWithContentDescription("Rated 4 out of 5").assertExists()
+    }
+
+    /** A book page's "Friends who have this book". */
+    private fun friendsWithBook(dark: Boolean) {
+        val friends = listOf(
+            com.mcosta.mybooks.social.model.FriendWithBook(Person("a", "ana", "Ana Silva", null), ReadingStatus.READ, 5, 100, "Uma sátira deliciosa, e o Raposão é inesquecível."),
+            com.mcosta.mybooks.social.model.FriendWithBook(Person("r", "rui", "Rui Costa", null), ReadingStatus.READING, null, 40, ""),
+            com.mcosta.mybooks.social.model.FriendWithBook(Person("m", "marta", "Marta Lopes", null), ReadingStatus.TO_READ, null, null, ""),
+        )
+        shoot("friends-with-book", dark, ready = { true }) {
+            androidx.compose.material3.Surface { com.mcosta.mybooks.ui.detail.FriendsWithBookSection(friends, onPerson = {}) }
+        }
+        for (text in listOf("Ana Silva read it", "is reading it · 40%", "wants to read it")) compose.onNodeWithText(text, substring = true).assertExists()
+    }
     @Config(qualifiers = TALL) @Test fun homeLight() = home(dark = false)
     @Config(qualifiers = TALL) @Test fun homeDark() = home(dark = true)
     @Test fun shelfLight() = shelf(dark = false)
@@ -338,4 +397,7 @@ class ScreenshotTest {
     @Test fun readingActivityLight() = readingActivity(dark = false)
     @Test fun readingActivityDark() = readingActivity(dark = true)
     @Config(qualifiers = TALL) @Test fun searchEverywhereLight() = searchEverywhere(dark = false)
+    @Config(qualifiers = TALL) @Test fun communityLight() = community(dark = false)
+    @Config(qualifiers = TALL) @Test fun communityDark() = community(dark = true)
+    @Test fun friendsWithBookLight() = friendsWithBook(dark = false)
 }

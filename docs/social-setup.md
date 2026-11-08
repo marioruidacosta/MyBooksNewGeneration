@@ -71,6 +71,23 @@ npx supabase db push --remote              # lists 2026110200_social_part2.sql; 
 Until it's applied, the Activity screen shows an error and book changes simply wait on the phone;
 they're uploaded as soon as the server has the new functions.
 
+### 3c. Community feed, evolved
+
+`supabase/migrations/2026110800_community_feed.sql` adds each shared book's blurb, page count and current
+page, and the "Friends are reading" and "Friends who have this book" functions. It lives in this repository
+(MyBooksNewGeneration), so push from here. **From now on, push migrations only from MyBooksNewGeneration:** the
+MyBooks folder doesn't have this migration, and `db push` there would refuse once the server has it.
+
+```powershell
+cd C:\Users\mcosta\GIT\MyBooksNewGeneration
+$env:Path = "C:\Users\mcosta\devtools\node-v22.23.4-win-x64;$env:Path"
+$env:NODE_USE_SYSTEM_CA = "1"
+npx supabase link --project-ref abcdefgh   # once per folder; the part of your Project URL before .supabase.co
+npx supabase db push --remote              # lists 2026110800_community_feed.sql; answer Y
+```
+
+Until it's applied the app works as before: cards have no blurb or pages, and the new sections stay hidden.
+
 ## 4. Give the apps the URL and key
 
 - **Android** (your PC): add to `local.properties`, then rebuild:

@@ -19,9 +19,28 @@ data class PublicBookState(
     val rating: Int?,
     val progress: Int?,
     val review: String,
+    /** The start of the book's description, its page count and the page the reader is on (none create activity). */
+    val blurb: String? = null,
+    val pages: Int? = null,
+    val currentPage: Int? = null,
 )
 
-data class FeedBook(val shareId: String, val isbn: String?, val title: String, val authors: String, val coverUrl: String?)
+data class FeedBook(
+    val shareId: String,
+    val isbn: String?,
+    val title: String,
+    val authors: String,
+    val coverUrl: String?,
+    val blurb: String? = null,
+    val pages: Int? = null,
+    val currentPage: Int? = null,
+)
+
+/** A friend's book on Reading, for "Friends are reading". */
+data class FriendReading(val person: Person, val book: FeedBook, val progress: Int?, val updatedAt: Instant)
+
+/** A friend who has a book (by ISBN): their shelf, score, progress and the start of their review ("" for none). */
+data class FriendWithBook(val person: Person, val status: ReadingStatus, val rating: Int?, val progress: Int?, val review: String)
 
 data class FeedEntry(
     val id: Long,

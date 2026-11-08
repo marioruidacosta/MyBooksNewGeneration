@@ -5,6 +5,8 @@ import com.mcosta.mybooks.social.model.BOOK_REVIEWS_PAGE
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
 import com.mcosta.mybooks.social.model.CommunitySuggestion
+import com.mcosta.mybooks.social.model.FriendReading
+import com.mcosta.mybooks.social.model.FriendWithBook
 import com.mcosta.mybooks.social.model.FEED_PAGE_SIZE
 import com.mcosta.mybooks.social.model.FeedBook
 import com.mcosta.mybooks.social.model.FeedCursor
@@ -53,10 +55,19 @@ class FakeSocial {
     /** Community suggestions to answer with, and the favourites asked about. */
     var communitySuggestions = emptyList<CommunitySuggestion>()
     var likedAskedAbout = emptyList<String>()
+    /** What friendsReading() returns; [failReading] makes it fail. */
+    var reading = emptyList<FriendReading>()
+    var failReading = false
+    var readingCalls = 0
+    /** friendsWithBook() answers by ISBN; [failWithBook] makes it fail. */
+    var withBook = mapOf<String, List<FriendWithBook>>()
+    var failWithBook = false
     /** Runs inside publish, before it succeeds (e.g. to change the book mid-upload). */
     var onPublish: suspend () -> Unit = {}
     /** Runs inside like and unlike before they take effect (e.g. to hold the call in flight). */
     var onLike: suspend () -> Unit = {}
+    /** Runs inside feed(), before it answers (to hold it open in tests). */
+    var onFeed: suspend () -> Unit = {}
 
     private val profiles = linkedMapOf<String, Profile>()
     private val emails = mutableMapOf<String, String>()          // email -> user id
@@ -262,6 +273,17 @@ class FakeSocial {
             val rated = all.mapNotNull { it.rating }
             return BookScore(rated.size, rated.takeIf { it.isNotEmpty() }?.average(), (5 downTo 1).map { s -> rated.count { it == s } }, all.count { it.review.isNotEmpty() })
         }
+        override suspend fun friendsReading(): List<FriendReading> {
+            check()
+            readingCalls++
+            if (failReading) throw SocialException(SocialException.Kind.OFFLINE, "offline")
+            return reading
+        }
+        override suspend fun friendsWithBook(isbn: String): List<FriendWithBook> {
+            check()
+            if (failWithBook) throw SocialException(SocialException.Kind.OFFLINE, "offline")
+            return withBook[isbn].orEmpty()
+        }
         override suspend fun communitySuggestions(likedIsbns: List<String>): List<CommunitySuggestion> {
             check()
             likedAskedAbout = likedIsbns
@@ -289,6 +311,7 @@ class FakeSocial {
         }
         override suspend fun feed(scope: FeedScope, cursor: FeedCursor?): FeedPage {
             check()
+            onFeed()
             val me = me()
             val visible = entries.filter { e ->
                 !blockedBetween(me, e.actor) && when (scope) {

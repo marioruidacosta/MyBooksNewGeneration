@@ -522,6 +522,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                         onOpenFriends = { nav.navigate(Routes.friends()) },
                         onJoin = { nav.navigate(Routes.ACCOUNT) },
                         onFindPeople = { nav.navigate(Routes.friends(tab = 2)) },
+                        onOpenLibraryBook = { nav.navigate(Routes.book(it)) },
                         onOpenPerson = { nav.navigate(Routes.profile(it)) },
                     )
                 }

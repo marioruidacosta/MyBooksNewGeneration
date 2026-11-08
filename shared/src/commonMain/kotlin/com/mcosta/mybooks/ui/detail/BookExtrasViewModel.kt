@@ -14,6 +14,7 @@ import com.mcosta.mybooks.social.model.BOOK_REVIEWS_PAGE
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
 import com.mcosta.mybooks.social.model.SessionState
+import com.mcosta.mybooks.social.model.FriendWithBook
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -61,6 +62,10 @@ class BookExtrasViewModel(
     private val _moreBy = MutableStateFlow<MoreByState?>(null)
     val moreBy: StateFlow<MoreByState?> = _moreBy.asStateFlow()
 
+    private val _friends = MutableStateFlow<List<FriendWithBook>>(emptyList())
+    /** Friends who have this book (by ISBN); empty when signed out, without an ISBN, or if it couldn't be loaded. */
+    val friends: StateFlow<List<FriendWithBook>> = _friends.asStateFlow()
+
     private var isbn: String? = null
 
     init {
@@ -69,7 +74,21 @@ class BookExtrasViewModel(
             isbn = book.isbn
             launch { repo.fillDescription(id) }
             launch { loadCommunity() }
+            launch { loadFriends() }
             launch { loadMoreBy(book) }
+        }
+    }
+
+    private suspend fun loadFriends() {
+        val social = social ?: return
+        val isbn = isbn ?: return
+        if (social.auth.session.value !is SessionState.SignedIn) return
+        _friends.value = try {
+            social.activity.friendsWithBook(isbn)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 

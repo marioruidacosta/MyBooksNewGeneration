@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.test.assertIs
 import kotlin.time.Instant
 
@@ -122,5 +123,39 @@ class BookExtrasViewModelTest : MainDispatcherTest() {
         repo.save(Book(title = "Caim", authors = "José Saramago", isbn = "9789722120005", status = ReadingStatus.WISHLIST))
         advanceUntilIdle()
         assertEquals(ReadingStatus.WISHLIST, vm.moreBy.value!!.books[1].inLibrary?.status)
+    }
+
+    private fun friend(name: String, status: ReadingStatus) =
+        com.mcosta.mybooks.social.model.FriendWithBook(Person(name, name, name.uppercase(), null), status, null, null, "")
+
+    @Test
+    fun friendsWhoHaveTheBook() = runTest {
+        signedIn()
+        social.withBook = mapOf(isbn to listOf(friend("bruno", ReadingStatus.READ), friend("fred", ReadingStatus.WISHLIST)))
+        val id = saved(Book(title = "Ensaio", isbn = isbn))
+        val vm = BookExtrasViewModel(repo, id, social.services, null)
+        advanceUntilIdle()
+        assertEquals(listOf("bruno", "fred"), vm.friends.value.map { it.person.username })
+    }
+
+    @Test
+    fun noIsbnOrSignedOutNoFriends() = runTest {
+        social.withBook = mapOf(isbn to listOf(friend("bruno", ReadingStatus.READ)))
+        val signedOut = BookExtrasViewModel(repo, saved(Book(title = "Ensaio", isbn = isbn)), social.services, null)
+        advanceUntilIdle()
+        assertTrue(signedOut.friends.value.isEmpty())
+        signedIn()
+        val noIsbn = BookExtrasViewModel(repo, saved(Book(title = "Sem ISBN")), social.services, null)
+        advanceUntilIdle()
+        assertTrue(noIsbn.friends.value.isEmpty())
+    }
+
+    @Test
+    fun friendsFailingIsEmpty() = runTest {
+        signedIn()
+        social.failWithBook = true
+        val vm = BookExtrasViewModel(repo, saved(Book(title = "Ensaio", isbn = isbn)), social.services, null)
+        advanceUntilIdle()
+        assertTrue(vm.friends.value.isEmpty())
     }
 }
