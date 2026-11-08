@@ -16,6 +16,7 @@ import androidx.fragment.app.commitNow
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.withStarted
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mcosta.mybooks.ContainerOwner
@@ -104,7 +105,6 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
                     quotes = container.quotes.observe(bookId),
                     addHighlight = { text, position -> container.quotes.addHighlight(bookId, text, position) },
                     deleteQuote = { container.quotes.delete(it) },
-                    bookSearch = ReadiumSearch { publication },
                 )
             }
         }
@@ -150,7 +150,9 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
     }
 
     private suspend fun show(publication: Publication, file: ReaderFile, containerId: Int) {
-        val start = file.position?.let { runCatching { Locator.fromJSON(JSONObject(it)) }.getOrNull() }
+        // The search works on this copy of the book (a recreated reader opened a new one).
+        viewModel.useSearch(if (file.format == EbookFormat.EPUB) ReadiumSearch { publication } else null)
+        val start = viewModel.openAt(file)?.let { runCatching { Locator.fromJSON(JSONObject(it)) }.getOrNull() }
         val pages = publication.positions().size
         chrome.value = chrome.value.copy(
             title = publication.metadata.title.orEmpty(),
@@ -169,7 +171,8 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
             EbookFormat.EPUB -> EpubNavigatorFragment::class.java
             EbookFormat.PDF -> PdfNavigatorFragment::class.java
         }
-        supportFragmentManager.commitNow { add(containerId, fragmentClass, Bundle(), NAVIGATOR) }
+        // Opening can take seconds; if the reader went to the background meanwhile, show the book when it's back.
+        lifecycle.withStarted { supportFragmentManager.commitNow { add(containerId, fragmentClass, Bundle(), NAVIGATOR) } }
         val nav = supportFragmentManager.findFragmentByTag(NAVIGATOR) as VisualNavigator
         navigator = nav
         (nav as? OverflowableNavigator)?.let { nav.addInputListener(DirectionalNavigationAdapter(it)) }
@@ -229,6 +232,8 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
 
     override fun toggleReadAloud() {
         if (readAloudUi.value.active) return stopReadAloud()
+        // Still starting (a quick second tap): one voice only.
+        if (readAloud != null) return
         val pub = publication ?: return
         val nav = navigator ?: return
         val aloud = ReadiumReadAloud(
@@ -246,7 +251,10 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
         )
         readAloud = aloud
         lifecycleScope.launch {
-            if (aloud.start(nav.currentLocator.value, readAloudUi.value.speed)) {
+            val started = aloud.start(nav.currentLocator.value, readAloudUi.value.speed)
+            if (started && readAloud !== aloud) {
+                aloud.stop()                                  // the reader stopped it while it was starting
+            } else if (started) {
                 readAloudUi.value = readAloudUi.value.copy(active = true, playing = true)
             } else {
                 readAloud = null

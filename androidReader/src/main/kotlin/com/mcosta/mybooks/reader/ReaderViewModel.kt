@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import com.mcosta.mybooks.domain.EbookFormat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -51,8 +52,17 @@ class ReaderViewModel(
     private val addHighlight: suspend (text: String, position: String) -> Unit = { _, _ -> },
     private val deleteQuote: suspend (id: Long) -> Unit = {},
     /** Searching the book's text (EPUB); null where it can't be searched. */
-    private val bookSearch: BookSearch? = null,
+    private var bookSearch: BookSearch? = null,
 ) : ViewModel() {
+    /** Watching the book and searching it end with the reader; only saves run on in [scope] after it closes. */
+    private val ownJob = SupervisorJob(scope.coroutineContext[Job])
+    private val own = CoroutineScope(scope.coroutineContext + ownJob)
+
+    override fun onCleared() {
+        ownJob.cancel()
+        bookSearch?.let { search -> scope.launch { search.close() } }
+    }
+
     private val _load = MutableStateFlow<ReaderLoad>(ReaderLoad.Loading)
     val load: StateFlow<ReaderLoad> = _load.asStateFlow()
 
@@ -67,7 +77,7 @@ class ReaderViewModel(
         if (q.isEmpty()) return
         searching?.cancel()
         _search.value = SearchState(query = q, searching = true, done = false)
-        searching = scope.launch {
+        searching = own.launch {
             engine.start(q)
             fetch(engine)
         }
@@ -78,7 +88,16 @@ class ReaderViewModel(
         val engine = bookSearch ?: return
         if (_search.value.done || _search.value.searching) return
         _search.value = _search.value.copy(searching = true)
-        searching = scope.launch { fetch(engine) }
+        searching = own.launch { fetch(engine) }
+    }
+
+    /** The book was opened again (the reader recreated): search its new copy, from a clean sheet. */
+    fun useSearch(search: BookSearch?) {
+        val old = bookSearch
+        bookSearch = search
+        searching?.cancel()
+        _search.value = SearchState()
+        if (old != null && old !== search) scope.launch { old.close() }
     }
 
     private suspend fun fetch(engine: BookSearch) {
@@ -95,11 +114,11 @@ class ReaderViewModel(
         _search.value = _search.value.copy(hits = _search.value.hits + found, searching = false, done = done)
     }
 
-    val bookmarks: StateFlow<List<Bookmark>> = bookmarks.stateIn(scope, SharingStarted.Eagerly, emptyList())
+    val bookmarks: StateFlow<List<Bookmark>> = bookmarks.stateIn(own, SharingStarted.Eagerly, emptyList())
 
     /** Quotes highlighted in this ebook, to draw on its pages; typed or photographed quotes have no place. */
     val highlights: StateFlow<List<Quote>> =
-        quotes.map { list -> list.filter { it.position != null } }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+        quotes.map { list -> list.filter { it.position != null } }.stateIn(own,SharingStarted.Eagerly, emptyList())
 
     private val _shownHighlight = MutableStateFlow<Quote?>(null)
     /** A highlight tapped in the book, shown with Delete. */
@@ -164,9 +183,33 @@ class ReaderViewModel(
         }
     }
 
-    /** The reader moved to [position] ([progression] 0–1 through the book); [bookmarkLabel] names the place. */
+    /** Where the book opened this time (its progression), and whether reading has moved from there since. */
+    private var openedAt: Double? = null
+    private var moved = false
+
+    /**
+     * Where to open [file]: the latest place reached, when the reader is recreated (dark mode, a language change),
+     * otherwise the saved one.
+     */
+    fun openAt(file: ReaderFile): String? {
+        openedAt = null
+        moved = false
+        return here?.first ?: file.position
+    }
+
+    /**
+     * The reader moved to [position] ([progression] 0–1 through the book); [bookmarkLabel] names the place.
+     * Nothing is saved until reading moves from where the book opened, so a quick look leaves progress alone.
+     */
     fun position(position: String, progression: Double, bookmarkLabel: String = "") {
         here = position to bookmarkLabel
+        val start = openedAt
+        if (start == null) {
+            openedAt = progression
+            return
+        }
+        if (!moved && progression == start) return
+        moved = true
         pending = position to progression
         val last = lastSaved
         if (last == null || clock() - last >= SAVE_EVERY_MS) flush()

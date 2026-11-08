@@ -6,6 +6,8 @@ import org.readium.r2.shared.publication.services.search.search
 interface BookSearch {
     suspend fun start(query: String)
     suspend fun next(): List<SearchHit>?
+    /** Done with this book's search. */
+    suspend fun close() {}
 }
 
 /** A match: where it is (locator JSON), the text around it, and its chapter. */
@@ -48,6 +50,11 @@ class ReadiumSearch(private val publication: () -> org.readium.r2.shared.publica
     override suspend fun start(query: String) {
         iterator?.close()
         iterator = publication()?.search(query)
+    }
+
+    override suspend fun close() {
+        iterator?.close()
+        iterator = null
     }
 
     override suspend fun next(): List<SearchHit>? {

@@ -17,6 +17,10 @@ class ReaderSearchTest {
     private class FakeSearch(val count: Int, val perBatch: Int = 7) : BookSearch {
         var given = 0
         var query = ""
+        var closed = false
+        override suspend fun close() {
+            closed = true
+        }
         override suspend fun start(query: String) {
             this.query = query
             given = 0
@@ -69,6 +73,21 @@ class ReaderSearchTest {
         vm.searchMore()
         assertEquals(45, vm.search.value.hits.size)
         assertTrue(vm.search.value.done)
+    }
+
+    @Test
+    fun aReopenedBookSearchesItsNewCopy() {
+        // Recreating the reader opens the book again: search moves to the new copy and starts clean.
+        val old = FakeSearch(3)
+        val vm = vm(old)
+        vm.search("a")
+        val fresh = FakeSearch(1)
+        vm.useSearch(fresh)
+        assertTrue(old.closed)
+        assertEquals(SearchState(), vm.search.value)
+        vm.search("b")
+        assertEquals(1, vm.search.value.hits.size)
+        assertEquals("b", fresh.query)
     }
 
     @Test
