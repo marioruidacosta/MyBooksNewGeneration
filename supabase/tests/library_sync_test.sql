@@ -138,7 +138,7 @@ select is(jsonb_array_length(pg_temp.bulk(1, 200)->'applied'), 200, 'push_200_ac
 
 -- oversize description is set aside; results carry table and id
 select is(
-  (select s.r->'set_aside'->0 - 'reason' from (select pg_temp.push_book('fat', jsonb_build_object('description', repeat('d', 20001)),
+  (select (s.r->'set_aside'->0) - 'reason' from (select pg_temp.push_book('fat', jsonb_build_object('description', repeat('d', 20001)),
     '{"description":1000}') as r) s),
   '{"table":"books","id":"fat"}'::jsonb, 'oversize_description_set_aside: identified by table and id');
 select is((select count(*)::int from library_books where id = 'fat'), 0, 'oversize_description_set_aside: not stored');
