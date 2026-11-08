@@ -72,4 +72,23 @@ class PublicBookSearchTest {
         val b = book("Poemas", "", "9789722036504")
         assertEquals(listOf(a, b), PublicBookSearch(listOf(source(PublicHit(a, false)), source(PublicHit(b, false))), noLookup).search("poemas"))
     }
+
+    /**
+     * The book searched for comes first: its title (before any subtitle) is the query, then titles containing it,
+     * then the rest; Portuguese editions first within each.
+     */
+    @Test
+    fun exactTitleMatchesComeFirst() = runTest {
+        val ilha = book("A intuição da ilha", "Pilar del Río")
+        val ensayo = book("Ensayo sobre la lucidez", "José Saramago")
+        val omnibus = book("Ensaio sobre a cegueira ; Ensaio sobre a lucidez", "José Saramago")
+        val lucidez = book("Ensaio sobre a Lucidez: romance", "José Saramago")
+        val search = PublicBookSearch(
+            listOf(source(PublicHit(ilha, true), PublicHit(ensayo, false), PublicHit(omnibus, true), PublicHit(lucidez, true))),
+            noLookup,
+        )
+        assertEquals(listOf(lucidez, omnibus, ilha, ensayo), search.search("ensaio sobre a lucidez"))
+        // An author's name matches no title: Portuguese first, as before.
+        assertEquals(listOf(ilha, omnibus, lucidez, ensayo), search.search("saramago"))
+    }
 }

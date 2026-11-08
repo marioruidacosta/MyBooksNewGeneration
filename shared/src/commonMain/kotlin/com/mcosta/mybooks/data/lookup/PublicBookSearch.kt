@@ -16,8 +16,9 @@ import kotlinx.coroutines.coroutineScope
 class PublicSearchUnavailable(cause: Throwable) : Exception(cause)
 
 /**
- * Public catalogues searched for Search: by text in every [sources] at once (merged, each book once, Portuguese
- * editions first, at most [OUTSIDE_SEARCH_LIMIT]), or, for an ISBN, through [lookup] (the add-book lookup chain).
+ * Public catalogues searched for Search: by text in every [sources] at once (merged, each book once; the book whose
+ * title is the query first, then titles containing it, then the rest, Portuguese editions first within each; at most
+ * [OUTSIDE_SEARCH_LIMIT]), or, for an ISBN, through [lookup] (the add-book lookup chain).
  * Throws [PublicSearchUnavailable] only when nothing could be searched.
  */
 class PublicBookSearch(
@@ -41,11 +42,20 @@ class PublicBookSearch(
         }
         if (answers.isNotEmpty() && answers.all { it.isFailure }) throw PublicSearchUnavailable(answers.first().exceptionOrNull()!!)
         val seen = mutableSetOf<String>()
+        val wanted = searchKey(query.trim())
         return answers.flatMap { it.getOrDefault(emptyList()) }
             .filter { hit -> keys(hit.book).none { it in seen }.also { seen += keys(hit.book) } }
-            .sortedByDescending { it.portuguese }
+            .sortedWith(compareBy({ titleMatch(it.book.title, wanted) }, { !it.portuguese }))
             .take(OUTSIDE_SEARCH_LIMIT)
             .map { it.book }
+    }
+
+    /** 0 when the title (before any subtitle) is the query, 1 when it contains it, 2 otherwise: the book searched for first. */
+    private fun titleMatch(title: String, wanted: String): Int = when {
+        wanted.isEmpty() -> 2
+        catalogTitleKey(title) == wanted -> 0
+        wanted in searchKey(title) -> 1
+        else -> 2
     }
 
     /**
