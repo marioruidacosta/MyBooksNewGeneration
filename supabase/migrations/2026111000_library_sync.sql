@@ -296,6 +296,83 @@ grant execute on function sync_push(jsonb) to authenticated;
 revoke all on function sync_pull(bigint, int) from public, anon;
 grant execute on function sync_pull(bigint, int) to authenticated;
 
+-- Case- and accent-insensitive key, like the app's searchKey (Portuguese letters; no unaccent extension needed).
+create function _fold(p_text text) returns text
+language sql immutable set search_path = public, pg_temp as $$
+  select lower(translate(coalesce(p_text, ''),
+    'áàâãäéèêëíìîïóòôõöúùûüçñÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇÑ',
+    'aaaaaeeeeiiiiooooouuuucnAAAAAEEEEIIIIOOOOOUUUUCN'));
+$$;
+revoke all on function _fold(text) from public, anon, authenticated;
+
+-- Joins a device's local books to the cloud library the first time it signs in: each book is matched to a stored,
+-- not deleted cloud book (ISBN first, then title before ':' plus first author before ',') and merged into it, or
+-- inserted under its own id. Returns {"ids": {local id: cloud id}, "set_aside": [...]}. At most 100 books per call.
+create function merge_library(books jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  me uuid := require_user();
+  b jsonb;
+  f jsonb;
+  cloud_id text;
+  isbn_in text;
+  title_key text;
+  author_key text;
+  ids jsonb := '{}';
+  set_aside jsonb := '[]';
+begin
+  if jsonb_typeof(coalesce(books, '[]'::jsonb)) <> 'array' or jsonb_array_length(coalesce(books, '[]'::jsonb)) > 100 then
+    raise exception 'merge_library takes an array of at most 100 books' using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(hashtext('library:' || me::text));
+  for b in select value from jsonb_array_elements(coalesce(books, '[]'::jsonb)) loop
+    begin
+      f := coalesce(b->'fields', '{}'::jsonb);
+      isbn_in := nullif(btrim(f->>'isbn'), '');
+      title_key := btrim(_fold(split_part(coalesce(f->>'title', ''), ':', 1)));
+      author_key := btrim(_fold(split_part(coalesce(f->>'authors', ''), ',', 1)));
+      cloud_id := null;
+      if isbn_in is not null then
+        select id into cloud_id from library_books
+          where owner = me and not deleted and isbn = isbn_in order by seq limit 1;
+      end if;
+      if cloud_id is null and title_key <> '' then
+        select id into cloud_id from library_books
+          where owner = me and not deleted
+            and btrim(_fold(split_part(title, ':', 1))) = title_key
+            and btrim(_fold(split_part(authors, ',', 1))) = author_key
+          order by seq limit 1;
+      end if;
+      cloud_id := coalesce(cloud_id, b->>'id');
+      perform _merge_row('books', me, cloud_id, f, b->'times');
+      ids := ids || jsonb_build_object(b->>'id', cloud_id);
+    exception when check_violation or invalid_text_representation or string_data_right_truncation
+        or numeric_value_out_of_range or not_null_violation or invalid_parameter_value
+        or datetime_field_overflow or invalid_datetime_format then
+      set_aside := set_aside || jsonb_build_object('id', b->>'id', 'reason', sqlerrm);
+    end;
+  end loop;
+  if ids <> '{}'::jsonb then
+    perform _library_ping(me);
+  end if;
+  return jsonb_build_object('ids', ids, 'set_aside', set_aside);
+end;
+$$;
+revoke all on function merge_library(jsonb) from public, anon;
+grant execute on function merge_library(jsonb) to authenticated;
+
+-- Private cover images, one folder per owner: covers/<owner uuid>/<file>.
+insert into storage.buckets (id, name, public) values ('covers', 'covers', false) on conflict (id) do nothing;
+create policy covers_select on storage.objects for select to authenticated
+  using (bucket_id = 'covers' and (storage.foldername(name))[1] = (select auth.uid())::text);
+create policy covers_insert on storage.objects for insert to authenticated
+  with check (bucket_id = 'covers' and (storage.foldername(name))[1] = (select auth.uid())::text);
+create policy covers_update on storage.objects for update to authenticated
+  using (bucket_id = 'covers' and (storage.foldername(name))[1] = (select auth.uid())::text)
+  with check (bucket_id = 'covers' and (storage.foldername(name))[1] = (select auth.uid())::text);
+create policy covers_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'covers' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
 -- Only the owner may receive the pings on their private channel library:<owner>.
 do $$
 begin
