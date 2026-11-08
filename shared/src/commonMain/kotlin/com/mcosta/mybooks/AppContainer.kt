@@ -153,7 +153,7 @@ class AppContainer(
                 OpenLibraryClient(http),
             )
         ),
-        transactionRunner = writeTransaction,
+        transactionRunner = { block -> syncRecorder.transaction { block() } },
         coverStore = coverStore,
         shareTracker = sharing?.tracker,
         challenges = challenges,

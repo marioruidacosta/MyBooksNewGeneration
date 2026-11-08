@@ -28,6 +28,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+@OptIn(kotlin.concurrent.atomics.ExperimentalAtomicApi::class)
 class SyncingDaosTest {
     private val rawBooks = FakeBookDao()
     private val rawQuotes = FakeQuoteDao()
@@ -238,5 +239,34 @@ class SyncingDaosTest {
         testScheduler.advanceUntilIdle()
         assertEquals(listOf("classics"), pinned.tags.value)
         assertTrue(uncaught.isEmpty(), "uncaught: $uncaught")
+    }
+
+    @Test
+    fun concurrentTransactionsAllWake() = runTest {
+        val rec = SyncRecorder(queue, { now }, { true }) { it() }
+        val emitted = kotlin.concurrent.atomics.AtomicInt(0)
+        val job = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined).launch {
+            rec.changes.collect { emitted.fetchAndAdd(1) }
+        }
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            repeat(20) { round ->
+                (0 until 50).map { i -> launch { rec.transaction { rec.record(SyncTable.BOOKS, "r$round-$i") } } }.forEach { it.join() }
+            }
+        }
+        assertTrue(emitted.load() > 0)
+        val before = emitted.load()
+        rec.transaction { rec.record(SyncTable.BOOKS, "last") }
+        assertEquals(before + 1, emitted.load())
+        job.cancel()
+    }
+
+    @Test
+    fun rolledBackTransactionDoesNotWake() = runTest(UnconfinedTestDispatcher()) {
+        val rec = SyncRecorder(queue, { now }, { true }) { it() }
+        var emitted = 0
+        backgroundScope.launch { rec.changes.collect { emitted++ } }
+        runCatching { rec.transaction { rec.record(SyncTable.BOOKS, "x"); error("rolled back") } }
+        rec.transaction { }
+        assertEquals(0, emitted)
     }
 }
