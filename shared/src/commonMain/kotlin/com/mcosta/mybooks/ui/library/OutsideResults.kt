@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -62,16 +62,21 @@ fun OutsideResults(
         }
         if (state.shown) {
             section(
-                "New in Portugal", state.releases, empty = "Nothing in New in Portugal", failed = "Couldn't search New in Portugal",
+                "New in Portugal", OutsideSection.RELEASES, state.releases,
+                searching = if (state.monthsTotal > 0) "Searching… ${state.monthsLoaded} of ${state.monthsTotal} months" else "Searching…",
+                empty = "Nothing in New in Portugal", failed = "Couldn't search New in Portugal",
                 onRetry = { onRetry(OutsideSection.RELEASES) },
+                key = { "release:${it.book.id}" },
             ) { hit ->
-                ResultRow(hit.book.listCover, hit.book.title, hit.book.authors.joinToString(", "), monthLabel(hit.month, complete = true)) {
+                ResultRow(hit.book.listCover, hit.book.title, hit.book.authors.joinToString(", "), monthLabel(hit.month, hit.complete)) {
                     onOpenRelease(hit.month, hit.book.id)
                 }
             }
             section(
-                "Public sources", state.online, empty = "Nothing found online", failed = "Couldn't search online",
+                "Public sources", OutsideSection.ONLINE, state.online, searching = "Searching…",
+                empty = "Nothing found online", failed = "Couldn't search online",
                 onRetry = { onRetry(OutsideSection.ONLINE) },
+                key = null,
             ) { book ->
                 ResultRow(book.coverUrl, book.title, book.authors, book.year?.toString()) { onOpenCatalogBook(book) }
             }
@@ -90,15 +95,19 @@ fun OutsideResults(
     }
 }
 
+/** A section's header and its state; rows keyed by [key], or by section and position when null (no stable id). */
 private fun <T> LazyListScope.section(
     title: String,
+    id: OutsideSection,
     section: Section<T>,
+    searching: String,
     empty: String,
     failed: String,
     onRetry: () -> Unit,
+    key: ((T) -> Any)?,
     row: @Composable (T) -> Unit,
 ) {
-    item {
+    item(key = "header:$id", contentType = "header") {
         Text(
             title,
             style = MaterialTheme.typography.titleMedium,
@@ -107,20 +116,24 @@ private fun <T> LazyListScope.section(
     }
     when (section) {
         Section.Idle -> Unit
-        Section.Searching -> item {
+        Section.Searching -> item(key = "searching:$id") {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                Text("Searching…", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 12.dp))
+                Text(searching, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 12.dp))
             }
         }
-        Section.Empty -> item { Note(empty) }
-        Section.Failed -> item {
+        Section.Empty -> item(key = "empty:$id") { Note(empty) }
+        Section.Failed -> item(key = "failed:$id") {
             Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(failed, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                 TextButton(onClick = onRetry) { Text("Retry") }
             }
         }
-        is Section.Results -> items(section.items) { item ->
+        is Section.Results -> itemsIndexed(
+            section.items,
+            key = { i, item -> key?.invoke(item) ?: "$id:$i" },
+            contentType = { _, _ -> "row" },
+        ) { _, item ->
             row(item)
             HorizontalDivider()
         }

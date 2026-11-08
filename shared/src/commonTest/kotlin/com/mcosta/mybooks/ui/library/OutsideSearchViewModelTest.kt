@@ -25,14 +25,16 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
 
     private var monthsCalls = 0
     private var monthsFail = false
+    private var monthsGate: CompletableDeferred<Unit>? = null
     private var monthsLoaded: () -> AllMonths = { AllMonths(listOf(MonthBooks("2026-11", true, listOf(cegueira))), emptyList(), null) }
     private val onlineQueries = mutableListOf<String>()
     private val gates = mutableMapOf<String, CompletableDeferred<Unit>>()
     private var onlineFound: (String) -> List<AuthorBook> = { q -> if (q == "cegu") listOf(other) else listOf(blindness) }
 
     private fun vm() = OutsideSearchViewModel(
-        releases = {
+        releases = { progress ->
             monthsCalls++
+            monthsGate?.let { progress(3, 7); it.await() }
             if (monthsFail) throw ReleasesUnavailable(notPublished = false)
             monthsLoaded()
         },
@@ -41,6 +43,7 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
             gates[q]?.await()
             onlineFound(q)
         },
+        compute = mainDispatcher,
     )
 
     @Test
@@ -212,5 +215,20 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
         advanceTimeBy(1_000)
         runCurrent()
         assertEquals(Section.Failed, vm.state.value.releases)
+    }
+
+    /** The first search downloads every month: the section says how far it got. */
+    @Test
+    fun monthsProgressIsShown() = runTest {
+        monthsGate = CompletableDeferred()
+        val vm = vm()
+        vm.onQuery("cegueira", libraryHasMatch = false)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(Section.Searching, vm.state.value.releases)
+        assertEquals(3 to 7, vm.state.value.monthsLoaded to vm.state.value.monthsTotal)
+        monthsGate!!.complete(Unit)
+        runCurrent()
+        assertEquals(Section.Results(listOf(ReleaseHit("2026-11", cegueira))), vm.state.value.releases)
     }
 }

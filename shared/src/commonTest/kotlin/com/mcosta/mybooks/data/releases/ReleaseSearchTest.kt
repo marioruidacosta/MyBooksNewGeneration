@@ -39,4 +39,20 @@ class ReleaseSearchTest {
         val all = all("2026-11" to listOf(cegueira), "2026-10" to listOf(cegueira))
         assertEquals(listOf(ReleaseHit("2026-11", cegueira)), matchReleases(all, "cegueira"))
     }
+
+    @Test
+    fun theMonthInProgressIsMarked() {
+        val all = AllMonths(listOf(MonthBooks("2026-11", false, listOf(cegueira)), MonthBooks("2026-10", true, listOf(maias))), emptyList(), null)
+        assertEquals(listOf(false), matchReleases(all, "cegueira").map { it.complete })
+        assertEquals(listOf(true), matchReleases(all, "maias").map { it.complete })
+    }
+
+    /** The keys are worked out once per load (thousands of books), then any number of queries. */
+    @Test
+    fun anIndexAnswersManyQueries() {
+        val index = ReleaseIndex(all("2026-11" to listOf(cegueira, maias)))
+        assertEquals(listOf("b1"), index.match("saramago").map { it.book.id })
+        assertEquals(listOf("b2"), index.match("os maias").map { it.book.id })
+        assertEquals(listOf("b1"), index.match("972-20-3650-5").map { it.book.id })
+    }
 }

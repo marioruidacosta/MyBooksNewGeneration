@@ -4,8 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mcosta.mybooks.data.authors.AuthorBook
 import com.mcosta.mybooks.data.releases.AllMonths
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.mcosta.mybooks.data.releases.ReleaseHit
-import com.mcosta.mybooks.data.releases.matchReleases
+import com.mcosta.mybooks.data.releases.ReleaseIndex
 import com.mcosta.mybooks.domain.IsbnQuery
 import com.mcosta.mybooks.domain.isbnQuery
 import kotlinx.coroutines.CancellationException
@@ -43,16 +46,21 @@ data class OutsideSearchState(
     val isbn: String? = null,
     val releases: Section<ReleaseHit> = Section.Idle,
     val online: Section<AuthorBook> = Section.Idle,
+    /** New in Portugal's months downloaded so far, of [monthsTotal] (0 when not downloading). */
+    val monthsLoaded: Int = 0,
+    val monthsTotal: Int = 0,
 )
 
 /**
  * Search outside the library: when the library has no match, after a pause in typing, New in Portugal ([releases],
  * loaded once) and public catalogues ([online]) are searched at once, each section on its own. A newer query cancels
  * an older one, whose results are never shown; the same query again (coming back to Search) changes nothing.
+ * [releases] reports (months done, months listed) as it downloads; matching thousands of books runs on [compute].
  */
 class OutsideSearchViewModel(
-    private val releases: suspend () -> AllMonths,
+    private val releases: suspend (onProgress: (done: Int, total: Int) -> Unit) -> AllMonths,
     private val online: suspend (String) -> List<AuthorBook>,
+    private val compute: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val _state = MutableStateFlow(OutsideSearchState())
     val state: StateFlow<OutsideSearchState> = _state.asStateFlow()
@@ -61,7 +69,7 @@ class OutsideSearchViewModel(
     private var current: String? = null
     private var waiting: Job? = null
     private val running = mutableMapOf<OutsideSection, Job>()
-    private var months: AllMonths? = null
+    private var index: ReleaseIndex? = null
 
     fun onQuery(query: String, libraryHasMatch: Boolean) {
         val q = query.trim()
@@ -95,7 +103,7 @@ class OutsideSearchViewModel(
         running[section] = viewModelScope.launch {
             val result = try {
                 when (section) {
-                    OutsideSection.RELEASES -> matchReleases(loadMonths(), q).asSection()
+                    OutsideSection.RELEASES -> loadIndex().let { withContext(compute) { it.match(q) } }.asSection()
                     OutsideSection.ONLINE -> online(q).asSection()
                 }
             } catch (e: CancellationException) {
@@ -111,12 +119,17 @@ class OutsideSearchViewModel(
      * New in Portugal's months: kept only when all of them came from the network, so a partial or saved (offline)
      * load is loaded again for the next search. None at all is a failure (Retry), not "nothing found".
      */
-    private suspend fun loadMonths(): AllMonths {
-        months?.let { return it }
-        val all = releases()
+    private suspend fun loadIndex(): ReleaseIndex {
+        index?.let { return it }
+        val all = try {
+            releases { done, total -> _state.update { it.copy(monthsLoaded = done, monthsTotal = total) } }
+        } finally {
+            _state.update { it.copy(monthsLoaded = 0, monthsTotal = 0) }
+        }
         if (all.months.isEmpty() && all.missing.isNotEmpty()) throw IllegalStateException("No New in Portugal month could be loaded")
-        if (all.missing.isEmpty() && all.savedAt == null) months = all
-        return all
+        val built = withContext(compute) { ReleaseIndex(all) }
+        if (all.missing.isEmpty() && all.savedAt == null) index = built
+        return built
     }
 
     @Suppress("UNCHECKED_CAST")
