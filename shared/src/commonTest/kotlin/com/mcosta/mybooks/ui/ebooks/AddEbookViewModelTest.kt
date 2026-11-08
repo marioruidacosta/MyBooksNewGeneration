@@ -109,4 +109,27 @@ class AddEbookViewModelTest : MainDispatcherTest() {
         val vm = vm(Inspection.Readable(EbookFormat.EPUB, maias), forBookId = id)
         assertEquals(id, assertIs<Match.Existing>(assertIs<AddEbookState.Ready>(vm.state.value).match).book.id)
     }
+
+    /** After a restore the book has an ebook but no file: adding it again keeps the place, so no warning. */
+    @Test
+    fun addingAMissingFileAgainDoesNotWarn() = runTest {
+        val id = (books.save(Book(title = "Os Maias", authors = "Eça de Queirós")) as SaveResult.Saved).id
+        ebooks.add(id, EbookFormat.EPUB, "old.epub", okio.Buffer().write(byteArrayOf(9)))
+        assertTrue(assertIs<AddEbookState.Ready>(vm(Inspection.Readable(EbookFormat.EPUB, maias)).state.value).replaces)
+        ebooks.remove(id)
+        assertFalse(assertIs<AddEbookState.Ready>(vm(Inspection.Readable(EbookFormat.EPUB, maias)).state.value).replaces)
+        // A different format can't keep the place.
+        assertTrue(assertIs<AddEbookState.Ready>(vm(Inspection.Readable(EbookFormat.PDF, maias)).state.value).replaces)
+    }
+
+    /** A file whose name gives no title ("_.epub") is added as "Untitled", not a crash. */
+    @Test
+    fun aNamelessProtectedFileIsAddedAsUntitled() = runTest {
+        val nameless = IncomingFile("/cache/incoming/_.epub", "_.epub", 3)
+        fs.write(nameless.path.toPath()) { write(byteArrayOf(1, 2, 3)) }
+        val vm = AddEbookViewModel(nameless, { Inspection.Protected }, EbookMatcher(books), ebooks, books, fs)
+        vm.addWithoutFile()
+        val done = assertIs<AddEbookState.Done>(vm.state.value)
+        assertEquals("Untitled", books.getBook(done.bookId)!!.title)
+    }
 }

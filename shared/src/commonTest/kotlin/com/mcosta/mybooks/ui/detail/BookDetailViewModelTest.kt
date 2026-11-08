@@ -21,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.first
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -246,5 +247,20 @@ class BookDetailViewModelTest : MainDispatcherTest() {
         vm.loadAuthor()
         advanceUntilIdle()
         assertEquals(AuthorPanel("Jade Khoo", info = null, otherBooks = emptyList(), loading = false), vm.author.value)
+    }
+
+    /** Undo after deleting a highlight puts it back where it was in the ebook, with its date. */
+    @Test
+    fun undoingAHighlightDeleteKeepsItsPlace() = runTest {
+        val quotes = com.mcosta.mybooks.data.QuoteRepository(com.mcosta.mybooks.data.FakeQuoteDao(), clock = { 5L })
+        val id = (repo.save(Book(title = "Emma")) as SaveResult.Saved).id
+        quotes.addHighlight(id, "Badly done, Emma!", "{\"p\":3}")
+        val vm = BookDetailViewModel(repo, id, backgroundScope, quoteRepo = quotes)
+        val quote = quotes.observe(id).first().single()
+        vm.deleteQuote(quote)
+        vm.restoreQuote(quote)
+        advanceUntilIdle()
+        val back = quotes.observe(id).first().single()
+        assertEquals(quote.copy(id = back.id), back)
     }
 }

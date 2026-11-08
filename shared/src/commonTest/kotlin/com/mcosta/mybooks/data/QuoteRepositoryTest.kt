@@ -70,3 +70,16 @@ class QuoteRepositoryTest {
         )
     }
 }
+
+/** Highlights made in the reader are quotes with a place in the ebook. */
+class HighlightTest {
+    private val quotes = QuoteRepository(FakeQuoteDao(), clock = { 7L })
+
+    @kotlin.test.Test
+    fun highlightBecomesQuoteWithItsPlace() = kotlinx.coroutines.test.runTest {
+        val id = quotes.addHighlight(1, "  Fear is the mind-killer.\n", "{\"p\":3}")
+        val q = quotes.observe(1).first().single()
+        kotlin.test.assertEquals(com.mcosta.mybooks.domain.Quote(id!!, 1, "Fear is the mind-killer.", null, 7, "{\"p\":3}"), q)
+        kotlin.test.assertEquals(null, quotes.addHighlight(1, "   ", "{}"))
+    }
+}

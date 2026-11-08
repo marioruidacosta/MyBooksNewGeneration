@@ -27,7 +27,7 @@ class EbookMatcher(private val books: BookRepository) {
         val isbn = meta.isbn?.let { Isbn.normalize(it) }
         if (isbn != null) books.findByIsbn(isbn)?.let { return Match.Existing(it) }
         val authors = meta.authors.map(::personName).filter { it.isNotEmpty() }
-        val title = meta.title?.trim()?.takeIf { it.isNotEmpty() } ?: titleFromFileName(fileName)
+        val title = meta.title?.trim()?.takeIf { it.isNotEmpty() } ?: titleFromFileName(fileName).ifEmpty { "Untitled" }
         val key = catalogTitleKey(title) to searchKey(authors.firstOrNull().orEmpty())
         if (key.second.isNotEmpty()) {
             books.observeBooks(null, "").first()

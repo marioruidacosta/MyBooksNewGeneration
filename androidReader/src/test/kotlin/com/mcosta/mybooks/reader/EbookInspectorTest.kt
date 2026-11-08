@@ -59,6 +59,25 @@ class EbookInspectorTest {
 
     private val maias = EbookMetadata("Os Maias", listOf("Eça de Queirós"), "9789722039994", "pt")
 
+    /**
+     * A hostile EPUB: a few KB on disk, but its package file unpacks to 600 MB. Reading it whole ran out of memory
+     * (an Error no catch handled); only its start is read, and the metadata is there.
+     */
+    @Test
+    fun aHugePackageFileIsReadOnlyAtItsStart() = runBlocking {
+        val file = dir.newFile("bomb.epub")
+        ZipOutputStream(file.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("META-INF/container.xml"))
+            zip.write("""<container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>""".toByteArray())
+            zip.putNextEntry(ZipEntry("content.opf"))
+            zip.write(opf.substringBefore("<manifest>").toByteArray())
+            val spaces = ByteArray(1 shl 20) { ' '.code.toByte() }
+            repeat(600) { zip.write(spaces) }
+            zip.write("</package>".toByteArray())
+        }
+        assertEquals(Inspection.Readable(EbookFormat.EPUB, maias), inspector.inspect(file, "bomb.epub"))
+    }
+
     @Test
     fun plainEpubIsReadableWithItsMetadata() = runBlocking {
         assertEquals(Inspection.Readable(EbookFormat.EPUB, maias), inspector.inspect(epub("maias.epub"), "maias.epub"))

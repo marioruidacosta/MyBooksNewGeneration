@@ -15,6 +15,8 @@ import com.mcosta.mybooks.data.lookup.BookLookupService
 import com.mcosta.mybooks.data.lookup.LookupResult
 import com.mcosta.mybooks.domain.ReadingStatus
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.cancel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import okio.Buffer
@@ -31,6 +33,8 @@ class ClassicsViewModelTest : MainDispatcherTest() {
     private var gate: CompletableDeferred<Unit>? = null
     private var failSearch = false
     private var failDownload = false
+    private var downloadGate: CompletableDeferred<Unit>? = null
+    private var downloads = 0
     private val source = object : ClassicsSource {
         override suspend fun search(query: String): List<Classic> {
             gate?.await()
@@ -38,6 +42,8 @@ class ClassicsViewModelTest : MainDispatcherTest() {
             return listOf(maias)
         }
         override suspend fun download(classic: Classic, into: suspend (Source) -> Unit) {
+            downloads++
+            downloadGate?.await()
             if (failDownload) throw ClassicsUnavailable()
             into(Buffer().write(ByteArray(100)))
         }
@@ -92,5 +98,28 @@ class ClassicsViewModelTest : MainDispatcherTest() {
         assertTrue(books.observeBooks(null, "").first().isEmpty())
         assertEquals("Couldn't download the book. Check the connection and try again.", vm.state.value.message)
         assertTrue(maias.id !in vm.state.value.downloading)
+    }
+
+    /** A later visit: the classic is already in the library with its file; downloading again would lose the place. */
+    @Test
+    fun aClassicAlreadyOnThePhoneIsNotDownloadedAgain() = runTest {
+        vm.download(maias)
+        val id = vm.state.value.downloaded.getValue(maias.id)
+        ebooks.savePosition(id, "{\"p\":7}", 0.4)
+        val later = ClassicsViewModel(source, EbookMatcher(books), ebooks, books)
+        later.download(maias)
+        assertEquals(id, later.state.value.downloaded[maias.id])
+        assertEquals(1, downloads)
+        assertEquals("{\"p\":7}", ebooks.observe(id).first()!!.ebook.position)
+    }
+
+    /** Leaving Free classics while a book downloads leaves no new book behind. */
+    @Test
+    fun leavingDuringADownloadLeavesNoBook() = runTest {
+        downloadGate = CompletableDeferred()
+        vm.download(maias)
+        assertEquals(1, books.observeBooks(null, "").first().size)
+        vm.viewModelScope.cancel()
+        assertTrue(books.observeBooks(null, "").first().isEmpty())
     }
 }

@@ -34,7 +34,7 @@ class EbookInspector {
 
     private fun inspectNow(file: File): Inspection {
         if (file.length() == 0L) return Inspection.Unreadable
-        val head = file.inputStream().use { it.readNBytes(5) }
+        val head = readBytes(file, 0, 5)
         return when {
             head.startsWith("PK") -> epub(file)
             head.startsWith("%PDF") -> pdf(file)
@@ -77,7 +77,22 @@ class EbookInspector {
 
         fun ByteArray.startsWith(prefix: String) = size >= prefix.length && prefix.indices.all { this[it] == prefix[it].code.toByte() }
 
-        fun ZipFile.text(name: String): String? = getEntry(name)?.let { e -> getInputStream(e).use { String(it.readBytes(), Charsets.UTF_8) } }
+        /** Most of an EPUB's XML read: metadata comes first, and a hostile file can unpack to gigabytes. */
+        const val XML_MAX = 2 * 1024 * 1024
+
+        /** The start (at most [XML_MAX] bytes) of a zip entry, as text. */
+        fun ZipFile.text(name: String): String? = getEntry(name)?.let { e ->
+            getInputStream(e).use { input ->
+                val buffer = ByteArray(if (e.size in 0..XML_MAX) e.size.toInt() else XML_MAX)
+                var total = 0
+                while (total < buffer.size) {
+                    val n = input.read(buffer, total, buffer.size - total)
+                    if (n < 0) break
+                    total += n
+                }
+                String(buffer, 0, total, Charsets.UTF_8)
+            }
+        }
 
         fun readBytes(file: File, from: Long, count: Int): ByteArray = RandomAccessFile(file, "r").use { f ->
             f.seek(from)
