@@ -7,6 +7,8 @@ import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.social.ActivityService
 import com.mcosta.mybooks.social.model.FeedBook
 import com.mcosta.mybooks.social.model.FeedEntry
+import com.mcosta.mybooks.data.authors.catalogTitleKey
+import com.mcosta.mybooks.domain.searchKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -65,4 +67,18 @@ internal class LikeToggler(private val activity: ActivityService, private val sc
             }
         }
     }
+}
+
+/**
+ * The user's shelf for each of [books] that is in [library], by share id: the same ISBN, or the same title (before
+ * any subtitle) and first author, as the catalogue matches books.
+ */
+internal fun shelvesFor(books: List<FeedBook>, library: List<Book>): Map<String, ReadingStatus> {
+    val byIsbn = library.filter { it.isbn != null }.associate { it.isbn!! to it.status }
+    fun key(title: String, authors: String) = catalogTitleKey(title) + "|" + searchKey(authors.substringBefore(',').trim())
+    val byTitle = library.associate { key(it.title, it.authors) to it.status }
+    return books.mapNotNull { b ->
+        val status = b.isbn?.let { byIsbn[it] } ?: byTitle[key(b.title, b.authors)]
+        status?.let { b.shareId to it }
+    }.toMap()
 }
