@@ -70,6 +70,17 @@ class ShareTracker(
         if (marked) onPending()
     }
 
+    /**
+     * [book] arrived from another device, which publishes its own changes: nothing is marked waiting here. Its pulled
+     * values become this book's "before" values, so the next change made here is published against them. A row still
+     * waiting keeps its "before": its own change hasn't been published yet, and the pulled book already includes it.
+     */
+    suspend fun syncedFromElsewhere(book: Book) = lock.mutex.withLock {
+        val row = dao.get(book.id) ?: return@withLock
+        if (row.pending || row.deleted) return@withLock
+        dao.upsert(row.withBefore(book))
+    }
+
     fun observeExcluded(bookId: Long): Flow<Boolean> = dao.observe(bookId).map { it?.excluded == true }
 
     suspend fun exportShares(): Map<Long, BackupShare> =

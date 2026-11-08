@@ -21,8 +21,17 @@ class FakeSyncServer(
     var owner: String = "owner",
     var clock: () -> Long = { 0L },
 ) : SyncApi {
-    /** Thrown by the next call (of any kind), once. */
+    /** Thrown by the next call (of any kind), [failTimes] calls in a row. */
     var failNext: SyncException? = null
+
+    /** How many calls in a row [failNext] is thrown by; back to 1 once used up. */
+    var failTimes = 1
+
+    /** The server's reason to set a pushed row aside, or null to apply it. */
+    var refuse: (SyncRow) -> String? = { null }
+
+    /** Every data call ("push", "pull", "merge", "cover"), with the [clock] time it was made at, failed ones included. */
+    val calls = mutableListOf<Pair<String, Long>>()
 
     private val rows = mutableMapOf<String, MutableMap<Pair<SyncTable, String>, SyncRow>>()
     private val covers = mutableMapOf<String, ByteArray>()
@@ -32,8 +41,15 @@ class FakeSyncServer(
     /** The rows stored for [forOwner], by table and id. */
     fun stored(forOwner: String = owner): Map<Pair<SyncTable, String>, SyncRow> = rows[forOwner].orEmpty()
 
-    private fun check() {
-        failNext?.let { failNext = null; throw it }
+    private fun check(call: String = "cover") {
+        calls += call to clock()
+        failNext?.let {
+            if (--failTimes <= 0) {
+                failNext = null
+                failTimes = 1
+            }
+            throw it
+        }
     }
 
     private fun mine() = rows.getOrPut(owner) { mutableMapOf() }
@@ -59,15 +75,17 @@ class FakeSyncServer(
     }
 
     override suspend fun push(rows: List<SyncRow>): PushResult {
-        check()
+        check("push")
         require(rows.size <= 200) { "sync_push takes at most 200 changes" }
-        rows.forEach { mergeRow(it) }
-        if (rows.isNotEmpty()) pingFlow.tryEmit(owner)
-        return PushResult(rows.map { it.table to it.id }, emptyList())
+        val refused = rows.mapNotNull { row -> refuse(row)?.let { SetAside(row.table, row.id, it) } }
+        val accepted = rows.filter { row -> refused.none { it.table == row.table && it.id == row.id } }
+        accepted.forEach { mergeRow(it) }
+        if (accepted.isNotEmpty()) pingFlow.tryEmit(owner)
+        return PushResult(accepted.map { it.table to it.id }, refused)
     }
 
     override suspend fun pull(after: Long, max: Int): PullPage {
-        check()
+        check("pull")
         val page = mine().values.filter { it.seq > after }.sortedBy { it.seq }.take(max.coerceIn(1, 1000))
         return PullPage(page, page.lastOrNull()?.seq ?: after)
     }
@@ -77,7 +95,7 @@ class FakeSyncServer(
     private fun isDeleted(row: SyncRow) = (row.fields["deleted"] as? JsonPrimitive)?.booleanOrNull == true
 
     override suspend fun mergeLibrary(books: List<SyncRow>): MergeResult {
-        check()
+        check("merge")
         require(books.size <= 100) { "merge_library takes at most 100 books" }
         val ids = mutableMapOf<String, String>()
         for (b in books) {
