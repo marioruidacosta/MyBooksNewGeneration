@@ -97,4 +97,16 @@ class FeedTextTest {
         assertEquals("Ana · 53%", readingLabel(r))
         assertEquals("Ana", readingLabel(r.copy(progress = null)))
     }
+
+    @Test
+    fun aPageAboveTheCountFallsBackToPercent() {
+        val e = entry(ActivityKind.PROGRESS, progress = 53).let { it.copy(book = it.book.copy(pages = 344, currentPage = 400)) }
+        assertEquals("is 53% through", actionText(e))
+    }
+
+    @Test
+    fun starsAreDescribedForTalkBack() {
+        assertEquals("Rated 4 out of 5", starsDescription(4))
+        assertEquals(null, starsDescription(null))
+    }
 }

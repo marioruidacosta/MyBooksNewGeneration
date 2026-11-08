@@ -27,7 +27,7 @@ fun actionText(entry: FeedEntry): String = when (entry.kind) {
         val page = entry.book.currentPage
         val pages = entry.book.pages
         when {
-            page != null && pages != null -> "is on page $page of $pages"
+            page != null && pages != null && page <= pages -> "is on page $page of $pages"
             entry.progress != null -> "is ${entry.progress}% through"
             else -> "is reading"
         }
@@ -36,6 +36,9 @@ fun actionText(entry: FeedEntry): String = when (entry.kind) {
 
 /** A score as stars: 4 → "★★★★☆"; null for none. */
 fun starsText(rating: Int?): String? = rating?.coerceIn(0, 5)?.let { "★".repeat(it) + "☆".repeat(5 - it) }
+
+/** The stars as TalkBack reads them: "Rated 4 out of 5"; null for none. */
+fun starsDescription(rating: Int?): String? = rating?.coerceIn(0, 5)?.let { "Rated $it out of 5" }
 
 /** A grouped card's line, after the name: "added 5 books to To read". */
 fun groupText(group: FeedItem.Group): String =

@@ -43,6 +43,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.social.model.ActivityKind
 import com.mcosta.mybooks.social.model.FeedBook
@@ -90,7 +92,10 @@ fun FeedEntryCard(
             }
         }
         if (entry.kind == ActivityKind.RATED || entry.kind == ActivityKind.REVIEWED) {
-            starsText(entry.rating)?.let { Text(it, color = StarColor, style = MaterialTheme.typography.titleMedium) }
+            starsText(entry.rating)?.let { stars ->
+                val described = starsDescription(entry.rating).orEmpty()
+                Text(stars, color = StarColor, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { contentDescription = described })
+            }
         }
         val review = entry.review
         if (!review.isNullOrBlank()) {
@@ -178,7 +183,7 @@ private fun BookPanel(
                 }
                 if (onWantToBuy != null && shelf == null) {
                     Box {
-                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.MoreVert, "More") }
+                        IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(32.dp)) { Icon(Icons.Filled.MoreVert, "More for this book") }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(text = { Text("To buy") }, onClick = { menuOpen = false; onWantToBuy() })
                         }

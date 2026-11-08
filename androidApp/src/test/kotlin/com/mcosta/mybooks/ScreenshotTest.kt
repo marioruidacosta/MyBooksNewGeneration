@@ -11,6 +11,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTextInput
 import com.mcosta.mybooks.data.authors.AuthorBook
 import com.mcosta.mybooks.data.releases.AllMonths
@@ -358,6 +359,8 @@ class ScreenshotTest {
             compose.onNodeWithText(text, substring = true).assertExists()
         }
         compose.onNodeWithText("is on page 182 of 344", substring = true).assertExists()
+        compose.onNodeWithContentDescription("More for this book").assertExists()
+        compose.onNodeWithContentDescription("Rated 4 out of 5").assertExists()
     }
 
     /** A book page's "Friends who have this book". */
