@@ -12,14 +12,14 @@ create table library_books (
   field_times jsonb not null default '{}',
   deleted boolean not null default false,
   seq bigint not null default nextval('library_seq'),
-  isbn text,
+  isbn text check (char_length(isbn) <= 20),
   title text not null default '' check (char_length(title) <= 300),
-  authors text not null default '',
+  authors text not null default '' check (char_length(authors) <= 300),
   publisher text,
   published_year int,
   page_count int,
-  cover_url text,
-  description text,
+  cover_url text check (char_length(cover_url) <= 500),
+  description text check (char_length(description) <= 20000),
   status text not null default '',
   rating int,
   notes text not null default '' check (char_length(notes) <= 20000),
@@ -29,10 +29,10 @@ create table library_books (
   current_page int,
   progress_percent int,
   review text not null default '' check (char_length(review) <= 2000),
-  tags text not null default '',
-  series text,
-  series_number text,
-  lent_to text,
+  tags text not null default '' check (char_length(tags) <= 2000),
+  series text check (char_length(series) <= 100),
+  series_number text check (char_length(series_number) <= 100),
+  lent_to text check (char_length(lent_to) <= 100),
   lent_on bigint,
   primary key (owner, id)
 );
@@ -47,7 +47,7 @@ create table library_quotes (
   text text not null default '' check (char_length(text) <= 5000),
   page int,
   date_added bigint not null default 0,
-  position text,
+  position text check (char_length(position) <= 2000),
   primary key (owner, id)
 );
 
@@ -70,10 +70,10 @@ create table library_ebooks (
   deleted boolean not null default false,
   seq bigint not null default nextval('library_seq'),
   format text not null default '',
-  file_name text not null default '',
+  file_name text not null default '' check (char_length(file_name) <= 300),
   size bigint not null default 0,
   date_added bigint not null default 0,
-  position text,
+  position text check (char_length(position) <= 2000),
   last_opened bigint,
   primary key (owner, id)
 );
@@ -85,8 +85,8 @@ create table library_bookmarks (
   deleted boolean not null default false,
   seq bigint not null default nextval('library_seq'),
   book_id text not null default '',
-  position text not null default '',
-  label text not null default '',
+  position text not null default '' check (char_length(position) <= 2000),
+  label text not null default '' check (char_length(label) <= 300),
   date_added bigint not null default 0,
   primary key (owner, id)
 );
@@ -98,7 +98,7 @@ create table library_prefs (
   field_times jsonb not null default '{}',
   deleted boolean not null default false,
   seq bigint not null default nextval('library_seq'),
-  value text not null default '',
+  value text not null default '' check (char_length(value) <= 20000),
   primary key (owner, id)
 );
 
@@ -159,6 +159,7 @@ declare
   t bigint;
   cap bigint := floor(extract(epoch from clock_timestamp()) * 1000)::bigint + 60000;
   changed boolean := false;
+  inserted int;
 begin
   if tbl is null then
     raise exception 'unknown table %', p_table using errcode = '22023';
@@ -172,12 +173,15 @@ begin
   where attrelid = ('public.' || tbl)::regclass and attnum > 0 and not attisdropped
     and attname not in ('owner', 'id', 'field_times', 'seq');
 
-  execute format('select to_jsonb(t) from %I t where owner = $1 and id = $2', tbl) into stored using p_owner, p_id;
+  execute format('select to_jsonb(t) from %I t where owner = $1 and id = $2 for update', tbl)
+    into stored using p_owner, p_id;
   if stored is null then
     -- A new row: insert the defaults, then merge into it like any stored row. Rolled back with the caller's block.
-    execute format('insert into %I (owner, id) values ($1, $2) returning to_jsonb(%I.*)', tbl, tbl)
+    execute format('insert into %I (owner, id) values ($1, $2) on conflict do nothing', tbl) using p_owner, p_id;
+    get diagnostics inserted = row_count;
+    execute format('select to_jsonb(t) from %I t where owner = $1 and id = $2 for update', tbl)
       into stored using p_owner, p_id;
-    changed := true;
+    changed := inserted > 0;
   end if;
   merged := stored;
   ft := stored->'field_times';
@@ -224,14 +228,21 @@ declare
   applied jsonb := '[]';
   set_aside jsonb := '[]';
 begin
+  if jsonb_typeof(coalesce(changes, '[]'::jsonb)) <> 'array' or jsonb_array_length(coalesce(changes, '[]'::jsonb)) > 200 then
+    raise exception 'sync_push takes an array of at most 200 changes' using errcode = '22023';
+  end if;
+  -- One writer per owner at a time (merge_library takes the same lock). This keeps two devices' pushes from losing
+  -- each other's fields, and, because the lock is held until commit, an owner's seq values commit in order: a
+  -- client that has pulled up to seq N never misses a row that commits later with a lower seq.
+  perform pg_advisory_xact_lock(hashtext('library:' || me::text));
   for c in select value from jsonb_array_elements(coalesce(changes, '[]'::jsonb)) loop
     begin
       perform _merge_row(c->>'table', me, c->>'id', c->'fields', c->'times');
-      applied := applied || to_jsonb(c->>'id');
+      applied := applied || jsonb_build_object('table', c->>'table', 'id', c->>'id');
     exception when check_violation or invalid_text_representation or string_data_right_truncation
         or numeric_value_out_of_range or not_null_violation or invalid_parameter_value
         or datetime_field_overflow or invalid_datetime_format then
-      set_aside := set_aside || jsonb_build_object('id', c->>'id', 'reason', sqlerrm);
+      set_aside := set_aside || jsonb_build_object('table', c->>'table', 'id', c->>'id', 'reason', sqlerrm);
     end;
   end loop;
   if jsonb_array_length(applied) > 0 then

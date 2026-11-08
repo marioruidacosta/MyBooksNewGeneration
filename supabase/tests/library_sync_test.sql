@@ -20,6 +20,10 @@ create function pg_temp.title_of(p_id text) returns text language sql as $$
   select title from library_books where owner = auth.uid() and id = p_id;
 $$;
 
+create function pg_temp.bulk(a int, b int) returns jsonb language sql as $$
+  select sync_push((select jsonb_agg(jsonb_build_object('table','prefs','id','bulk' || g,'fields','{"value":"v"}'::jsonb,
+    'times','{"value":1000}'::jsonb)) from generate_series(a, b) g));
+$$;
 set local role authenticated;
 select pg_temp.act_as('11111111-1111-1111-1111-111111111111');
 
@@ -116,6 +120,30 @@ select is(
 select is(
   (select (r->>'deleted')::boolean from jsonb_array_elements(sync_pull(0)->'rows') r where r->>'id' = 'b6'),
   false, 'pull_includes_deleted_flag');
+
+-- sync_pull clamps max to 1..1000
+select is(jsonb_array_length(sync_pull(0, 0)->'rows'), 1, 'pull_max_clamped_min: 0 gives one row');
+select is(jsonb_array_length(sync_pull(0, -5)->'rows'), 1, 'pull_max_clamped_min: negative gives one row');
+select pg_temp.bulk(1, 200); select pg_temp.bulk(201, 400); select pg_temp.bulk(401, 600);
+select pg_temp.bulk(601, 800); select pg_temp.bulk(801, 1000); select pg_temp.bulk(1001, 1100);
+select is(jsonb_array_length(sync_pull(0, 5000)->'rows'), 1000, 'pull_max_clamped_max: 5000 gives 1000');
+select is(jsonb_array_length(sync_pull(0)->'rows'), 500, 'pull_default_max_500');
+
+-- push_over_200_rejected
+select throws_ok(
+  $$select sync_push((select jsonb_agg(jsonb_build_object('table','prefs','id','over' || g,'fields','{}'::jsonb,'times','{}'::jsonb))
+                      from generate_series(1, 201) g))$$,
+  '22023', null, 'push_over_200_rejected');
+select is(jsonb_array_length(pg_temp.bulk(1, 200)->'applied'), 200, 'push_200_accepted');
+
+-- oversize description is set aside; results carry table and id
+select is(
+  (select s.r->'set_aside'->0 - 'reason' from (select pg_temp.push_book('fat', jsonb_build_object('description', repeat('d', 20001)),
+    '{"description":1000}') as r) s),
+  '{"table":"books","id":"fat"}'::jsonb, 'oversize_description_set_aside: identified by table and id');
+select is((select count(*)::int from library_books where id = 'fat'), 0, 'oversize_description_set_aside: not stored');
+select is(pg_temp.push_book('ok1', '{"title":"T"}', '{"title":1}')->'applied', '[{"table":"books","id":"ok1"}]'::jsonb,
+  'applied_identified_by_table_and_id');
 
 -- rls_hides_other_owner
 select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
