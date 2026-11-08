@@ -7,6 +7,7 @@ import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import androidx.room.Update
 import androidx.room.Upsert
 import com.mcosta.mybooks.domain.Bookmark
 import com.mcosta.mybooks.domain.Ebook
@@ -107,6 +108,9 @@ interface BookmarkDao {
 
     @Insert
     suspend fun insert(bookmark: BookmarkEntity): Long
+
+    @Update
+    suspend fun update(bookmark: BookmarkEntity)
 
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun delete(id: Long)

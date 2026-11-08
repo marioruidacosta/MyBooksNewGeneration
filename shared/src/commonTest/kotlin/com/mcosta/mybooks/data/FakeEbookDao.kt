@@ -52,6 +52,9 @@ class FakeBookmarkDao : BookmarkDao {
     override suspend fun delete(id: Long) {
         rows.value = rows.value - id
     }
+    override suspend fun update(bookmark: BookmarkEntity) {
+        if (bookmark.id in rows.value) rows.value = rows.value + (bookmark.id to bookmark)
+    }
     override suspend fun deleteForBook(bookId: Long) {
         rows.value = rows.value.filterValues { it.bookId != bookId }
     }

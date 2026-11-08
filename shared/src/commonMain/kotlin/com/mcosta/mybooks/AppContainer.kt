@@ -13,6 +13,14 @@ import com.mcosta.mybooks.data.suggestions.HiddenSuggestions
 import com.mcosta.mybooks.data.suggestions.SubjectSearch
 import com.mcosta.mybooks.data.suggestions.SuggestionEngine
 import com.mcosta.mybooks.social.model.SessionState
+import com.mcosta.mybooks.sync.SyncRecorder
+import com.mcosta.mybooks.sync.SyncTable
+import com.mcosta.mybooks.sync.SyncingBookDao
+import com.mcosta.mybooks.sync.SyncingBookmarkDao
+import com.mcosta.mybooks.sync.SyncingChallengeDao
+import com.mcosta.mybooks.sync.SyncingEbookDao
+import com.mcosta.mybooks.sync.SyncingQuoteDao
+import kotlin.time.Clock
 import kotlinx.coroutines.flow.first
 import com.mcosta.mybooks.data.authors.GoogleBooksAuthorSearch
 import com.mcosta.mybooks.data.authors.WikipediaAuthors
@@ -70,6 +78,22 @@ class AppContainer(
     /** Outlives screens; used for writes that must finish after a screen closes. */
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    private val writeTransaction: suspend (suspend () -> Unit) -> Unit =
+        { block -> database.useWriterConnection { it.immediateTransaction { block() } } }
+
+    /** Stamps and queues every local change for cloud sync; nothing is queued until Task 10 turns `enabled` on. */
+    val syncRecorder = SyncRecorder(database.syncQueueDao(), { Clock.System.now().toEpochMilliseconds() }, { false }, writeTransaction)
+
+    private val syncBooks = SyncingBookDao(database.bookDao(), syncRecorder)
+
+    /** A preference changed: keep its time and queue it. */
+    private val prefChanged: suspend (String) -> Unit = { key ->
+        syncRecorder.transaction {
+            database.syncStateDao().set("prefs/$key", syncRecorder.now().toString())
+            syncRecorder.record(SyncTable.PREFS, key)
+        }
+    }
+
     private val http = lookupHttpClient(httpEngine, userAgent)
 
     /** New in Portugal: monthly lists of new books, downloaded from GitHub Pages and saved on the phone. */
@@ -106,22 +130,22 @@ class AppContainer(
     val preferences: Preferences? = appSettings?.let(::SettingsPreferences)
 
     /** Books marked "Not interested" in suggestions. */
-    val hiddenSuggestions = HiddenSuggestions(preferences)
+    val hiddenSuggestions = HiddenSuggestions(preferences, prefChanged, applicationScope)
 
     /** Tags shown as rows on the home screen. */
-    val pinnedTags = com.mcosta.mybooks.data.PinnedTags(preferences)
+    val pinnedTags = com.mcosta.mybooks.data.PinnedTags(preferences, prefChanged, applicationScope)
 
     /** The monthly notification of New in Portugal books by your authors and publishers. */
     val releaseAlerts = com.mcosta.mybooks.data.releases.ReleaseAlerts(releases, { repository.observeBooks(null, "").first() }, preferences)
 
     /** Yearly reading challenges. */
-    val challenges = ChallengeRepository(database.challengeDao())
+    val challenges = ChallengeRepository(SyncingChallengeDao(database.challengeDao(), syncRecorder))
 
     /** Quotes saved from books. */
-    val quotes = com.mcosta.mybooks.data.QuoteRepository(database.quoteDao())
+    val quotes = com.mcosta.mybooks.data.QuoteRepository(SyncingQuoteDao(database.quoteDao(), syncRecorder))
 
     val repository = BookRepository(
-        dao = database.bookDao(),
+        dao = syncBooks,
         lookupService = LookupChain(
             listOf(
                 BnpClient(http),
@@ -129,15 +153,15 @@ class AppContainer(
                 OpenLibraryClient(http),
             )
         ),
-        transactionRunner = { block -> database.useWriterConnection { it.immediateTransaction { block() } } },
+        transactionRunner = writeTransaction,
         coverStore = coverStore,
         shareTracker = sharing?.tracker,
         challenges = challenges,
         events = events,
         hiddenSuggestions = hiddenSuggestions,
-        quotes = database.quoteDao(),
-        ebooks = database.ebookDao(),
-        bookmarks = database.bookmarkDao(),
+        quotes = SyncingQuoteDao(database.quoteDao(), syncRecorder),
+        ebooks = SyncingEbookDao(database.ebookDao(), database.bookDao(), syncRecorder),
+        bookmarks = SyncingBookmarkDao(database.bookmarkDao(), syncRecorder),
         ebookFiles = ebookFiles,
     )
 
@@ -169,7 +193,7 @@ class AppContainer(
     val coverFinder = CoverFinder(repository, applicationScope)
 
     /** Books' ebook files, reading positions and bookmarks. */
-    val ebooks = EbookRepository(database.ebookDao(), database.bookmarkDao(), ebookFiles, repository)
+    val ebooks = EbookRepository(SyncingEbookDao(database.ebookDao(), database.bookDao(), syncRecorder), SyncingBookmarkDao(database.bookmarkDao(), syncRecorder), ebookFiles, repository)
 
     /** What the home-screen widget shows, today, following the library. */
     val readingSummaries: kotlinx.coroutines.flow.Flow<com.mcosta.mybooks.domain.ReadingSummary> =
