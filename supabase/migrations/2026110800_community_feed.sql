@@ -72,7 +72,7 @@ begin
   if v_pages not between 1 and 20000 then
     v_pages := null;
   end if;
-  if v_current_page < 0 then
+  if v_current_page < 0 or v_current_page > v_pages then
     v_current_page := null;
   end if;
 
@@ -104,7 +104,11 @@ begin
     isbn = excluded.isbn, title = excluded.title, authors = excluded.authors, cover_url = excluded.cover_url,
     status = excluded.status, rating = excluded.rating, progress = excluded.progress, review = excluded.review,
     blurb = excluded.blurb, pages = excluded.pages, current_page = excluded.current_page,
-    updated_at = now()
+    -- Only reading changes count as "updated" (it orders "Friends are reading"); a new blurb or title doesn't.
+    updated_at = case
+      when (s.status, s.rating, s.progress, s.review, s.current_page)
+           is distinct from (excluded.status, excluded.rating, excluded.progress, excluded.review, excluded.current_page)
+      then now() else s.updated_at end
   where s.owner = me;
 
   if v_status is distinct from p_status then
