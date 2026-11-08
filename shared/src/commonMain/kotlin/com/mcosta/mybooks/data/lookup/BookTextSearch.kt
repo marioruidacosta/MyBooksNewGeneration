@@ -79,16 +79,16 @@ class OpenLibraryTextSearch(
     private val baseUrl: String = "https://openlibrary.org",
 ) : BookTextSource {
     override suspend fun search(query: String): List<PublicHit> {
-        val fields = "title,author_name,first_publish_year,isbn,cover_i,language,publisher"
+        val fields = "title,author_name,isbn,cover_i,language"
         val body = http.getOrNull("$baseUrl/search.json?q=${encoded(query)}&limit=20&fields=$fields") ?: return emptyList()
         return json.decodeFromString<Results>(body).docs.filter { it.title.isNotBlank() }.map { doc ->
             PublicHit(
                 AuthorBook(
                     title = doc.title.trim(),
                     authors = doc.author_name.joinToString(", "),
-                    year = doc.first_publish_year,
+                    year = null,
                     // A work lists every edition's ISBNs and publishers in no order: only a Portuguese edition's ISBN
-                    // is kept, and no publisher, so nothing from a foreign edition is saved or used for store links.
+                    // is kept, and no publisher or year (Open Library gives the work's first year, not the edition's).
                     publisher = null,
                     isbn = if ("por" !in doc.language) null
                     else doc.isbn.mapNotNull { Isbn.normalize(it) }.firstOrNull { it.startsWith("978972") || it.startsWith("978989") },
@@ -109,10 +109,8 @@ class OpenLibraryTextSearch(
     private data class Doc(
         val title: String = "",
         val author_name: List<String> = emptyList(),
-        val first_publish_year: Int? = null,
         val isbn: List<String> = emptyList(),
         val cover_i: Long? = null,
         val language: List<String> = emptyList(),
-        val publisher: List<String> = emptyList(),
     )
 }

@@ -64,4 +64,12 @@ class PublicBookSearchTest {
         assertEquals(emptyList(), PublicBookSearch(listOf(text)) { LookupResult.NotFoundWithErrors(Exception()) }.search("972-20-3650-5"))
         assertFailsWith<PublicSearchUnavailable> { PublicBookSearch(listOf(text)) { LookupResult.Error(Exception()) }.search("972-20-3650-5") }
     }
+
+    /** Two different books with the same title and no author listed are both kept (nothing says they're the same). */
+    @Test
+    fun authorlessBooksWithTheSameTitleStay() = runTest {
+        val a = book("Poemas", "")
+        val b = book("Poemas", "", "9789722036504")
+        assertEquals(listOf(a, b), PublicBookSearch(listOf(source(PublicHit(a, false)), source(PublicHit(b, false))), noLookup).search("poemas"))
+    }
 }

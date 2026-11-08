@@ -50,11 +50,12 @@ class BookTextSearchTest {
         )
         val hits = OpenLibraryTextSearch(server.httpClient(), baseUrl = server.baseUrl).search("os maias")
         // A work lists every edition's ISBN and publisher in no order: only a Portuguese edition's ISBN is kept
-        // (978-972, 978-989), and no publisher, so nothing from a foreign edition is saved or used for store links.
+        // (978-972, 978-989), and no publisher or year (first_publish_year is the work's, not the edition's), so
+        // nothing from another edition is saved or used for store links.
         assertEquals(
             listOf(
                 PublicHit(
-                    AuthorBook("Os Maias", "Eça de Queirós", 1888, null, "9789722039994", "https://covers.openlibrary.org/b/id/8231856-M.jpg", null, null),
+                    AuthorBook("Os Maias", "Eça de Queirós", null, null, "9789722039994", "https://covers.openlibrary.org/b/id/8231856-M.jpg", null, null),
                     portuguese = true,
                 ),
             ),
@@ -95,7 +96,7 @@ class BookTextSearchTest {
         assertTrue(server.takeRequest().path.endsWith("&key=k"))
         OpenLibraryTextSearch(server.httpClient(), baseUrl = server.baseUrl).search("Eça & \"Cia\" #1")
         assertEquals(
-            "/search.json?q=E%C3%A7a+%26+%22Cia%22+%231&limit=20&fields=title,author_name,first_publish_year,isbn,cover_i,language,publisher",
+            "/search.json?q=E%C3%A7a+%26+%22Cia%22+%231&limit=20&fields=title,author_name,isbn,cover_i,language",
             server.takeRequest().path,
         )
     }

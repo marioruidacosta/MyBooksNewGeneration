@@ -48,11 +48,17 @@ class PublicBookSearch(
             .map { it.book }
     }
 
-    /** A book is the same as another with its ISBN, or with its title (before any subtitle) and first author. */
-    private fun keys(book: AuthorBook): List<String> = listOfNotNull(
-        book.isbn?.let { "isbn:$it" },
-        "title:" + catalogTitleKey(book.title) + "|" + searchKey(book.authors.substringBefore(',').trim()),
-    )
+    /**
+     * A book is the same as another with its ISBN, or with its title (before any subtitle) and first author; without
+     * an author, a title alone says nothing ("Poemas"), so only the ISBN counts.
+     */
+    private fun keys(book: AuthorBook): List<String> {
+        val author = searchKey(book.authors.substringBefore(',').trim())
+        return listOfNotNull(
+            book.isbn?.let { "isbn:$it" },
+            author.takeIf { it.isNotEmpty() }?.let { "title:" + catalogTitleKey(book.title) + "|" + it },
+        )
+    }
 
     private suspend fun byIsbn(isbn: String): List<AuthorBook> = when (val result = lookup(isbn)) {
         is LookupResult.Found -> listOf(result.book.toAuthorBook())
