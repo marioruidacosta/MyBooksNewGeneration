@@ -151,7 +151,8 @@ class SupabaseSocialTest : MainDispatcherTest() {
         val body = Json.parseToJsonElement(bodyOf("/rest/v1/rpc/publish_book"))
         val expected = Json.parseToJsonElement(
             """{"book":{"id":"s1","isbn":"9789726084884","title":"T","authors":"A","cover_url":null,"status":"to_buy",
-               |"rating":null,"progress":null,"review":""},"before":{"status":"read","rating":3,"progress":null,"review":""}}""".trimMargin()
+               |"rating":null,"progress":null,"review":"","blurb":null,"pages":null,"current_page":null},
+               |"before":{"status":"read","rating":3,"progress":null,"review":""}}""".trimMargin()
         )
         assertEquals(expected, body)
     }
@@ -211,6 +212,51 @@ class SupabaseSocialTest : MainDispatcherTest() {
         assertNull(page.entries[1].review)
         assertEquals(FeedCursor(Instant.parse("2026-11-02T10:21:00Z"), 21), page.next)
         assertEquals("friends", Json.parseToJsonElement(bodyOf("/rest/v1/rpc/feed")).jsonObject["scope"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun publishSendsBlurbAndPages() = runTest {
+        val social = social(mapOf("/rest/v1/rpc/publish_book" to listOf(204 to "")))
+        social.services.activity.publish(book.copy(status = ReadingStatus.READING, blurb = "Blimunda.", pages = 464, currentPage = 93), null)
+        val sent = Json.parseToJsonElement(bodyOf("/rest/v1/rpc/publish_book")).jsonObject["book"]!!.jsonObject
+        assertEquals("Blimunda.", sent["blurb"]!!.jsonPrimitive.content)
+        assertEquals(464, sent["pages"]!!.jsonPrimitive.int)
+        assertEquals(93, sent["current_page"]!!.jsonPrimitive.int)
+    }
+
+    @Test
+    fun feedReadsBookExtras() = runTest {
+        val row = feedRow(5).dropLast(1) + ""","book_blurb":"Uma sátira.","book_pages":344,"book_current_page":182}"""
+        val social = social(mapOf("/rest/v1/rpc/feed" to listOf(200 to "[$row]")))
+        val book = social.services.activity.feed(FeedScope.FRIENDS).entries.single().book
+        assertEquals(FeedBook("s5", null, "Book 5", "A", null, blurb = "Uma sátira.", pages = 344, currentPage = 182), book)
+    }
+
+    @Test
+    fun friendsReadingParsed() = runTest {
+        val row = """{"actor_id":"id-bruno","username":"bruno","display_name":"Bruno","avatar_path":null,"book_id":"s1",
+            |"isbn":"9789722036504","title":"A Relíquia","authors":"Eça de Queirós","cover_url":null,"pages":344,
+            |"current_page":137,"progress":40,"updated_at":"2026-11-08T10:00:00+00:00"}""".trimMargin()
+        val social = social(mapOf("/rest/v1/rpc/friends_reading" to listOf(200 to "[$row]")))
+        val reading = social.services.activity.friendsReading().single()
+        assertEquals("bruno", reading.person.username)
+        assertEquals(FeedBook("s1", "9789722036504", "A Relíquia", "Eça de Queirós", null, pages = 344, currentPage = 137), reading.book)
+        assertEquals(40, reading.progress)
+        assertEquals(Instant.parse("2026-11-08T10:00:00Z"), reading.updatedAt)
+    }
+
+    @Test
+    fun friendsWithBookParsed() = runTest {
+        val rows = """[{"actor_id":"id-bruno","username":"bruno","display_name":"Bruno","avatar_path":null,"status":"read",
+            |"rating":5,"progress":100,"review":"Uma sátira deliciosa"},
+            |{"actor_id":"id-fred","username":"fred","display_name":"Fred","avatar_path":null,"status":"to_buy",
+            |"rating":null,"progress":null,"review":""}]""".trimMargin()
+        val social = social(mapOf("/rest/v1/rpc/friends_with_book" to listOf(200 to rows)))
+        val friends = social.services.activity.friendsWithBook("9789722039994")
+        assertEquals(listOf(ReadingStatus.READ, ReadingStatus.WISHLIST), friends.map { it.status })
+        assertEquals("Uma sátira deliciosa", friends[0].review)
+        assertEquals(5, friends[0].rating)
+        assertEquals("""{"p_isbn":"9789722039994"}""", bodyOf("/rest/v1/rpc/friends_with_book"))
     }
 
     @Test

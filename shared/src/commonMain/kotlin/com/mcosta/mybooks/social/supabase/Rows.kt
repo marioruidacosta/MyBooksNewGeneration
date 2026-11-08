@@ -18,6 +18,8 @@ import kotlin.time.Instant
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
 import com.mcosta.mybooks.social.model.CommunitySuggestion
+import com.mcosta.mybooks.social.model.FriendReading
+import com.mcosta.mybooks.social.model.FriendWithBook
 
 /** A row of the feed / person_activity functions. */
 @Serializable
@@ -39,6 +41,9 @@ internal data class FeedRow(
     val review: String? = null,
     @SerialName("like_count") val likeCount: Int = 0,
     @SerialName("liked_by_me") val likedByMe: Boolean = false,
+    @SerialName("book_blurb") val bookBlurb: String? = null,
+    @SerialName("book_pages") val bookPages: Int? = null,
+    @SerialName("book_current_page") val bookCurrentPage: Int? = null,
 )
 
 internal fun FeedRow.toEntry(avatarUrl: (String?) -> String?) = FeedEntry(
@@ -48,7 +53,7 @@ internal fun FeedRow.toEntry(avatarUrl: (String?) -> String?) = FeedEntry(
     rating = rating,
     progress = progress,
     createdAt = Instant.parse(createdAt),
-    book = FeedBook(bookId, isbn, title, authors, coverUrl),
+    book = FeedBook(bookId, isbn, title, authors, coverUrl, bookBlurb, bookPages, bookCurrentPage),
     review = review,
     likeCount = likeCount,
     likedByMe = likedByMe,
@@ -72,6 +77,9 @@ internal fun PublicBookState.toBookJson(): JsonObject = buildJsonObject {
     put("rating", rating)
     put("progress", progress)
     put("review", review)
+    put("blurb", blurb)
+    put("pages", pages)
+    put("current_page", currentPage)
 }
 
 /** publish_book's `before` argument: only the fields that decide which entries are created. */
@@ -174,3 +182,56 @@ internal data class CommunitySuggestionRow(
 ) {
     fun toSuggestion() = CommunitySuggestion(isbn, title, authors, coverUrl, readers, because)
 }
+
+internal fun readingStatusOf(db: String): ReadingStatus = when (db) {
+    "reading" -> ReadingStatus.READING
+    "read" -> ReadingStatus.READ
+    "to_read" -> ReadingStatus.TO_READ
+    else -> ReadingStatus.WISHLIST
+}
+
+/** A row of friends_reading. */
+@Serializable
+internal data class FriendReadingRow(
+    @SerialName("actor_id") val actorId: String,
+    val username: String,
+    @SerialName("display_name") val displayName: String,
+    @SerialName("avatar_path") val avatarPath: String? = null,
+    @SerialName("book_id") val bookId: String,
+    val isbn: String? = null,
+    val title: String,
+    val authors: String = "",
+    @SerialName("cover_url") val coverUrl: String? = null,
+    val pages: Int? = null,
+    @SerialName("current_page") val currentPage: Int? = null,
+    val progress: Int? = null,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+internal fun FriendReadingRow.toReading(avatarUrl: (String?) -> String?) = FriendReading(
+    person = Person(actorId, username, displayName, avatarUrl(avatarPath)),
+    book = FeedBook(bookId, isbn, title, authors, coverUrl, pages = pages, currentPage = currentPage),
+    progress = progress,
+    updatedAt = Instant.parse(updatedAt),
+)
+
+/** A row of friends_with_book. */
+@Serializable
+internal data class FriendWithBookRow(
+    @SerialName("actor_id") val actorId: String,
+    val username: String,
+    @SerialName("display_name") val displayName: String,
+    @SerialName("avatar_path") val avatarPath: String? = null,
+    val status: String,
+    val rating: Int? = null,
+    val progress: Int? = null,
+    val review: String = "",
+)
+
+internal fun FriendWithBookRow.toFriend(avatarUrl: (String?) -> String?) = FriendWithBook(
+    person = Person(actorId, username, displayName, avatarUrl(avatarPath)),
+    status = readingStatusOf(status),
+    rating = rating,
+    progress = progress,
+    review = review,
+)

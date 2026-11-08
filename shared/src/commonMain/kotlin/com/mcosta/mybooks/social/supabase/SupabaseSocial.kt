@@ -12,6 +12,8 @@ import com.mcosta.mybooks.social.model.FEED_PAGE_SIZE
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
 import com.mcosta.mybooks.social.model.CommunitySuggestion
+import com.mcosta.mybooks.social.model.FriendReading
+import com.mcosta.mybooks.social.model.FriendWithBook
 import com.mcosta.mybooks.social.model.FeedCursor
 import com.mcosta.mybooks.social.model.FeedPage
 import com.mcosta.mybooks.social.model.FeedScope
@@ -407,6 +409,15 @@ internal class SupabaseSocial(
             client.postgrest.rpc("community_suggestions", buildJsonObject {
                 put("liked", JsonArray(likedIsbns.take(50).map { JsonPrimitive(it) }))
             }).decodeList<CommunitySuggestionRow>().map { it.toSuggestion() }
+        }
+
+        override suspend fun friendsReading(): List<FriendReading> = call {
+            client.postgrest.rpc("friends_reading").decodeList<FriendReadingRow>().map { it.toReading(::avatarUrl) }
+        }
+
+        override suspend fun friendsWithBook(isbn: String): List<FriendWithBook> = call {
+            client.postgrest.rpc("friends_with_book", buildJsonObject { put("p_isbn", isbn) })
+                .decodeList<FriendWithBookRow>().map { it.toFriend(::avatarUrl) }
         }
     }
 
