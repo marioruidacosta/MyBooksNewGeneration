@@ -52,8 +52,8 @@ select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-0000000000
   "current_page":93}'::jsonb)$$, 'publish_with_blurb_and_pages');
 select results_eq(
   $$select book_blurb, book_pages, book_current_page from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000003'$$,
-  $$values ('Baltasar e Blimunda.'::text, 464, 93)$$,
-  'blurb_pages_and_current_page_returned_by_feed');
+  $$values ('Baltasar e Blimunda.'::text, 464, null::int)$$,
+  'blurb_and_pages_returned_by_feed_no_page_on_started');
 select is((select count(*)::int from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000003'), 1, 'started_once');
 select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000003","title":"Memorial do Convento",
   "authors":"José Saramago","status":"reading","progress":20,"review":"","blurb":"Outra sinopse.","pages":465,
@@ -68,6 +68,28 @@ select results_eq(
   $$values (600, null::int, null::int)$$,
   'long_blurb_cut_and_out_of_range_dropped');
 
+
+-- A progress entry keeps the page it was made at, whatever page the book is on later.
+select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000004","title":"Os Maias","status":"reading",
+  "progress":10,"pages":600,"current_page":60}'::jsonb)$$, 'publish_started');
+select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000004","title":"Os Maias","status":"reading",
+  "progress":20,"pages":600,"current_page":120}'::jsonb)$$, 'publish_progress');
+reset role;
+update shared_books set current_page = 300, progress = 50 where id = 'bbbbbbbb-0000-0000-0000-000000000004';
+set local role authenticated;
+select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
+select results_eq(
+  $$select progress, book_current_page from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000004' and kind = 'progress'$$,
+  $$values (20, 120)$$,
+  'progress_entry_keeps_its_page');
+
+-- Reviewed entries carry the book's score (for their stars).
+select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000005","title":"Ensaio","status":"read",
+  "rating":4,"review":"Bom."}'::jsonb)$$, 'publish_review');
+select results_eq(
+  $$select rating from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000005' and kind = 'reviewed'$$,
+  $$values (4)$$,
+  'reviewed_entries_carry_the_rating');
 -- Older apps: feed's first columns are unchanged.
 select lives_ok($$select id, kind, rating, progress, created_at, actor_id, username, display_name, avatar_path, book_id,
   isbn, title, authors, cover_url, review, like_count, liked_by_me from feed('friends')$$, 'old_feed_columns_unchanged');
