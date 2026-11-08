@@ -38,5 +38,10 @@ class QuoteRepository(
 
     suspend fun delete(id: Long) = dao.delete(id)
 
+    /** Puts a deleted quote back as it was (Undo): its text, page, date and, for a highlight, its place in the ebook. */
+    suspend fun restore(quote: Quote) {
+        dao.insert(quote.copy(id = 0).toEntity())
+    }
+
     private fun clean(text: String) = text.trim().take(MAX_QUOTE_LENGTH).trim().takeIf { it.isNotEmpty() }
 }

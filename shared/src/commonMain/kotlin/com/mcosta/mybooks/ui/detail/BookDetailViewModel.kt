@@ -189,7 +189,7 @@ class BookDetailViewModel(
 
     fun restoreQuote(quote: Quote) {
         val quotes = quoteRepo ?: return
-        viewModelScope.launch { quotes.add(id, quote.text, quote.page) }
+        viewModelScope.launch { quotes.restore(quote) }
     }
 
     private val _progressError = MutableStateFlow<String?>(null)

@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 
 /** The search part of Free classics. */
 sealed interface ClassicsState {
@@ -80,9 +82,14 @@ class ClassicsViewModel(
                     is Match.Existing -> match.book.id
                     is Match.New -> (books.save(match.book) as SaveResult.Saved).id.also { created = it }
                 }
-                source.download(classic) { ebooks.add(id, EbookFormat.EPUB, fileName(classic), it) }
+                // Already in the library with its file: downloading again would start it from the beginning.
+                if (match is Match.New || !ebooks.fileOnPhone(id)) {
+                    source.download(classic) { ebooks.add(id, EbookFormat.EPUB, fileName(classic), it) }
+                }
                 _state.update { it.copy(downloaded = it.downloaded + (classic.id to id)) }
             } catch (e: CancellationException) {
+                // Leaving the screen mid-download: the new book goes too.
+                withContext(NonCancellable) { created?.let { books.delete(it) } }
                 throw e
             } catch (e: Exception) {
                 created?.let { books.delete(it) }

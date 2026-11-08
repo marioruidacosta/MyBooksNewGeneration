@@ -56,7 +56,7 @@ class AddEbookViewModel(
                 when (val inspection = inspect(file)) {
                     is Inspection.Readable -> {
                         val match = matchFor(inspection.metadata)
-                        AddEbookState.Ready(match, inspection.format, replaces = match is Match.Existing && ebooks.hasEbook(match.book.id))
+                        AddEbookState.Ready(match, inspection.format, replaces = match is Match.Existing && ebooks.addingRestarts(match.book.id, inspection.format))
                     }
                     is Inspection.AdobeProtected -> AddEbookState.AdobeProtected(matchFor(inspection.metadata))
                     Inspection.Protected -> AddEbookState.Protected(matchFor(null))

@@ -11,7 +11,9 @@ import com.mcosta.mybooks.domain.Bookmark
 import com.mcosta.mybooks.domain.Ebook
 import com.mcosta.mybooks.domain.EbookFormat
 import com.mcosta.mybooks.domain.ReadingStatus
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.map
 import okio.Source
 import kotlin.math.roundToInt
@@ -43,9 +45,6 @@ class EbookRepository(
 
     fun fileOf(ebook: Ebook) = files.path(ebook.bookId, ebook.format)
 
-    /** Whether the book has an ebook (its file may be missing, after a backup is restored). */
-    suspend fun hasEbook(bookId: Long): Boolean = ebooks.get(bookId) != null
-
     /**
      * Stores [source] as the book's ebook, replacing any other. Adding the same format again after the file went
      * missing (a restored backup) keeps the reading position; a different file starts from the beginning.
@@ -55,20 +54,34 @@ class EbookRepository(
         if (old != null && old.format != format) files.delete(bookId, old.format)
         val keepPosition = old != null && old.format == format && !files.exists(bookId, format)
         val size = files.store(bookId, format, source)
-        ebooks.upsert(
-            EbookEntity(
-                bookId, format, fileName, size, clock(),
-                position = old?.position.takeIf { keepPosition },
-                lastOpened = old?.lastOpened.takeIf { keepPosition },
-            ),
-        )
+        try {
+            ebooks.upsert(
+                EbookEntity(
+                    bookId, format, fileName, size, clock(),
+                    position = old?.position.takeIf { keepPosition },
+                    lastOpened = old?.lastOpened.takeIf { keepPosition },
+                ),
+            )
+        } catch (e: Throwable) {
+            // Not recorded (an error, or the screen closed): no file is left that nothing knows about.
+            withContext(NonCancellable) { files.delete(bookId, format) }
+            throw e
+        }
     }
 
-    /** Deletes the file; bookmarks and highlights stay for when it is added again. */
+    /** Whether adding a [format] file to the book starts reading from the beginning (a file on the phone is replaced, or the format changes). */
+    suspend fun addingRestarts(bookId: Long, format: EbookFormat): Boolean {
+        val old = ebooks.get(bookId) ?: return false
+        return old.format != format || files.exists(bookId, old.format)
+    }
+
+    /** Whether the book's ebook file is on this phone. */
+    suspend fun fileOnPhone(bookId: Long): Boolean = ebooks.get(bookId)?.let { files.exists(bookId, it.format) } == true
+
+    /** Deletes the file; the place, bookmarks and highlights stay for when it is added again. */
     suspend fun remove(bookId: Long) {
         val old = ebooks.get(bookId) ?: return
         files.delete(bookId, old.format)
-        ebooks.delete(bookId)
     }
 
     /** The book was opened in the reader: To read and To buy books are now being read. */
