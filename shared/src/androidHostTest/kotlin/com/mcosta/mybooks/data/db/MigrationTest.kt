@@ -204,12 +204,12 @@ class MigrationTest {
         db.close()
     }
 
-    /** Version 8 adds sync columns (uuid, fieldTimes, deleted) and the sync tables; nothing is lost, every row gets a uuid. */
-    @Test
-    fun migrate7To8KeepsRowsAndGivesUuids() = runTest {
+    private val shareId = "1f0e5c1a-7b2d-4c3e-9a41-0d6f8e2b3c4d"
+
+    /** A database exactly as version 7 left it (schemas/…/7.json), filled by [fill]. */
+    private fun createVersion7Database(fill: SQLiteDatabase.() -> Unit) {
         context.deleteDatabase(name)
-        val v7 = SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name), null)
-        // Exactly the version-7 schema (schemas/…/7.json).
+        val v7 = SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(name).apply { parentFile?.mkdirs() }, null)
         v7.execSQL(
             "CREATE TABLE IF NOT EXISTS `books` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `isbn` TEXT, " +
                 "`title` TEXT NOT NULL, `authors` TEXT NOT NULL, `publisher` TEXT, `publishedYear` INTEGER, " +
@@ -240,51 +240,112 @@ class MigrationTest {
                 "`position` TEXT NOT NULL, `label` TEXT NOT NULL, `dateAdded` INTEGER NOT NULL)"
         )
         v7.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_bookId` ON `bookmarks` (`bookId`)")
-        val shareId = "1f0e5c1a-7b2d-4c3e-9a41-0d6f8e2b3c4d"
-        v7.execSQL(
-            "INSERT INTO books (id, isbn, title, authors, status, rating, notes, dateAdded, searchText) VALUES " +
-                "(1, '9780441013593', 'Dune', 'Frank Herbert', 'READ', 5, 'mine', 20, 'dune\nfrank herbert'), " +
-                "(2, NULL, 'Emma', 'Jane Austen', 'TO_READ', NULL, '', 21, 'emma\njane austen'), " +
-                "(3, '9789726084884', 'Shared', 'Someone', 'READING', 3, 'n', 22, 'shared\nsomeone')"
-        )
-        v7.execSQL(
-            "INSERT INTO share_state VALUES (3, '$shareId', 'user1', 0, NULL, NULL, NULL, NULL, 0, 0, 0)"
-        )
-        v7.execSQL(
-            "INSERT INTO quotes (id, bookId, text, page, dateAdded) VALUES (1, 1, 'Fear', 8, 1), (2, 1, 'Spice', NULL, 2)"
-        )
-        v7.execSQL("INSERT INTO ebooks VALUES (1, 'EPUB', 'dune.epub', 1234, 5, NULL, NULL)")
-        v7.execSQL("INSERT INTO bookmarks (id, bookId, position, label, dateAdded) VALUES (1, 1, '{}', 'Ch1', 6)")
-        v7.execSQL("INSERT INTO challenges VALUES (2026, 30)")
+        v7.fill()
         v7.version = 7
         v7.close()
+    }
+
+    /** Version 8 adds sync columns (uuid, fieldTimes, deleted) and the sync tables; nothing is lost, every row gets a uuid. */
+    @Test
+    fun migrate7To8KeepsRowsAndGivesUuids() = runTest {
+        createVersion7Database {
+            execSQL(
+                "INSERT INTO books (id, isbn, title, authors, publisher, publishedYear, pageCount, coverUrl, description, status, " +
+                    "rating, notes, dateAdded, dateRead, searchText, dateStarted, currentPage, progressPercent, review, tags, " +
+                    "series, seriesNumber, lentTo, lentOn) VALUES " +
+                    "(1, '9780441013593', 'Dune', 'Frank Herbert', 'Chilton', 1965, 412, 'http://c/dune.jpg', 'Desert planet', 'READ', 5, " +
+                    "'mine', 20, 30, 'dune\nfrank herbert', 15, 400, 97, 'Great', 'Sci-fi\ngift', 'Dune Chronicles', '1', 'Ana', 7), " +
+                    "(2, NULL, 'Emma', 'Jane Austen', NULL, NULL, NULL, NULL, NULL, 'TO_READ', NULL, '', 21, NULL, 'emma\njane austen', " +
+                    "NULL, NULL, NULL, '', '', NULL, NULL, NULL, NULL), " +
+                    "(3, '9789726084884', 'Shared', 'Someone', 'Pub', 2001, 100, NULL, 'Shared desc', 'READING', 3, 'n', 22, NULL, " +
+                    "'shared\nsomeone', 25, 50, 50, 'ok', 'tag', NULL, NULL, NULL, NULL)"
+            )
+            execSQL("INSERT INTO share_state VALUES (3, '$shareId', 'user1', 0, NULL, NULL, NULL, NULL, 0, 0, 0)")
+            execSQL(
+                "INSERT INTO quotes (id, bookId, text, page, dateAdded, position) VALUES " +
+                    "(1, 1, 'Fear', 8, 1, NULL), (2, 1, 'Spice', NULL, 2, '{\"href\":\"c1.xhtml\"}')"
+            )
+            execSQL("INSERT INTO ebooks VALUES (1, 'EPUB', 'dune.epub', 1234, 5, '{\"href\":\"c2.xhtml\"}', 9)")
+            execSQL("INSERT INTO bookmarks (id, bookId, position, label, dateAdded) VALUES (1, 1, '{\"href\":\"c1.xhtml\"}', 'Ch1', 6)")
+            execSQL("INSERT INTO challenges VALUES (2026, 30)")
+        }
 
         val db = createAndroidDatabase(context, name)
         val books = db.bookDao().getAll().associateBy { it.title }
         assertEquals(3, books.size)
-        assertEquals("mine", books.getValue("Dune").notes)
-        assertEquals(5, books.getValue("Dune").rating)
-        assertEquals(shareId, books.getValue("Shared").uuid)
-        val quotes = db.quoteDao().getAll()
-        assertEquals(listOf("Fear", "Spice"), quotes.map { it.text })
+        val dune = books.getValue("Dune")
+        val emma = books.getValue("Emma")
+        val shared = books.getValue("Shared")
+        // Every v7 field unchanged; only uuid, fieldTimes and deleted are new.
+        val blank = BookEntity(
+            isbn = null, title = "", authors = "", publisher = null, publishedYear = null, pageCount = null, coverUrl = null,
+            description = null, status = ReadingStatus.TO_READ, rating = null, notes = "", dateAdded = 0, dateRead = null, searchText = "",
+        )
+        assertEquals(
+            blank.copy(
+                id = 1, isbn = "9780441013593", title = "Dune", authors = "Frank Herbert", publisher = "Chilton", publishedYear = 1965,
+                pageCount = 412, coverUrl = "http://c/dune.jpg", description = "Desert planet", status = ReadingStatus.READ, rating = 5,
+                notes = "mine", dateAdded = 20, dateRead = 30, searchText = "dune\nfrank herbert", dateStarted = 15, currentPage = 400,
+                progressPercent = 97, review = "Great", tags = "Sci-fi\ngift", series = "Dune Chronicles", seriesNumber = "1",
+                lentTo = "Ana", lentOn = 7, uuid = dune.uuid,
+            ),
+            dune,
+        )
+        assertEquals(
+            blank.copy(id = 2, title = "Emma", authors = "Jane Austen", dateAdded = 21, searchText = "emma\njane austen", uuid = emma.uuid),
+            emma,
+        )
+        assertEquals(
+            blank.copy(
+                id = 3, isbn = "9789726084884", title = "Shared", authors = "Someone", publisher = "Pub", publishedYear = 2001,
+                pageCount = 100, description = "Shared desc", status = ReadingStatus.READING, rating = 3, notes = "n", dateAdded = 22,
+                searchText = "shared\nsomeone", dateStarted = 25, currentPage = 50, progressPercent = 50, review = "ok", tags = "tag",
+                uuid = shareId,
+            ),
+            shared,
+        )
+
+        val quotes = db.quoteDao().getAll().sortedBy { it.id }
+        assertEquals(
+            listOf(
+                QuoteEntity(1, 1, "Fear", 8, 1, null, uuid = quotes[0].uuid),
+                QuoteEntity(2, 1, "Spice", null, 2, "{\"href\":\"c1.xhtml\"}", uuid = quotes[1].uuid),
+            ),
+            quotes,
+        )
         val ebook = db.ebookDao().getAll().single()
-        assertEquals("dune.epub", ebook.fileName)
-        assertEquals(books.getValue("Dune").uuid, ebook.uuid)
+        assertEquals(EbookEntity(1, EbookFormat.EPUB, "dune.epub", 1234, 5, "{\"href\":\"c2.xhtml\"}", 9, uuid = dune.uuid), ebook)
         val bookmark = db.bookmarkDao().getAll().single()
-        assertEquals("Ch1", bookmark.label)
+        assertEquals(BookmarkEntity(1, 1, "{\"href\":\"c1.xhtml\"}", "Ch1", 6, uuid = bookmark.uuid), bookmark)
         assertEquals(listOf(ChallengeEntity(2026, 30)), db.challengeDao().getAll())
 
+        // Emma is neither shared nor an ebook owner: she gets her own random uuid.
+        assertTrue(emma.uuid != shared.uuid && emma.uuid != dune.uuid && dune.uuid != shared.uuid)
         val uuids = books.values.map { it.uuid } + quotes.map { it.uuid } + bookmark.uuid
-        val uuidShape = Regex("^[0-9a-f-]{36}$")
-        assertTrue(uuids.all { uuidShape.matches(it) })
+        val v4 = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+        assertTrue((uuids - shareId).all { v4.matches(it) })
         assertEquals(uuids.size, uuids.toSet().size)
-        assertTrue(books.values.all { it.fieldTimes == "{}" && !it.deleted })
-        assertTrue(quotes.all { it.fieldTimes == "{}" && !it.deleted })
-        assertTrue(ebook.fieldTimes == "{}" && !ebook.deleted)
-        assertTrue(bookmark.fieldTimes == "{}" && !bookmark.deleted)
-        assertTrue(db.challengeDao().getAll().all { it.fieldTimes == "{}" && !it.deleted })
-        assertTrue(db.syncQueueDao().batch(10).isEmpty())
+        assertEquals(dune.uuid, ebook.uuid)
         assertNull(db.syncStateDao().get("anything"))
+        assertTrue(db.syncQueueDao().batch(10).isEmpty())
+        db.close()
+    }
+
+    /** An ebook row whose book is gone must not stop the migration (and so the app from opening). */
+    @Test
+    fun migrate7To8SurvivesOrphanEbook() = runTest {
+        createVersion7Database {
+            execSQL(
+                "INSERT INTO books (id, isbn, title, authors, status, notes, dateAdded, searchText) VALUES " +
+                    "(1, NULL, 'Emma', 'Jane Austen', 'TO_READ', '', 21, 'emma\njane austen')"
+            )
+            execSQL("INSERT INTO ebooks VALUES (99, 'EPUB', 'orphan.epub', 10, 5, NULL, NULL)")
+        }
+        val db = createAndroidDatabase(context, name)
+        assertEquals(1, db.bookDao().getAll().size)
+        val orphan = db.ebookDao().getAllAny().single()
+        assertEquals("orphan.epub", orphan.fileName)
+        assertTrue(Regex("^[0-9a-f-]{36}$").matches(orphan.uuid))
         db.close()
     }
 }

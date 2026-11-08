@@ -157,7 +157,8 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         }
         connection.execSQL("UPDATE books SET uuid = (SELECT shareId FROM share_state WHERE share_state.bookId = books.id) " +
             "WHERE id IN (SELECT bookId FROM share_state)")
-        connection.execSQL("UPDATE ebooks SET uuid = (SELECT uuid FROM books WHERE books.id = ebooks.bookId)")
+        // An ebook whose book is gone (NULL, which the column refuses) takes a random uuid instead.
+        connection.execSQL("UPDATE ebooks SET uuid = COALESCE((SELECT uuid FROM books WHERE books.id = ebooks.bookId), $SQL_UUID)")
         // Exactly the indexes and tables Room generates (schemas/…/8.json).
         connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_books_uuid` ON `books` (`uuid`)")
         connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_quotes_uuid` ON `quotes` (`uuid`)")
