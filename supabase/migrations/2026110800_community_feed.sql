@@ -7,15 +7,19 @@ alter table shared_books
   add column pages int check (pages between 1 and 20000),
   add column current_page int check (current_page >= 0);
 
--- Same columns as before, the book's extras appended.
+-- The page a progress entry was made at ("is on page 182 of 344" stays true as the reader moves on).
+alter table activities add column current_page int;
+
+-- Same columns as before, the book's extras appended. A reviewed entry carries the book's score (for its stars);
+-- an entry's page is the one it was made at.
 create or replace view activity_entries as
-  select a.id, a.kind, a.rating, a.progress, a.created_at,
+  select a.id, a.kind, case when a.kind = 'reviewed' then b.rating else a.rating end as rating, a.progress, a.created_at,
          p.id as actor_id, p.username, p.display_name, p.avatar_path, p.visibility,
          b.id as book_id, b.isbn, b.title, b.authors, b.cover_url,
          case when a.kind = 'reviewed' then b.review end as review,
          (select count(*)::int from likes l where l.activity = a.id) as like_count,
          exists (select 1 from likes l where l.activity = a.id and l.liker = auth.uid()) as liked_by_me,
-         b.blurb, b.pages, b.current_page
+         b.blurb, b.pages, a.current_page
   from activities a
   join profiles p on p.id = a.actor
   join shared_books b on b.id = a.book;
@@ -114,6 +118,10 @@ begin
   end if;
   if v_progress is not null and v_progress is distinct from p_progress and v_status = 'reading' and not status_added then
     perform record_collapsible(me, v_id, 'progress', null, v_progress);
+    -- The entry just added (or collapsed into) keeps the page it was made at.
+    update activities set current_page = v_current_page
+    where id = (select a.id from activities a where a.book = v_id and a.kind = 'progress'
+                order by a.created_at desc, a.id desc limit 1);
   end if;
   if p_review = '' and v_review <> '' then
     insert into activities (actor, book, kind) values (me, v_id, 'reviewed');

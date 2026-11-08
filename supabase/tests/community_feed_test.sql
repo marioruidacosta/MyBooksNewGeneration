@@ -69,27 +69,6 @@ select results_eq(
   'long_blurb_cut_and_out_of_range_dropped');
 
 
--- A progress entry keeps the page it was made at, whatever page the book is on later.
-select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000004","title":"Os Maias","status":"reading",
-  "progress":10,"pages":600,"current_page":60}'::jsonb)$$, 'publish_started');
-select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000004","title":"Os Maias","status":"reading",
-  "progress":20,"pages":600,"current_page":120}'::jsonb)$$, 'publish_progress');
-reset role;
-update shared_books set current_page = 300, progress = 50 where id = 'bbbbbbbb-0000-0000-0000-000000000004';
-set local role authenticated;
-select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
-select results_eq(
-  $$select progress, book_current_page from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000004' and kind = 'progress'$$,
-  $$values (20, 120)$$,
-  'progress_entry_keeps_its_page');
-
--- Reviewed entries carry the book's score (for their stars).
-select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000005","title":"Ensaio","status":"read",
-  "rating":4,"review":"Bom."}'::jsonb)$$, 'publish_review');
-select results_eq(
-  $$select rating from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000005' and kind = 'reviewed'$$,
-  $$values (4)$$,
-  'reviewed_entries_carry_the_rating');
 -- Older apps: feed's first columns are unchanged.
 select lives_ok($$select id, kind, rating, progress, created_at, actor_id, username, display_name, avatar_path, book_id,
   isbn, title, authors, cover_url, review, like_count, liked_by_me from feed('friends')$$, 'old_feed_columns_unchanged');
@@ -133,6 +112,29 @@ select pg_temp.act_as('11111111-1111-1111-1111-111111111111');
 select is_empty($$select 1 from friends_reading()$$, 'friends_reading_hides_non_sharing_and_blocked');
 select is_empty($$select 1 from friends_with_book('9789722039994')$$, 'friends_with_book_hides_non_sharing_and_blocked');
 
+
+-- A progress entry keeps the page it was made at, whatever page the book is on later.
+select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
+select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000004","title":"Os Maias","status":"reading",
+  "progress":10,"pages":600,"current_page":60}'::jsonb)$$, 'publish_started');
+select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000004","title":"Os Maias","status":"reading",
+  "progress":20,"pages":600,"current_page":120}'::jsonb)$$, 'publish_progress');
+reset role;
+update shared_books set current_page = 300, progress = 50 where id = 'bbbbbbbb-0000-0000-0000-000000000004';
+set local role authenticated;
+select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
+select results_eq(
+  $$select progress, book_current_page from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000004' and kind = 'progress'$$,
+  $$values (20, 120)$$,
+  'progress_entry_keeps_its_page');
+
+-- Reviewed entries carry the book's score (for their stars).
+select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000005","title":"Ensaio","status":"read",
+  "rating":4,"review":"Bom."}'::jsonb)$$, 'publish_review');
+select results_eq(
+  $$select rating from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000005' and kind = 'reviewed'$$,
+  $$values (4)$$,
+  'reviewed_entries_carry_the_rating');
 -- Not callable without signing in to the app.
 set local role anon;
 select throws_ok($$select * from friends_reading()$$, '42501', null, 'anon_cannot_call_friends_reading');
