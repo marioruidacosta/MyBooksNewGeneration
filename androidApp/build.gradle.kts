@@ -21,16 +21,40 @@ android {
         versionCode = 3
         versionName = "2.0"
 
-        val googleBooksKey = localProperties.getProperty("GOOGLE_BOOKS_API_KEY", "").trim()
+        // From local.properties, or the environment in CI.
+        fun secret(name: String) = (localProperties.getProperty(name) ?: System.getenv(name) ?: "").trim()
+        val googleBooksKey = secret("GOOGLE_BOOKS_API_KEY")
         buildConfigField("String", "GOOGLE_BOOKS_API_KEY", "\"$googleBooksKey\"")
         for (name in listOf("SUPABASE_URL", "SUPABASE_ANON_KEY")) {
-            buildConfigField("String", name, "\"${localProperties.getProperty(name, "").trim()}\"")
+            buildConfigField("String", name, "\"${secret(name)}\"")
         }
     }
 
+    // The upload key for Google Play: from local.properties, or the environment in CI. Without it the release
+    // build is unsigned (it still builds, it just can't be uploaded).
+    val signing = listOf("RELEASE_STORE_FILE", "RELEASE_STORE_PASSWORD", "RELEASE_KEY_ALIAS", "RELEASE_KEY_PASSWORD")
+        .associateWith { (localProperties.getProperty(it) ?: System.getenv(it))?.trim()?.takeIf { v -> v.isNotEmpty() } }
+    val release = if (signing.values.all { it != null }) {
+        signingConfigs.create("release") {
+            storeFile = file(signing.getValue("RELEASE_STORE_FILE")!!)
+            storePassword = signing.getValue("RELEASE_STORE_PASSWORD")
+            keyAlias = signing.getValue("RELEASE_KEY_ALIAS")
+            keyPassword = signing.getValue("RELEASE_KEY_PASSWORD")
+        }
+    } else {
+        null
+    }
+
+    // Published as "MyBooks". Debug builds keep "MyBooks NG" so they can be told apart on a phone that also has the
+    // original MyBooks app installed.
     buildTypes {
+        debug {
+            resValue("string", "app_name", "MyBooks NG")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = release
+            resValue("string", "app_name", "MyBooks")
         }
     }
     compileOptions {
@@ -40,6 +64,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true

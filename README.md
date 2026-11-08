@@ -88,6 +88,11 @@ Then:
 ./gradlew :androidApp:assembleDebug   # → androidApp/build/outputs/apk/debug/androidApp-debug.apk
 ```
 
+## Google Play
+
+The signed release bundle (`./gradlew :androidApp:bundleRelease`), the privacy policy and the account-deletion page
+are ready; see [docs/play-release.md](docs/play-release.md) for the upload key and the Play Console steps.
+
 ## Install on an Android phone
 
 **Option A — USB cable (adb)**
