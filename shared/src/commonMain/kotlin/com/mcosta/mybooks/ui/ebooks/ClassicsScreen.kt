@@ -86,7 +86,7 @@ fun ClassicsScreen(viewModel: ClassicsViewModel, onBack: () -> Unit, onOpenBook:
                 ClassicsState.Searching -> Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         CircularProgressIndicator()
-                        Text("Searching Project Gutenberg…", style = MaterialTheme.typography.bodyMedium)
+                        Text("Searching Project Gutenberg… It can take up to a minute.", style = MaterialTheme.typography.bodyMedium)
                     }
                 }
                 ClassicsState.Failed -> Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

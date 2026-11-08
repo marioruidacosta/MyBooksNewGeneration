@@ -7,6 +7,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.mcosta.mybooks.domain.Bookmark
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.stateIn
 
 /** The ebook file to open and where reading stopped (a Readium locator as JSON). */
 data class ReaderFile(val format: EbookFormat, val path: String, val position: String?)
@@ -31,9 +39,36 @@ class ReaderViewModel(
     private val markRead: suspend () -> Unit,
     private val scope: CoroutineScope,
     private val clock: () -> Long = { System.currentTimeMillis() },
+    /** The book's bookmarks, and adding and deleting one. */
+    bookmarks: Flow<List<Bookmark>> = emptyFlow(),
+    private val addBookmark: suspend (position: String, label: String) -> Unit = { _, _ -> },
+    private val deleteBookmark: suspend (id: Long) -> Unit = {},
 ) : ViewModel() {
     private val _load = MutableStateFlow<ReaderLoad>(ReaderLoad.Loading)
     val load: StateFlow<ReaderLoad> = _load.asStateFlow()
+
+    val bookmarks: StateFlow<List<Bookmark>> = bookmarks.stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    /** Places to go to (locator JSON), for the reader to follow: a bookmark opened. */
+    private val _goTo = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val goTo: SharedFlow<String> = _goTo.asSharedFlow()
+
+    /** Where the reader is now, and what a bookmark there is called. */
+    private var here: Pair<String, String>? = null
+
+    /** Bookmarks the current place, labelled with its chapter or page. */
+    fun bookmarkHere() {
+        val (position, label) = here ?: return
+        scope.launch { addBookmark(position, label) }
+    }
+
+    fun deleteBookmark(bookmark: Bookmark) {
+        scope.launch { deleteBookmark(bookmark.id) }
+    }
+
+    fun open(bookmark: Bookmark) {
+        _goTo.tryEmit(bookmark.position)
+    }
 
     private val _finishPrompt = MutableStateFlow(false)
     val finishPrompt: StateFlow<Boolean> = _finishPrompt.asStateFlow()
@@ -47,8 +82,9 @@ class ReaderViewModel(
         }
     }
 
-    /** The reader moved to [position] ([progression] 0–1 through the book). */
-    fun position(position: String, progression: Double) {
+    /** The reader moved to [position] ([progression] 0–1 through the book); [bookmarkLabel] names the place. */
+    fun position(position: String, progression: Double, bookmarkLabel: String = "") {
+        here = position to bookmarkLabel
         pending = position to progression
         val last = lastSaved
         if (last == null || clock() - last >= SAVE_EVERY_MS) flush()

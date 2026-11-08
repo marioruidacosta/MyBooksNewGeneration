@@ -21,6 +21,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mcosta.mybooks.ContainerOwner
 import com.mcosta.mybooks.domain.EbookFormat
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.reader.ui.ReaderActions
 import com.mcosta.mybooks.reader.ui.ReaderBars
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,38 +30,55 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.readium.adapter.pdfium.document.PdfiumDocumentFactory
 import org.readium.adapter.pdfium.navigator.PdfiumEngineProvider
+import org.readium.r2.navigator.OverflowableNavigator
 import org.readium.r2.navigator.VisualNavigator
 import org.readium.r2.navigator.epub.EpubNavigatorFactory
 import org.readium.r2.navigator.epub.EpubNavigatorFragment
+import org.readium.r2.navigator.epub.EpubPreferences
 import org.readium.r2.navigator.input.InputListener
 import org.readium.r2.navigator.input.TapEvent
 import org.readium.r2.navigator.pdf.PdfNavigatorFactory
 import org.readium.r2.navigator.pdf.PdfNavigatorFragment
+import org.readium.r2.navigator.preferences.FontFamily
+import org.readium.r2.navigator.preferences.Theme
 import org.readium.r2.navigator.util.DirectionalNavigationAdapter
+import org.readium.r2.shared.publication.Link
 import org.readium.r2.shared.publication.Locator
 import org.readium.r2.shared.publication.Publication
+import org.readium.r2.shared.publication.services.locateProgression
 import org.readium.r2.shared.publication.services.positions
 import org.readium.r2.shared.util.asset.AssetRetriever
 import org.readium.r2.shared.util.http.DefaultHttpClient
 import org.readium.r2.streamer.PublicationOpener
 import org.readium.r2.streamer.parser.DefaultPublicationParser
 import java.io.File
-import kotlin.math.roundToInt
 
 /** What the reader's bars show. */
-data class ReaderChrome(val title: String = "", val label: String = "", val visible: Boolean = true)
+data class ReaderChrome(
+    val title: String = "",
+    val label: String = "",
+    val visible: Boolean = true,
+    val format: EbookFormat? = null,
+    /** 0–1 through the book, for the position slider. */
+    val progression: Double = 0.0,
+    val contents: List<TocRow> = emptyList(),
+)
 
 /**
  * Reads a book's EPUB or PDF with Readium, from where reading stopped. Swipe or tap the side edges to turn pages;
  * a tap in the middle shows or hides the bars. The place is saved as it moves (see [ReaderViewModel]).
  */
-class ReaderActivity : FragmentActivity() {
+class ReaderActivity : FragmentActivity(), ReaderActions {
     private val bookId by lazy { intent.getLongExtra(EXTRA_BOOK, -1L) }
     private val chrome = MutableStateFlow(ReaderChrome())
+    private val container by lazy { (application as ContainerOwner).container }
+    private val looks by lazy { ReadingLooks(container.preferences) }
     private var publication: Publication? = null
+    private var navigator: VisualNavigator? = null
+    /** Readium links by the target given to [TocEntry], to go back from the contents. */
+    private val links = mutableMapOf<String, Link>()
 
     private val viewModel: ReaderViewModel by viewModels {
-        val container = (application as ContainerOwner).container
         viewModelFactory {
             initializer {
                 ReaderViewModel(
@@ -75,6 +93,9 @@ class ReaderActivity : FragmentActivity() {
                     save = { position, progression -> container.ebooks.savePosition(bookId, position, progression) },
                     markRead = { container.repository.setStatus(bookId, ReadingStatus.READ) },
                     scope = container.applicationScope,
+                    bookmarks = container.ebooks.observeBookmarks(bookId),
+                    addBookmark = { position, label -> container.ebooks.addBookmark(bookId, position, label) },
+                    deleteBookmark = { container.ebooks.deleteBookmark(it) },
                 )
             }
         }
@@ -87,9 +108,7 @@ class ReaderActivity : FragmentActivity() {
         val frame = FragmentContainerView(this).apply { id = View.generateViewId() }
         val bars = ComposeView(this).apply {
             setContent {
-                MyBooksTheme {
-                    ReaderBars(chrome, viewModel, onBack = { finish() })
-                }
+                MyBooksTheme { ReaderBars(chrome, looks.look, viewModel, this@ReaderActivity, onBack = { finish() }) }
             }
         }
         setContentView(
@@ -115,12 +134,22 @@ class ReaderActivity : FragmentActivity() {
         return opener.open(asset, allowUserInteraction = false).getOrNull()
     }
 
+    private fun tocEntry(link: Link): TocEntry {
+        val target = link.href.toString() + "#" + links.size
+        links[target] = link
+        return TocEntry(link.title.orEmpty(), target, link.children.map(::tocEntry))
+    }
+
     private suspend fun show(publication: Publication, file: ReaderFile, containerId: Int) {
         val start = file.position?.let { runCatching { Locator.fromJSON(JSONObject(it)) }.getOrNull() }
-        val total = publication.positions().size
-        chrome.value = chrome.value.copy(title = publication.metadata.title.orEmpty())
+        val pages = publication.positions().size
+        chrome.value = chrome.value.copy(
+            title = publication.metadata.title.orEmpty(),
+            format = file.format,
+            contents = flattenContents(publication.tableOfContents.map(::tocEntry)),
+        )
         supportFragmentManager.fragmentFactory = when (file.format) {
-            EbookFormat.EPUB -> EpubNavigatorFactory(publication).createFragmentFactory(initialLocator = start)
+            EbookFormat.EPUB -> EpubNavigatorFactory(publication).createFragmentFactory(initialLocator = start, initialPreferences = looks.look.value.toEpub())
             EbookFormat.PDF -> PdfNavigatorFactory(publication, PdfiumEngineProvider()).createFragmentFactory(initialLocator = start)
         }
         val fragmentClass = when (file.format) {
@@ -128,39 +157,70 @@ class ReaderActivity : FragmentActivity() {
             EbookFormat.PDF -> PdfNavigatorFragment::class.java
         }
         supportFragmentManager.commitNow { add(containerId, fragmentClass, Bundle(), NAVIGATOR) }
-        val navigator = supportFragmentManager.findFragmentByTag(NAVIGATOR) as VisualNavigator
-        (navigator as? org.readium.r2.navigator.OverflowableNavigator)?.let { navigator.addInputListener(DirectionalNavigationAdapter(it)) }
-        navigator.addInputListener(object : InputListener {
+        val nav = supportFragmentManager.findFragmentByTag(NAVIGATOR) as VisualNavigator
+        navigator = nav
+        (nav as? OverflowableNavigator)?.let { nav.addInputListener(DirectionalNavigationAdapter(it)) }
+        nav.addInputListener(object : InputListener {
             override fun onTap(event: TapEvent): Boolean {
                 val width = window.decorView.width.takeIf { it > 0 } ?: return false
                 // The middle third shows or hides the bars; the edges turn pages (DirectionalNavigationAdapter).
                 if (event.point.x < width / 3f || event.point.x > width * 2f / 3f) return false
-                toggleBars()
+                chrome.value = chrome.value.copy(visible = !chrome.value.visible)
                 return true
             }
         })
         lifecycleScope.launch {
+            viewModel.goTo.collect { json ->
+                runCatching { Locator.fromJSON(JSONObject(json)) }.getOrNull()?.let { nav.go(it, animated = false) }
+            }
+        }
+        lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                navigator.currentLocator.collect { locator ->
+                nav.currentLocator.collect { locator ->
                     val progression = locator.locations.totalProgression ?: locator.locations.progression ?: 0.0
-                    viewModel.position(locator.toJSON().toString(), progression)
-                    chrome.value = chrome.value.copy(label = label(file.format, locator, progression, total))
+                    viewModel.position(
+                        locator.toJSON().toString(), progression,
+                        bookmarkLabel(file.format, locator.title, locator.locations.position, progression),
+                    )
+                    chrome.value = chrome.value.copy(
+                        progression = progression,
+                        label = positionLabel(file.format, locator.title, locator.locations.position, progression, pages),
+                    )
                 }
             }
         }
     }
 
-    private fun label(format: EbookFormat, locator: Locator, progression: Double, total: Int): String {
-        val percent = "${(progression * 100).roundToInt().coerceIn(0, 100)}%"
-        return when (format) {
-            EbookFormat.PDF -> locator.locations.position?.let { "Page $it of $total" } ?: percent
-            EbookFormat.EPUB -> listOfNotNull(locator.title?.takeIf { it.isNotBlank() }, percent).joinToString(" · ")
-        }
+    override fun goTo(entry: TocEntry) {
+        links[entry.target]?.let { navigator?.go(it, animated = false) }
     }
 
-    private fun toggleBars() {
-        chrome.value = chrome.value.copy(visible = !chrome.value.visible)
+    override fun seek(progression: Double) {
+        val pub = publication ?: return
+        lifecycleScope.launch { pub.locateProgression(progression)?.let { navigator?.go(it, animated = false) } }
     }
+
+    override fun setLook(look: ReadingLook) {
+        looks.set(look)
+        (navigator as? EpubNavigatorFragment)?.submitPreferences(look.toEpub())
+    }
+
+    private fun ReadingLook.toEpub() = EpubPreferences(
+        fontFamily = when (font) {
+            LookFont.BOOK -> null
+            LookFont.SERIF -> FontFamily.SERIF
+            LookFont.SANS -> FontFamily.SANS_SERIF
+        },
+        fontSize = fontSize,
+        lineHeight = lineHeight,
+        // The book's own styles would override the chosen font and spacing.
+        publisherStyles = if (font == LookFont.BOOK && lineHeight == null) null else false,
+        theme = when (theme) {
+            LookTheme.LIGHT -> Theme.LIGHT
+            LookTheme.SEPIA -> Theme.SEPIA
+            LookTheme.DARK -> Theme.DARK
+        },
+    )
 
     private fun fail(message: String) {
         viewModel.failed(message)

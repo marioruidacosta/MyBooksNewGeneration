@@ -97,3 +97,9 @@ class ClassicsClientTest {
         assertFailsWith<ClassicsUnavailable> { client.download(classic) { } }
     }
 }
+
+/** Gutendex often takes 40–50 s to answer: searches wait a minute and a half. */
+class ClassicsTimeoutTest {
+    @kotlin.test.Test
+    fun searchesWaitAMinuteAndAHalf() = kotlin.test.assertEquals(90_000L, CLASSICS_SEARCH_TIMEOUT_MS)
+}
