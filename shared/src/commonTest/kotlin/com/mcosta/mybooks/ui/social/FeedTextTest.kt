@@ -4,6 +4,8 @@ import com.mcosta.mybooks.social.model.ActivityKind
 import com.mcosta.mybooks.social.model.FeedBook
 import com.mcosta.mybooks.social.model.FeedEntry
 import com.mcosta.mybooks.social.model.Person
+import com.mcosta.mybooks.social.model.FriendWithBook
+import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.ui.formatDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -25,7 +27,7 @@ class FeedTextTest {
     fun actionTextForEachKind() {
         assertEquals("started reading", actionText(entry(ActivityKind.STARTED)))
         assertEquals("finished", actionText(entry(ActivityKind.FINISHED)))
-        assertEquals("rated ★★★★☆", actionText(entry(ActivityKind.RATED, rating = 4)))
+        assertEquals("rated it", actionText(entry(ActivityKind.RATED, rating = 4)))
         assertEquals("wants to read", actionText(entry(ActivityKind.WANT_TO_READ)))
         assertEquals("wants to buy", actionText(entry(ActivityKind.WANT_TO_BUY)))
         assertEquals("reviewed", actionText(entry(ActivityKind.REVIEWED)))
@@ -51,5 +53,41 @@ class FeedTextTest {
     @Test
     fun futureTimesAreJustNow() {
         assertEquals("just now", relativeTime(now + 30.seconds, now))
+    }
+
+    @Test
+    fun progressShowsPagesWhenKnown() {
+        val e = entry(ActivityKind.PROGRESS, progress = 53).let { it.copy(book = it.book.copy(pages = 344, currentPage = 182)) }
+        assertEquals("is on page 182 of 344", actionText(e))
+    }
+
+    @Test
+    fun progressFallsBackToPercent() {
+        val e = entry(ActivityKind.PROGRESS, progress = 53).let { it.copy(book = it.book.copy(pages = 344)) }
+        assertEquals("is 53% through", actionText(e))
+    }
+
+    @Test
+    fun ratedLineAndStars() {
+        assertEquals("★★★★☆", starsText(4))
+        assertEquals("★★★★★", starsText(9))
+        assertEquals(null, starsText(null))
+    }
+
+    @Test
+    fun groupTextToReadAndToBuy() {
+        val five = List(5) { entry(ActivityKind.WANT_TO_READ) }
+        assertEquals("added 5 books to To read", groupText(FeedItem.Group(five[0].actor, ActivityKind.WANT_TO_READ, five)))
+        assertEquals("added 2 books to To buy", groupText(FeedItem.Group(five[0].actor, ActivityKind.WANT_TO_BUY, five.take(2))))
+    }
+
+    @Test
+    fun friendWithBookTexts() {
+        val ana = Person("id", "ana", "Ana", null)
+        assertEquals("read it", friendWithBookText(FriendWithBook(ana, ReadingStatus.READ, 5, 100, "")))
+        assertEquals("is reading it · 40%", friendWithBookText(FriendWithBook(ana, ReadingStatus.READING, null, 40, "")))
+        assertEquals("is reading it", friendWithBookText(FriendWithBook(ana, ReadingStatus.READING, null, null, "")))
+        assertEquals("wants to read it", friendWithBookText(FriendWithBook(ana, ReadingStatus.TO_READ, null, null, "")))
+        assertEquals("wants to buy it", friendWithBookText(FriendWithBook(ana, ReadingStatus.WISHLIST, null, null, "")))
     }
 }
