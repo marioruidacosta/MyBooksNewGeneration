@@ -63,27 +63,15 @@ class BookDetailViewModel(
         saveScope.launch { repo.remove(id) }
     }
 
-    private val _author = MutableStateFlow<AuthorPanel?>(null)
+    private val authorLoader = AuthorPanelLoader(repo, authors)
     /** The header's author panel, loaded when first shown ([loadAuthor]). */
-    val author: StateFlow<AuthorPanel?> = _author.asStateFlow()
+    val author: StateFlow<AuthorPanel?> = authorLoader.panel
 
     /** Loads the author panel once: the library's other books by the first author, then their biography. */
     fun loadAuthor() {
-        if (_author.value != null) return
         viewModelScope.launch {
             val book = repo.getBook(id) ?: return@launch
-            val name = book.authors.substringBefore(',').trim()
-            if (name.isEmpty()) {
-                _author.value = AuthorPanel(name = "", loading = false)
-                return@launch
-            }
-            val key = searchKey(name)
-            val theirs = repo.observeBooks(null, "").first()
-                .filter { it.id != id && searchKey(it.authors.substringBefore(',').trim()) == key }
-                .sortedWith(compareBy({ it.status != ReadingStatus.READ }, { searchKey(it.title) }))
-            _author.value = AuthorPanel(name, otherBooks = theirs, loading = authors != null)
-            val info = authors?.author(name)
-            _author.value = _author.value?.copy(info = info, loading = false)
+            authorLoader.load(book.authors) { it.id == id }
         }
     }
 

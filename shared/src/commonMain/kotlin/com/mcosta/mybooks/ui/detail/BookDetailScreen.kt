@@ -162,7 +162,7 @@ fun BookDetailScreen(
                 .verticalScroll(rememberScrollState()),
         ) {
             val author by viewModel.author.collectAsStateWithLifecycle()
-            Header(b, onAddPhoto = takePhoto, author = author, onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook)
+            BookHeader(b.coverUrl, b.title, b.authors, bookDetails(b), author, onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook, onAddPhoto = takePhoto)
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatusSelector(b.status, viewModel::setStatus, Modifier.fillMaxWidth())
                 if (ebook?.fileOnPhone == true && onRead != null) ReadButton(onRead)
@@ -271,81 +271,6 @@ fun BookDetailScreen(
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
-    }
-}
-
-/**
- * A large cover over a softly blurred copy of it, fading into the page (Android blurs from version 12; earlier
- * it's a shaded wash), then the title and authors. Swiping the cover shows the book's details, then its author, in its place.
- */
-@Composable
-private fun Header(b: Book, onAddPhoto: () -> Unit, author: AuthorPanel?, onAuthorShown: () -> Unit, onOpenBook: (Long) -> Unit) {
-    val pages = rememberPagerState { 3 }
-    // The author's biography is fetched only when their panel is first shown.
-    LaunchedEffect(pages.currentPage) { if (pages.currentPage == 2) onAuthorShown() }
-    Box(Modifier.fillMaxWidth()) {
-        BookCover(b.coverUrl, Modifier.matchParentSize().blur(28.dp).alpha(0.5f), title = b.title, authors = b.authors)
-        Box(
-            Modifier.matchParentSize().background(
-                Brush.verticalGradient(listOf(MaterialTheme.colorScheme.surface.copy(alpha = 0.2f), MaterialTheme.colorScheme.surface)),
-            ),
-        )
-        Column(
-            Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            HorizontalPager(pages, modifier = Modifier.fillMaxWidth().height(COVER_HEIGHT)) { page ->
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (page == 0) {
-                        Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 10.dp) {
-                            BookCover(b.coverUrl, Modifier.width(COVER_HEIGHT * 2 / 3).height(COVER_HEIGHT), title = b.title, authors = b.authors)
-                        }
-                    } else {
-                        if (page == 1) DetailsPanel(b) else AuthorPanelView(author, onOpenBook)
-                    }
-                }
-            }
-            PageDots(current = pages.currentPage, count = pages.pageCount)
-            // No cover found: photograph the book.
-            if (b.coverUrl.isNullOrBlank()) TextButton(onClick = onAddPhoto) { Text("Add a cover photo") }
-            Text(b.title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-            if (b.authors.isNotBlank()) Text(b.authors, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-        }
-    }
-}
-
-private val COVER_HEIGHT = 225.dp
-
-/** The book's details in the cover's place, as plain text over the blurred backdrop: label and value per line. */
-@Composable
-private fun DetailsPanel(b: Book) {
-    Column(
-        Modifier.fillMaxHeight().widthIn(max = 300.dp).fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
-    ) {
-        for ((label, value) in bookDetails(b)) {
-            Row {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(84.dp),
-                )
-                Text(value, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-        }
-    }
-}
-
-/** Which of the header's panels is showing. */
-@Composable
-private fun PageDots(current: Int, count: Int) {
-    Row(Modifier.padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        repeat(count) { i ->
-            val color = if (i == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-            Box(Modifier.size(7.dp).clip(CircleShape).background(color))
-        }
     }
 }
 

@@ -3,6 +3,10 @@ package com.mcosta.mybooks.ui.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mcosta.mybooks.data.authors.AuthorBook
+import com.mcosta.mybooks.data.authors.LibraryIndex
+import com.mcosta.mybooks.domain.Book
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import com.mcosta.mybooks.data.releases.AllMonths
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +42,7 @@ sealed interface Section<out T> {
 enum class OutsideSection { RELEASES, ONLINE }
 
 data class OutsideSearchState(
-    /** The sections are on screen (the library had no match and the search started). */
+    /** The sections are on screen (the search started). */
     val shown: Boolean = false,
     /** The query looks like an ISBN but its check digit is wrong. */
     val invalidIsbn: Boolean = false,
@@ -49,10 +53,18 @@ data class OutsideSearchState(
     /** New in Portugal's months downloaded so far, of [monthsTotal] (0 when not downloading). */
     val monthsLoaded: Int = 0,
     val monthsTotal: Int = 0,
-)
+    /** The library, to mark outside results already in it ([owns]); null until loaded. */
+    val library: LibraryIndex? = null,
+) {
+    /** Whether this New in Portugal book is already in the library. */
+    fun owns(hit: ReleaseHit): Boolean = library?.contains(hit.book.isbn, hit.book.title, hit.book.authors.joinToString(", ")) == true
+
+    /** Whether this public-sources book is already in the library. */
+    fun owns(book: AuthorBook): Boolean = library?.contains(book) == true
+}
 
 /**
- * Search outside the library: when the library has no match, after a pause in typing, New in Portugal ([releases],
+ * Search outside the library: after a pause in typing (whether or not the library has matches), New in Portugal ([releases],
  * loaded once) and public catalogues ([online]) are searched at once, each section on its own. A newer query cancels
  * an older one, whose results are never shown; the same query again (coming back to Search) changes nothing.
  * [releases] reports (months done, months listed) as it downloads; matching thousands of books runs on [compute].
@@ -60,6 +72,8 @@ data class OutsideSearchState(
 class OutsideSearchViewModel(
     private val releases: suspend (onProgress: (done: Int, total: Int) -> Unit) -> AllMonths,
     private val online: suspend (String) -> List<AuthorBook>,
+    /** The whole library, to mark results already in it. */
+    library: Flow<List<Book>> = emptyFlow(),
     private val compute: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val _state = MutableStateFlow(OutsideSearchState())
@@ -70,18 +84,29 @@ class OutsideSearchViewModel(
     private var waiting: Job? = null
     private val running = mutableMapOf<OutsideSection, Job>()
     private var index: ReleaseIndex? = null
+    private var owned: LibraryIndex? = null
 
-    fun onQuery(query: String, libraryHasMatch: Boolean) {
+    init {
+        viewModelScope.launch {
+            library.collect { books ->
+                val built = withContext(compute) { LibraryIndex(books) }
+                owned = built
+                _state.update { it.copy(library = built) }
+            }
+        }
+    }
+
+    fun onQuery(query: String) {
         val q = query.trim()
         val asIsbn = isbnQuery(q)
         val isbn = (asIsbn as? IsbnQuery.Valid)?.isbn13
-        val searchable = !libraryHasMatch && (isbn != null || q.length >= OUTSIDE_SEARCH_MIN)
+        val searchable = isbn != null || q.length >= OUTSIDE_SEARCH_MIN
         if (searchable && q == current) return
         waiting?.cancel()
         running.values.forEach { it.cancel() }
         running.clear()
         current = q.takeIf { searchable }
-        _state.value = OutsideSearchState(invalidIsbn = asIsbn == IsbnQuery.Invalid, isbn = isbn)
+        _state.value = OutsideSearchState(invalidIsbn = asIsbn == IsbnQuery.Invalid, isbn = isbn, library = owned)
         if (!searchable) return
         waiting = viewModelScope.launch {
             delay(OUTSIDE_SEARCH_DELAY_MS)
@@ -142,3 +167,9 @@ class OutsideSearchViewModel(
 
     private fun <T> List<T>.asSection(): Section<T> = if (isEmpty()) Section.Empty else Section.Results(this)
 }
+
+/** Search's "In your library" group shows this many books until "Show all" is tapped. */
+const val LIBRARY_PREVIEW = 5
+
+/** The library matches Search shows: the first [LIBRARY_PREVIEW], or all once [expanded]. */
+fun libraryPreview(books: List<Book>, expanded: Boolean): List<Book> = if (expanded) books else books.take(LIBRARY_PREVIEW)

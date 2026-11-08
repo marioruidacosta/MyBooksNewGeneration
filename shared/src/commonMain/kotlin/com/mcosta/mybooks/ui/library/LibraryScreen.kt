@@ -100,7 +100,7 @@ fun LibraryScreen(
     onOpenBook: (Long) -> Unit,
     /** Opened from the home screen's search: the search box takes the keyboard. */
     focusSearch: Boolean = false,
-    /** The Search tab: when the library has no match, New in Portugal and public sources are searched too. */
+    /** The Search tab: New in Portugal and public sources are searched too, each source in its own group. */
     outside: OutsideSearchViewModel? = null,
     onOpenRelease: (month: String, id: String) -> Unit = { _, _ -> },
     onOpenCatalogBook: (AuthorBook) -> Unit = {},
@@ -109,7 +109,7 @@ fun LibraryScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf(state.query) }
     if (outside != null) {
-        LaunchedEffect(state.query, state.books.isEmpty()) { outside.onQuery(state.query, libraryHasMatch = state.books.isNotEmpty()) }
+        LaunchedEffect(state.query) { outside.onQuery(state.query) }
     }
     var sortMenuOpen by remember { mutableStateOf(false) }
     val searchFocus = remember { FocusRequester() }
@@ -216,9 +216,26 @@ fun LibraryScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).focusRequester(searchFocus),
             )
             if (state.tags.isNotEmpty()) TagChips(state.tags, state.tag, viewModel::chooseTag)
-            if (state.books.isEmpty() && outside != null && query.isNotBlank()) {
+            if (outside != null && query.isNotBlank()) {
                 val outsideState by outside.state.collectAsStateWithLifecycle()
-                OutsideResults(outsideState, outside::retry, onOpenRelease, onOpenCatalogBook, onAddYourself, Modifier.fillMaxSize())
+                // A new query shows the first few library matches again.
+                var libraryExpanded by rememberSaveable(state.query) { mutableStateOf(false) }
+                OutsideResults(
+                    outsideState,
+                    library = state.books,
+                    libraryExpanded = libraryExpanded,
+                    onShowAllLibrary = { libraryExpanded = true },
+                    libraryRow = { book ->
+                        SwipeRow(book, onSwipeRight = { onSwipeRight(book) }, onSwipeLeft = { onSwipeLeft(book) }) {
+                            BookRow(book, onClick = { onOpenBook(book.id) })
+                        }
+                    },
+                    onRetry = outside::retry,
+                    onOpenRelease = onOpenRelease,
+                    onOpenCatalogBook = onOpenCatalogBook,
+                    onAddYourself = onAddYourself,
+                    modifier = Modifier.fillMaxSize(),
+                )
             } else if (state.books.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(if (query.isBlank()) "No books here yet" else "No books match", style = MaterialTheme.typography.bodyLarge)
