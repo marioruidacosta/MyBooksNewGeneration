@@ -31,7 +31,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -234,6 +237,7 @@ private fun Chips(labels: List<String>, enabled: Boolean, onChip: (String) -> Un
 @Composable
 private fun Input(enabled: Boolean, onSend: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
+    val submit = { if (enabled && text.isNotBlank()) { onSend(text); text = "" } }
     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
             value = text,
@@ -241,8 +245,11 @@ private fun Input(enabled: Boolean, onSend: (String) -> Unit) {
             placeholder = { Text("Ask BookNerd…") },
             modifier = Modifier.weight(1f),
             maxLines = 3,
+            // The keyboard's action key sends, like the button (a chat message rarely needs a new line).
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { submit() }),
         )
-        IconButton(onClick = { if (text.isNotBlank()) { onSend(text); text = "" } }, enabled = enabled) {
+        IconButton(onClick = submit, enabled = enabled) {
             Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
         }
     }

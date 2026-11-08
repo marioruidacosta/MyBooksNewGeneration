@@ -43,13 +43,26 @@ fun toneOf(text: String): Tone {
     }
 }
 
-/** An answer as used in the text: trimmed, without trailing full stops, at most [ANSWER_MAX] characters (at a word). */
+/**
+ * An answer as used in the text: trimmed, without trailing full stops, at most [ANSWER_MAX] characters; a longer one is
+ * cut at a word and ends with "…".
+ */
 fun cutAnswer(text: String): String {
     val clean = text.trim().trimEnd('.', '!', '?', ';', ',', ' ')
     if (clean.length <= ANSWER_MAX) return clean
-    val cut = clean.take(ANSWER_MAX)
-    return cut.substring(0, cut.lastIndexOf(' ').takeIf { it > 0 } ?: cut.length).trimEnd(',', ' ')
+    val cut = clean.take(ANSWER_MAX - 1)
+    return cut.substring(0, cut.lastIndexOf(' ').takeIf { it > 0 } ?: cut.length).trimEnd(',', ' ') + "…"
 }
+
+/** Articles and pronouns that are written in lower case mid-sentence ("Meet a shy pharmacist", "o problema: ela parte"). */
+private val LOWER_MID_SENTENCE = setOf(
+    "a", "an", "the", "he", "she", "they", "his", "her", "their",
+    "o", "os", "as", "um", "uma", "uns", "umas", "ele", "ela", "eles", "elas",
+)
+
+/** [answer] with its first letter lowered when it starts with an article or pronoun; names keep their capital. */
+private fun midSentence(answer: String): String =
+    if (answer.substringBefore(' ').lowercase() in LOWER_MID_SENTENCE) answer.replaceFirstChar { it.lowercase() } else answer
 
 private val PT_PREPOSITIONS = setOf(
     "em", "no", "na", "nos", "nas", "num", "numa", "nuns", "numas", "durante", "antes", "depois", "entre", "perto",
@@ -86,11 +99,13 @@ internal fun placePhrase(setting: String, language: BotLanguage): String {
 fun writeAbstract(answers: IdeaAnswers, language: BotLanguage, variant: Int): String {
     val v = ((variant % 3) + 3) % 3
     val t = if (language == BotLanguage.PT) PT else EN
-    val character = cutAnswer(answers.character)
+    val character = midSentence(cutAnswer(answers.character))
     val where = placePhrase(cutAnswer(answers.setting), language)
-    val conflict = cutAnswer(answers.conflict)
+    val conflict = midSentence(cutAnswer(answers.conflict))
+    // A template's first letter is capitalised again, for an answer that opens it ("A shy pharmacist has…").
     fun fill(s: String) = s.replace("{c}", character).replace("{W}", where.replaceFirstChar { it.uppercase() })
         .replace("{w}", where).replace("{x}", conflict)
+        .replace("….", "…")
         .replaceFirstChar { it.uppercase() }
     val body = listOf(
         fill(t.openings.getValue(answers.genre)[v]),
@@ -226,7 +241,7 @@ private val PT = Templates(
         ),
         Genre.FANTASY to listOf(
             "Conheça {c}. {W}, fala-se de magia em voz baixa mas nunca ninguém a viu, até ao dia em que ela escolhe esta personagem e o mundo que conhecia começa a desfazer-se.",
-            "{c} nunca pediu para ser especial. Passada {w}, onde as velhas lendas afinal são verdadeiras, esta história segue um herói improvável num mundo de maravilhas e perigos.",
+            "{c} nunca pediu para ser especial. Passada {w}, onde as velhas lendas afinal são verdadeiras, esta história segue uma aventura improvável num mundo de maravilhas e perigos.",
             "Há muito tempo, foi feita uma promessa {w}. Agora só {c} a pode cumprir, com coragem, alguma sorte e poderes que mal compreende.",
         ),
         Genre.SCIENCE_FICTION to listOf(
@@ -300,7 +315,7 @@ private val PT = Templates(
     hooks = listOf(
         "Pelo caminho nascem amizades, vêm à luz segredos antigos e nada acontece exatamente como estava previsto.",
         "Cada capítulo aproxima a personagem da verdade e afasta-a um pouco mais da vida que conhecia.",
-        "No fim, terá de decidir o que está realmente disposta a perder, e aquilo por que vale a pena lutar.",
+        "No fim, terá de decidir o que aceita realmente perder, e aquilo por que vale a pena lutar.",
         "É uma viagem de pequenas vitórias e reveses dolorosos, contada com atenção aos pormenores que fazem uma vida.",
     ),
 )

@@ -2,10 +2,10 @@
 -- book the caller rated 4-5 stars, matched by ISBN) and friends of the caller's friends. Never the caller, anyone
 -- with a friendship row with the caller (accepted or pending, either way), or anyone blocked either way.
 
-create function suggested_readers(max int default 10)
+create or replace function suggested_readers(max int default 10)
 returns table (id uuid, username text, display_name text, avatar_path text, shared_books int, mutual_friends int,
   mutual_names text[], top_title text)
-language sql stable security definer set search_path = public as $$
+language sql stable security definer set search_path = public, pg_temp as $$
   with me as (select require_user() as id),
   my_friends as (
     select case when f.requester = me.id then f.addressee else f.requester end as id
@@ -63,3 +63,6 @@ $$;
 
 revoke all on function suggested_readers(int) from public, anon;
 grant execute on function suggested_readers(int) to authenticated;
+
+-- The taste match looks up books rated 4-5 stars by ISBN; this keeps it from scanning every shared book.
+create index if not exists shared_books_loved_isbn_idx on shared_books (isbn) where rating >= 4;

@@ -92,5 +92,14 @@ select is((select count(*)::int from suggested_readers()), 10, 'ten_by_default')
 set local role anon;
 select throws_ok($$select * from suggested_readers()$$, '42501', null, 'anon_cannot_call');
 
+-- Catalogue checks (as the test owner again).
+reset role;
+select has_index('public', 'shared_books', 'shared_books_loved_isbn_idx', 'loved_isbn_index_exists');
+select is(
+  (select proconfig from pg_proc where proname = 'suggested_readers'),
+  array['search_path=public, pg_temp'],
+  'search_path_pins_pg_temp_last'
+);
+
 select * from finish();
 rollback;

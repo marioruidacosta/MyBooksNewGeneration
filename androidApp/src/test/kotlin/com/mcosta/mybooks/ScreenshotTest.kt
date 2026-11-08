@@ -403,10 +403,15 @@ class ScreenshotTest {
             )
             com.mcosta.mybooks.ui.booknerd.BookNerdState(
                 messages = listOf(
-                    com.mcosta.mybooks.ui.booknerd.BotMessage.UserText(1, "Mystery"),
-                    com.mcosta.mybooks.ui.booknerd.BotMessage.BotText(2, "What tone?"),
-                    com.mcosta.mybooks.ui.booknerd.BotMessage.UserText(3, "Dark"),
-                    com.mcosta.mybooks.ui.booknerd.BotMessage.AbstractCard(4, com.mcosta.mybooks.ui.booknerd.writeAbstract(idea, com.mcosta.mybooks.ui.booknerd.BotLanguage.EN, 0)),
+                    "What genre is it?" to "Mystery",
+                    "Who is the main character? (a name and a few words)" to idea.character,
+                    "Where and when does it happen?" to idea.setting,
+                    "What goes wrong, or what do they want?" to idea.conflict,
+                    "What tone?" to "Dark",
+                ).flatMapIndexed { i, (q, a) ->
+                    listOf(com.mcosta.mybooks.ui.booknerd.BotMessage.BotText(2L * i, q), com.mcosta.mybooks.ui.booknerd.BotMessage.UserText(2L * i + 1, a))
+                } + listOf(
+                    com.mcosta.mybooks.ui.booknerd.BotMessage.AbstractCard(10, com.mcosta.mybooks.ui.booknerd.writeAbstract(idea, com.mcosta.mybooks.ui.booknerd.BotLanguage.EN, 0)),
                 ),
                 chips = listOf("Another version", "Start over"),
             )
@@ -416,7 +421,7 @@ class ScreenshotTest {
                 com.mcosta.mybooks.ui.booknerd.BookNerdChat(state, com.mcosta.mybooks.ui.booknerd.BookNerdActions(onShare = {}))
             }
         }
-        val expected = if (abstract) listOf("Another version", "Copy", "Share", "Start over") else listOf("To read", "To buy", "More", "Something else", "In your library")
+        val expected = if (abstract) listOf("What genre is it?", "Where and when does it happen?", "Another version", "Copy", "Share", "Start over") else listOf("To read", "To buy", "More", "Something else", "In your library")
         for (text in expected) {
             assertTrue(text, compose.onAllNodes(androidx.compose.ui.test.hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty())
         }

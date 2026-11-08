@@ -6,7 +6,8 @@ import com.mcosta.mybooks.social.model.SuggestedReader
 enum class BotLanguage { PT, EN }
 
 /**
- * Why BookNerd suggests [r]: "Also loved Os Maias and 2 more", "Friend of Ana and Rui, and 2 more", or both joined
+ * Why BookNerd suggests [r]: "Also loved Os Maias and 2 more", "Friend of Ana and Rui, and 2 more" ("Amigos em comum:
+ * Ana e Rui", which doesn't assume a gender), or both joined
  * with " · " (taste first).
  */
 fun readerReason(r: SuggestedReader, language: BotLanguage): String {
@@ -20,7 +21,7 @@ fun readerReason(r: SuggestedReader, language: BotLanguage): String {
     if (r.mutualFriends > 0 && r.mutualNames.isNotEmpty()) {
         val names = r.mutualNames.joinToString(if (pt) " e " else " and ")
         val more = r.mutualFriends - r.mutualNames.size
-        parts += (if (pt) "Amigo de $names" else "Friend of $names") +
+        parts += (if (pt) "Amigos em comum: $names" else "Friend of $names") +
             if (more > 0) (if (pt) " e mais $more" else ", and $more more") else ""
     }
     return parts.joinToString(" · ")

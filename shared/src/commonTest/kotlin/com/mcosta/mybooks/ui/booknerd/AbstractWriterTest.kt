@@ -60,6 +60,42 @@ class AbstractWriterTest {
         assertTrue(words(text) in 120..180, "${words(text)} words")
     }
 
+    /** Minor 6: a cut answer ends with "…", and the sentence after it doesn't add a stop to it. */
+    @Test
+    fun cutAnswersEndWithAnEllipsis() {
+        val long = "Teodoro " + "muito ".repeat(70) + "fim"
+        assertTrue(cutAnswer(long).endsWith("…"))
+        assertFalse(cutAnswer("Teodoro, um farmacêutico").endsWith("…"))
+        for (genre in Genre.entries) for (v in 0..2) {
+            val text = writeAbstract(IdeaAnswers(genre, long, "Lisboa", long, Tone.MOVING), BotLanguage.PT, v)
+            assertFalse("…." in text, "$genre $v: $text")
+        }
+    }
+
+    /** Minor 5: an answer that starts with a capitalised article or pronoun reads right mid-sentence. */
+    @Test
+    fun leadingArticleIsLoweredMidSentence() {
+        val en = writeAbstract(IdeaAnswers(Genre.DRAMA, "A shy pharmacist", "Lisbon", "She loses her job", Tone.LIGHT), BotLanguage.EN, 0)
+        assertTrue("Meet a shy pharmacist." in en, en)
+        assertTrue(": she loses her job." in en, en)
+        val pt = writeAbstract(IdeaAnswers(Genre.DRAMA, "Um farmacêutico tímido", "Lisboa", "Ela perde o emprego", Tone.LIGHT), BotLanguage.PT, 0)
+        assertTrue("Conheça um farmacêutico tímido." in pt, pt)
+        assertTrue(": ela perde o emprego." in pt, pt)
+        val names = writeAbstract(IdeaAnswers(Genre.DRAMA, "Teodoro", "Lisboa", "Ana parte", Tone.LIGHT), BotLanguage.PT, 0)
+        assertTrue("Conheça Teodoro." in names && ": Ana parte." in names, names)
+        val start = writeAbstract(IdeaAnswers(Genre.DRAMA, "A shy pharmacist", "Lisbon", "x", Tone.LIGHT), BotLanguage.EN, 1)
+        assertTrue(start.startsWith("A shy pharmacist has"), start)
+    }
+
+    /** Minor 4: the Portuguese text doesn't assume the main character's gender. */
+    @Test
+    fun portugueseIsGenderNeutral() {
+        for (genre in Genre.entries) for (tone in Tone.entries) for (v in 0..2) {
+            val text = writeAbstract(IdeaAnswers(genre, "Ana", "Lisboa", "perde tudo", tone), BotLanguage.PT, v).lowercase()
+            listOf("realmente disposta", "realmente disposto", "herói", "heroína").forEach { assertFalse(it in text, "$genre $tone $v has '$it': $text") }
+        }
+    }
+
     @Test
     fun settingPrepositionAndTrailingDotsAreTidied() {
         val text = writeAbstract(IdeaAnswers(Genre.DRAMA, "Ana.", "in Lisbon", "she leaves!", Tone.LIGHT), BotLanguage.EN, 0)

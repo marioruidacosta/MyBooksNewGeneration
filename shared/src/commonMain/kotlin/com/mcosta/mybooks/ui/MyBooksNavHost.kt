@@ -189,6 +189,14 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
 
     val celebrations = viewModel { CelebrationViewModel(container.repository, container.challenges, container.events) }
     val celebration by celebrations.celebration.collectAsStateWithLifecycle()
+    // BookNerd's conversation lasts while the app is open: its view model belongs to the activity, not the screen.
+    val bookNerd = viewModel {
+        com.mcosta.mybooks.ui.booknerd.BookNerdViewModel(
+            { container.suggestions.suggestions().without(container.hiddenSuggestions.keys.value) },
+            social,
+            container.repository,
+        )
+    }
     /** A suggestion opens as a New in Portugal book or a catalogue book. */
     val openSuggestion: (Suggestion) -> Unit = { s ->
         val release = s.release
@@ -355,13 +363,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
             }
             composable(Routes.BOOKNERD) {
                 com.mcosta.mybooks.ui.booknerd.BookNerdScreen(
-                    viewModel = viewModel {
-                        com.mcosta.mybooks.ui.booknerd.BookNerdViewModel(
-                            { container.suggestions.suggestions().without(container.hiddenSuggestions.keys.value) },
-                            social,
-                            container.repository,
-                        )
-                    },
+                    viewModel = bookNerd,
                     onBack = { nav.popBackStack() },
                     onOpenProfile = { nav.navigate(Routes.profile(it)) },
                     onJoin = { nav.navigate(Routes.ACCOUNT) },

@@ -16,10 +16,10 @@ class BotTextTest {
         assertEquals("Também adorou Os Maias e mais 2", readerReason(reader(shared = 3, title = "Os Maias"), BotLanguage.PT))
         assertEquals("Also loved Os Maias", readerReason(reader(shared = 1, title = "Os Maias"), BotLanguage.EN))
         assertEquals("Friend of Ana and Rui", readerReason(reader(mutual = 2, names = listOf("Ana", "Rui")), BotLanguage.EN))
-        assertEquals("Amigo de Ana e Rui", readerReason(reader(mutual = 2, names = listOf("Ana", "Rui")), BotLanguage.PT))
+        assertEquals("Amigos em comum: Ana e Rui", readerReason(reader(mutual = 2, names = listOf("Ana", "Rui")), BotLanguage.PT))
         assertEquals("Friend of Ana", readerReason(reader(mutual = 1, names = listOf("Ana")), BotLanguage.EN))
         assertEquals("Friend of Ana and Rui, and 2 more", readerReason(reader(mutual = 4, names = listOf("Ana", "Rui")), BotLanguage.EN))
-        assertEquals("Amigo de Ana e Rui e mais 2", readerReason(reader(mutual = 4, names = listOf("Ana", "Rui")), BotLanguage.PT))
+        assertEquals("Amigos em comum: Ana e Rui e mais 2", readerReason(reader(mutual = 4, names = listOf("Ana", "Rui")), BotLanguage.PT))
         assertEquals(
             "Also loved Os Maias · Friend of Ana",
             readerReason(reader(shared = 1, title = "Os Maias", mutual = 1, names = listOf("Ana")), BotLanguage.EN),

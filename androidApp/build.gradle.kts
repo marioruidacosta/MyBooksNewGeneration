@@ -101,5 +101,7 @@ dependencies {
     testImplementation(libs.okio)
     testImplementation(libs.kotlinx.datetime)
     testImplementation(libs.room.runtime)
+    // A whole-app test (BookNerdConversationTest) answers every request offline.
+    testImplementation(libs.ktor.client.mock)
     debugImplementation(libs.compose.ui.test.manifest)
 }
