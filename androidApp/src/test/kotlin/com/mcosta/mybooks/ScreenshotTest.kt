@@ -10,6 +10,14 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTextInput
+import com.mcosta.mybooks.data.authors.AuthorBook
+import com.mcosta.mybooks.data.releases.AllMonths
+import com.mcosta.mybooks.data.releases.MonthBooks
+import com.mcosta.mybooks.data.releases.ReleaseBook
+import com.mcosta.mybooks.ui.library.OutsideSearchViewModel
+import com.mcosta.mybooks.ui.library.Section
 import androidx.test.core.app.ApplicationProvider
 import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.ChallengeRepository
@@ -142,7 +150,7 @@ class ScreenshotTest {
         context.deleteDatabase(dbName)
     }
 
-    private fun shoot(name: String, dark: Boolean, ready: () -> Boolean, content: @Composable () -> Unit) {
+    private fun shoot(name: String, dark: Boolean, ready: () -> Boolean, act: () -> Unit = {}, content: @Composable () -> Unit) {
         if (dark) RuntimeEnvironment.setQualifiers("+night")
         compose.setContent {
             CompositionLocalProvider(
@@ -152,6 +160,7 @@ class ScreenshotTest {
                 MyBooksTheme { content() }
             }
         }
+        act()
         // Robolectric's clock stands still while the test waits; move it on so delayed work on the main thread runs.
         compose.waitUntil(10_000) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50)); ready() }
         compose.waitForIdle()
@@ -283,6 +292,30 @@ class ScreenshotTest {
     }
 
     // Home and the book page are drawn tall, to show their lower sections.
+
+    /** Search with no library match: New in Portugal and public sources below. */
+    private fun searchEverywhere(dark: Boolean) {
+        sampleLibrary()
+        val vm = LibraryViewModel(repo, null, null)
+        val lucidez = ReleaseBook("b1", "9789722036504", "Ensaio sobre a Lucidez", listOf("José Saramago"), publisher = "Porto Editora")
+        val outside = OutsideSearchViewModel(
+            releases = { AllMonths(listOf(MonthBooks("2026-11", true, listOf(lucidez))), emptyList(), null) },
+            online = {
+                listOf(
+                    AuthorBook("Ensaio sobre a Lucidez", "José Saramago", 2004, "Caminho", "9789722116959", null, null, null),
+                    AuthorBook("Seeing", "José Saramago", 2006, "Harvill Secker", "9781843432470", null, null, null),
+                )
+            },
+        )
+        shoot(
+            "search-everywhere", dark,
+            ready = { outside.state.value.online is Section.Results && outside.state.value.releases is Section.Results },
+            act = { compose.onNodeWithText("Search title, author or ISBN").performTextInput("lucidez") },
+        ) {
+            LibraryScreen(vm, title = "Search", onBack = null, onOpenBook = {}, outside = outside)
+        }
+        for (text in listOf("New in Portugal", "Public sources", "Not here?", "Add it yourself")) compose.onNodeWithText(text).assertExists()
+    }
     @Config(qualifiers = TALL) @Test fun homeLight() = home(dark = false)
     @Config(qualifiers = TALL) @Test fun homeDark() = home(dark = true)
     @Test fun shelfLight() = shelf(dark = false)
@@ -304,4 +337,5 @@ class ScreenshotTest {
     }
     @Test fun readingActivityLight() = readingActivity(dark = false)
     @Test fun readingActivityDark() = readingActivity(dark = true)
+    @Config(qualifiers = TALL) @Test fun searchEverywhereLight() = searchEverywhere(dark = false)
 }
