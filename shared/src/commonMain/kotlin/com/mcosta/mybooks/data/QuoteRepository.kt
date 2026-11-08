@@ -23,6 +23,12 @@ class QuoteRepository(
         return true
     }
 
+    /** Saves text highlighted in the reader as a quote with its [position] in the ebook; null (nothing saved) for blank text. */
+    suspend fun addHighlight(bookId: Long, text: String, position: String): Long? {
+        val clean = clean(text) ?: return null
+        return dao.insert(Quote(bookId = bookId, text = clean, dateAdded = clock(), position = position).toEntity())
+    }
+
     /** Changes a quote's text and page; blank text is not saved (returns false). */
     suspend fun update(quote: Quote): Boolean {
         val clean = clean(quote.text) ?: return false
@@ -31,6 +37,11 @@ class QuoteRepository(
     }
 
     suspend fun delete(id: Long) = dao.delete(id)
+
+    /** Puts a deleted quote back as it was (Undo): its text, page, date and, for a highlight, its place in the ebook. */
+    suspend fun restore(quote: Quote) {
+        dao.insert(quote.copy(id = 0).toEntity())
+    }
 
     private fun clean(text: String) = text.trim().take(MAX_QUOTE_LENGTH).trim().takeIf { it.isNotEmpty() }
 }

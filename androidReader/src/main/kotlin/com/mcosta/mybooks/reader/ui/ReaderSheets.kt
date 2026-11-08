@@ -20,6 +20,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -128,6 +130,58 @@ fun BookmarksSheet(
                     androidx.compose.material3.IconButton(onClick = { onDelete(mark) }) {
                         Icon(Icons.Filled.Close, "Delete bookmark ${mark.label}")
                     }
+                }
+            }
+        }
+    }
+}
+
+/** Search: matches with the words around them (the match in bold) and their chapter; a tap goes there. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchSheet(
+    state: com.mcosta.mybooks.reader.SearchState,
+    onSearch: (String) -> Unit,
+    onMore: () -> Unit,
+    onOpen: (com.mcosta.mybooks.reader.SearchHit) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(state.query) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        androidx.compose.material3.OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text("Search the book") },
+            singleLine = true,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { onSearch(query) }),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+        )
+        LazyColumn(Modifier.padding(bottom = 24.dp)) {
+            items(state.hits) { hit ->
+                val s = com.mcosta.mybooks.reader.searchSnippet(hit.before, hit.match, hit.after)
+                Column(Modifier.fillMaxWidth().clickable { onOpen(hit) }.padding(horizontal = 24.dp, vertical = 10.dp)) {
+                    hit.chapter?.takeIf { it.isNotBlank() }?.let {
+                        Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Text(
+                        androidx.compose.ui.text.buildAnnotatedString {
+                            append(s.before)
+                            pushStyle(androidx.compose.ui.text.SpanStyle(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold))
+                            append(s.match)
+                            pop()
+                            append(s.after)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+            item {
+                when {
+                    state.searching -> androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(24.dp))
+                    state.query.isNotEmpty() && state.done && state.hits.isEmpty() ->
+                        Text("No matches for \u201C${state.query}\u201D.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(24.dp))
+                    !state.done -> androidx.compose.material3.TextButton(onClick = onMore, modifier = Modifier.padding(horizontal = 16.dp)) { Text("Show more") }
                 }
             }
         }
