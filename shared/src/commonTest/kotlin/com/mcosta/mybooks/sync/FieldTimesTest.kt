@@ -26,6 +26,19 @@ class FieldTimesTest {
     }
 
     @Test
+    fun stampLeavesUntimedUnchangedFieldsUntimed() {
+        val old = mapOf<String, JsonElement>("title" to JsonPrimitive("T"), "rating" to JsonPrimitive(3))
+        val new = mapOf<String, JsonElement>("title" to JsonPrimitive("T"), "rating" to JsonPrimitive(4))
+        assertEquals(mapOf("rating" to 9000L), stamp(old, new, emptyMap(), 9000))
+    }
+
+    @Test
+    fun parseTimesIgnoresNonObjectsAndNonNumbers() {
+        assertEquals(emptyMap(), parseTimes("[]"))
+        assertEquals(mapOf("b" to 2L), parseTimes("""{"a":"x","b":2}"""))
+    }
+
+    @Test
     fun remoteNewerFieldWins() {
         val local = row(mapOf("title" to JsonPrimitive("old")), mapOf("title" to 1000))
         val remote = row(mapOf("title" to JsonPrimitive("new")), mapOf("title" to 2000))

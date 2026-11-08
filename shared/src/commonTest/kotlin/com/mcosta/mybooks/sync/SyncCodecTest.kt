@@ -37,6 +37,13 @@ class SyncCodecTest {
     }
 
     @Test
+    fun deletedBookRoundTrips() {
+        val b = book().copy(deleted = true)
+        assertEquals(JsonPrimitive(true), b.toRow(null).fields["deleted"])
+        assertEquals(b, b.toRow(null).toBookEntity(b, null))
+    }
+
+    @Test
     fun coverPhotoTravelsAsMarker() {
         val row = book("cover:abc.jpg").toRow(null)
         assertEquals(JsonPrimitive("photo"), row.fields["cover_url"])
