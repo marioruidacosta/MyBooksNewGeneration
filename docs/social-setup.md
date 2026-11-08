@@ -88,6 +88,20 @@ npx supabase db push --remote              # lists 2026110800_community_feed.sql
 
 Until it's applied the app works as before: cards have no blurb or pages, and the new sections stay hidden.
 
+### 3d. BookNerd friend suggestions
+
+`supabase/migrations/2026110900_suggested_readers.sql` adds `suggested_readers()`, which BookNerd uses to suggest
+readers with similar taste and friends of friends. Apply it like 3c: `npx supabase db push --remote` from
+MyBooksNewGeneration, or, on a network that resets database connections, paste the file into the SQL Editor, run it,
+then record it:
+
+```sql
+insert into supabase_migrations.schema_migrations (version, name, statements)
+values ('2026110900', 'suggested_readers', array[]::text[]);
+```
+
+Until it's applied, BookNerd says it couldn't reach the community when asked for friends; books and abstracts work.
+
 ## 4. Give the apps the URL and key
 
 - **Android** (your PC): add to `local.properties`, then rebuild:
