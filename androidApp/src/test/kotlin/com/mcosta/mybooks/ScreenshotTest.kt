@@ -359,6 +359,19 @@ class ScreenshotTest {
         }
         compose.onNodeWithText("is on page 182 of 344", substring = true).assertExists()
     }
+
+    /** A book page's "Friends who have this book". */
+    private fun friendsWithBook(dark: Boolean) {
+        val friends = listOf(
+            com.mcosta.mybooks.social.model.FriendWithBook(Person("a", "ana", "Ana Silva", null), ReadingStatus.READ, 5, 100, "Uma sátira deliciosa, e o Raposão é inesquecível."),
+            com.mcosta.mybooks.social.model.FriendWithBook(Person("r", "rui", "Rui Costa", null), ReadingStatus.READING, null, 40, ""),
+            com.mcosta.mybooks.social.model.FriendWithBook(Person("m", "marta", "Marta Lopes", null), ReadingStatus.TO_READ, null, null, ""),
+        )
+        shoot("friends-with-book", dark, ready = { true }) {
+            androidx.compose.material3.Surface { com.mcosta.mybooks.ui.detail.FriendsWithBookSection(friends, onPerson = {}) }
+        }
+        for (text in listOf("Ana Silva read it", "is reading it · 40%", "wants to read it")) compose.onNodeWithText(text, substring = true).assertExists()
+    }
     @Config(qualifiers = TALL) @Test fun homeLight() = home(dark = false)
     @Config(qualifiers = TALL) @Test fun homeDark() = home(dark = true)
     @Test fun shelfLight() = shelf(dark = false)
@@ -383,4 +396,5 @@ class ScreenshotTest {
     @Config(qualifiers = TALL) @Test fun searchEverywhereLight() = searchEverywhere(dark = false)
     @Config(qualifiers = TALL) @Test fun communityLight() = community(dark = false)
     @Config(qualifiers = TALL) @Test fun communityDark() = community(dark = true)
+    @Test fun friendsWithBookLight() = friendsWithBook(dark = false)
 }

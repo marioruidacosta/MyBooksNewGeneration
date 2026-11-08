@@ -108,6 +108,8 @@ fun BookDetailScreen(
 ) {
     val community by (extras?.community ?: remember { MutableStateFlow<CommunityState>(CommunityState.Hidden) }).collectAsStateWithLifecycle()
     val moreBy by (extras?.moreBy ?: remember { MutableStateFlow<MoreByState?>(null) }).collectAsStateWithLifecycle()
+    val friends by (extras?.friends ?: remember { MutableStateFlow(emptyList<com.mcosta.mybooks.social.model.FriendWithBook>()) })
+        .collectAsStateWithLifecycle()
     val book by viewModel.book.collectAsStateWithLifecycle()
     val notes by viewModel.notesDraft.collectAsStateWithLifecycle()
     val review by viewModel.reviewDraft.collectAsStateWithLifecycle()
@@ -198,6 +200,9 @@ fun BookDetailScreen(
                     SectionCard("Community reviews") {
                         CommunityReviews(community, extras::retryCommunity, extras::moreReviews, onJoin, onOpenPerson)
                     }
+                }
+                if (friends.isNotEmpty()) {
+                    SectionCard("Friends who have this book") { FriendsWithBookSection(friends, onOpenPerson) }
                 }
                 QuotesSection(
                     b, quotes,
