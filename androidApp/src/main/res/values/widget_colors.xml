@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The book colours: cream paper, dark ink, teal. -->
+    <color name="widget_background">#FFF4ECDF</color>
+    <color name="widget_text">#FF1E1B16</color>
+    <color name="widget_text_secondary">#FF5C554C</color>
+    <color name="widget_accent">#FF1F5F5B</color>
+    <color name="widget_track">#331F5F5B</color>
+</resources>

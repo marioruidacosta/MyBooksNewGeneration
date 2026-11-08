@@ -36,6 +36,8 @@ import com.mcosta.mybooks.ui.LocalCoverStore
 import com.mcosta.mybooks.ui.LocalPlatformServices
 import com.mcosta.mybooks.ui.activity.ReadingActivityScreen
 import com.mcosta.mybooks.ui.activity.ReadingActivityViewModel
+import com.mcosta.mybooks.ui.activity.YearReviewScreen
+import com.mcosta.mybooks.ui.activity.YearReviewViewModel
 import com.mcosta.mybooks.ui.detail.BookDetailScreen
 import com.mcosta.mybooks.ui.detail.BookDetailViewModel
 import com.mcosta.mybooks.ui.home.HomeScreen
@@ -172,6 +174,15 @@ class ScreenshotTest {
         }
     }
 
+    /** The year in review card. */
+    private fun yearReview(dark: Boolean) {
+        sampleLibrary()
+        val vm = YearReviewViewModel(repo, challenges, 2026)
+        shoot("year-review", dark, ready = { vm.review.value != null }) {
+            YearReviewScreen(vm, onBack = {}, onOpenBook = {})
+        }
+    }
+
     /** Scan several, after a few barcodes: added, already in the library, unknown. */
     private fun batchScan(dark: Boolean) {
         sampleLibrary()
@@ -230,6 +241,8 @@ class ScreenshotTest {
     @Config(qualifiers = TALL) @Test fun seriesBookLight() = seriesBook(dark = false)
     @Test fun tagLight() = tag(dark = false)
     @Test fun scanSeveralLight() = batchScan(dark = false)
+    @Config(qualifiers = TALL) @Test fun yearReviewLight() = yearReview(dark = false)
+    @Config(qualifiers = TALL) @Test fun yearReviewDark() = yearReview(dark = true)
     @Test fun scanSeveralDark() = batchScan(dark = true)
 
     private companion object {
