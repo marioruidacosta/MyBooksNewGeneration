@@ -13,4 +13,12 @@ class IsbnQueryTest {
         assertEquals(IsbnQuery.NotIsbn, isbnQuery("Saramago"))
         assertEquals(IsbnQuery.NotIsbn, isbnQuery("1984"))
     }
+
+    /** Typing a 13-digit ISBN passes through 10 digits: that is an ISBN still being typed, not a wrong ISBN-10. */
+    @Test
+    fun aThirteenDigitIsbnBeingTyped() {
+        assertEquals(IsbnQuery.NotIsbn, isbnQuery("9789722036"))     // also a valid ISBN-10 of another book
+        assertEquals(IsbnQuery.NotIsbn, isbnQuery("978-972-20-3"))
+        assertEquals(IsbnQuery.NotIsbn, isbnQuery("9799722031"))
+    }
 }

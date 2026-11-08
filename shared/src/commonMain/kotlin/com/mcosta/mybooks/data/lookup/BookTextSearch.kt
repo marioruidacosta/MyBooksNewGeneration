@@ -35,7 +35,9 @@ class GoogleBooksTextSearch(
                     authors = info.authors.joinToString(", "),
                     year = yearFrom(info.publishedDate),
                     publisher = info.publisher,
-                    isbn = info.industryIdentifiers.firstOrNull { it.type == "ISBN_13" }?.identifier,
+                    isbn = info.industryIdentifiers.filter { it.type == "ISBN_13" || it.type == "ISBN_10" }
+                        .sortedBy { it.type != "ISBN_13" }
+                        .firstNotNullOfOrNull { Isbn.normalize(it.identifier) },
                     coverUrl = httpsUrl(info.imageLinks?.thumbnail ?: info.imageLinks?.smallThumbnail),
                     description = info.description,
                     pageCount = info.pageCount,
@@ -85,8 +87,11 @@ class OpenLibraryTextSearch(
                     title = doc.title.trim(),
                     authors = doc.author_name.joinToString(", "),
                     year = doc.first_publish_year,
-                    publisher = doc.publisher.firstOrNull(),
-                    isbn = doc.isbn.firstNotNullOfOrNull { Isbn.normalize(it) },
+                    // A work lists every edition's ISBNs and publishers in no order: only a Portuguese edition's ISBN
+                    // is kept, and no publisher, so nothing from a foreign edition is saved or used for store links.
+                    publisher = null,
+                    isbn = if ("por" !in doc.language) null
+                    else doc.isbn.mapNotNull { Isbn.normalize(it) }.firstOrNull { it.startsWith("978972") || it.startsWith("978989") },
                     coverUrl = doc.cover_i?.let { "https://covers.openlibrary.org/b/id/$it-M.jpg" },
                     description = null,
                     pageCount = null,

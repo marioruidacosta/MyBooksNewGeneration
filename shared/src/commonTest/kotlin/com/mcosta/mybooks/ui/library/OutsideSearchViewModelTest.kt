@@ -25,6 +25,7 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
 
     private var monthsCalls = 0
     private var monthsFail = false
+    private var monthsLoaded: () -> AllMonths = { AllMonths(listOf(MonthBooks("2026-11", true, listOf(cegueira))), emptyList(), null) }
     private val onlineQueries = mutableListOf<String>()
     private val gates = mutableMapOf<String, CompletableDeferred<Unit>>()
     private var onlineFound: (String) -> List<AuthorBook> = { q -> if (q == "cegu") listOf(other) else listOf(blindness) }
@@ -33,7 +34,7 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
         releases = {
             monthsCalls++
             if (monthsFail) throw ReleasesUnavailable(notPublished = false)
-            AllMonths(listOf(MonthBooks("2026-11", true, listOf(cegueira))), emptyList(), null)
+            monthsLoaded()
         },
         online = { q ->
             onlineQueries += q
@@ -180,5 +181,36 @@ class OutsideSearchViewModelTest : MainDispatcherTest() {
         runCurrent()
         assertEquals(Section.Empty, vm.state.value.releases)
         assertEquals(Section.Empty, vm.state.value.online)
+    }
+
+    /** A load with months missing (offline, or one timed out) is used, but loaded again for the next search. */
+    @Test
+    fun partialMonthsAreLoadedAgain() = runTest {
+        monthsLoaded = { AllMonths(listOf(MonthBooks("2026-11", true, emptyList())), listOf("2026-10"), null) }
+        val vm = vm()
+        vm.onQuery("cegueira", libraryHasMatch = false)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(Section.Empty, vm.state.value.releases)
+        monthsLoaded = { AllMonths(listOf(MonthBooks("2026-11", true, listOf(cegueira))), emptyList(), null) }
+        vm.onQuery("saramago", libraryHasMatch = false)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(Section.Results(listOf(ReleaseHit("2026-11", cegueira))), vm.state.value.releases)
+        vm.onQuery("blimunda", libraryHasMatch = false)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(2, monthsCalls)                                 // the complete load is kept
+    }
+
+    /** No month could be loaded: a failure with Retry, not "Nothing in New in Portugal". */
+    @Test
+    fun noMonthsLoadedIsAFailure() = runTest {
+        monthsLoaded = { AllMonths(emptyList(), listOf("2026-11", "2026-10"), null) }
+        val vm = vm()
+        vm.onQuery("cegueira", libraryHasMatch = false)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(Section.Failed, vm.state.value.releases)
     }
 }

@@ -107,7 +107,17 @@ class OutsideSearchViewModel(
         }
     }
 
-    private suspend fun loadMonths(): AllMonths = months ?: releases().also { months = it }
+    /**
+     * New in Portugal's months: kept only when all of them came from the network, so a partial or saved (offline)
+     * load is loaded again for the next search. None at all is a failure (Retry), not "nothing found".
+     */
+    private suspend fun loadMonths(): AllMonths {
+        months?.let { return it }
+        val all = releases()
+        if (all.months.isEmpty() && all.missing.isNotEmpty()) throw IllegalStateException("No New in Portugal month could be loaded")
+        if (all.missing.isEmpty() && all.savedAt == null) months = all
+        return all
+    }
 
     @Suppress("UNCHECKED_CAST")
     private fun set(section: OutsideSection, value: Section<*>) = _state.update {
