@@ -135,6 +135,48 @@ select results_eq(
   $$select rating from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000005' and kind = 'reviewed'$$,
   $$values (4)$$,
   'reviewed_entries_carry_the_rating');
+
+-- A current page above the page count isn't kept.
+select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000006","title":"Dune","status":"reading",
+  "progress":10,"pages":100,"current_page":10}'::jsonb)$$, 'publish_started_dune');
+select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000006","title":"Dune","status":"reading",
+  "progress":20,"pages":100,"current_page":400}'::jsonb)$$, 'publish_page_above_count');
+select results_eq(
+  $$select book_current_page from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000006' and kind = 'progress'$$,
+  $$values (null::int)$$,
+  'current_page_above_pages_dropped');
+
+-- Editing only the blurb (a description edit) doesn't move the book up "Friends are reading".
+reset role;
+update shared_books set updated_at = '2020-01-01T00:00:00Z' where id = 'bbbbbbbb-0000-0000-0000-000000000004';
+set local role authenticated;
+select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
+select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000004","title":"Os Maias","status":"reading",
+  "progress":50,"pages":600,"current_page":300,"blurb":"Uma nova sinopse."}'::jsonb)$$, 'publish_new_blurb_only');
+reset role;
+select is((select updated_at from shared_books where id = 'bbbbbbbb-0000-0000-0000-000000000004'), '2020-01-01T00:00:00Z'::timestamptz,
+  'blurb_edit_keeps_updated_at');
+
+-- An older app publishing a book (no blurb or pages) clears them, without error.
+set local role authenticated;
+select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
+select lives_ok($$select publish_book('{"id":"bbbbbbbb-0000-0000-0000-000000000003","title":"Memorial do Convento",
+  "status":"reading","progress":20}'::jsonb)$$, 'old_shaped_publish');
+select results_eq(
+  $$select book_blurb, book_pages from feed('friends') where book_id = 'bbbbbbbb-0000-0000-0000-000000000003'$$,
+  $$values (null::text, null::int)$$,
+  'old_shaped_publish_clears_extras');
+
+-- A friend I blocked disappears too (blocks work both ways).
+reset role;
+delete from blocks where blocker = '22222222-2222-2222-2222-222222222222';
+update profiles set share_activity = true where id = '66666666-6666-6666-6666-666666666666';
+insert into blocks (blocker, blocked) values ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222');
+set local role authenticated;
+select pg_temp.act_as('11111111-1111-1111-1111-111111111111');
+select is_empty($$select 1 from friends_reading() where username = 'bruno'$$, 'friend_i_blocked_hidden_from_reading');
+select isnt_empty($$select 1 from friends_reading() where username = 'fred'$$, 'other_friends_still_listed');
+select is_empty($$select 1 from friends_with_book('9789722039994') where username = 'bruno'$$, 'friend_i_blocked_hidden_from_book');
 -- Not callable without signing in to the app.
 set local role anon;
 select throws_ok($$select * from friends_reading()$$, '42501', null, 'anon_cannot_call_friends_reading');
