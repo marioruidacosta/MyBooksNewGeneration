@@ -1,0 +1,34 @@
+package com.mcosta.mybooks.library
+
+import android.content.Context
+import androidx.room.Room
+import androidx.sqlite.driver.AndroidSQLiteDriver
+import com.mcosta.mybooks.data.db.AppDatabase
+import com.mcosta.mybooks.data.db.createDatabase
+import java.io.File
+
+/** Room refuses a relative name containing "/", so account databases are opened by absolute path. */
+private fun databaseFile(context: Context, id: LibraryId): File {
+    val dbDir = context.getDatabasePath("mybooks.db").parentFile!!
+    return when (id) {
+        LibraryId.Local -> File(dbDir, "mybooks.db")
+        is LibraryId.Account -> File(dbDir, "libraries/${id.userId}.db")
+    }
+}
+
+/** Opens a library's database: `mybooks.db` for the no-account library, `databases/libraries/<id>.db` for an account. */
+fun openLibraryDatabase(context: Context, id: LibraryId): AppDatabase {
+    val file = databaseFile(context, id)
+    file.parentFile?.mkdirs()
+    return createDatabase(
+        Room.databaseBuilder<AppDatabase>(context.applicationContext, file.absolutePath),
+        AndroidSQLiteDriver(),
+    )
+}
+
+/** Deletes an account library's database files (db, -wal, -shm); the no-account library is never deleted. */
+fun deleteLibraryDatabase(context: Context, id: LibraryId) {
+    if (id !is LibraryId.Account) return
+    val file = databaseFile(context, id)
+    for (suffix in listOf("", "-wal", "-shm", "-journal")) File(file.path + suffix).delete()
+}
