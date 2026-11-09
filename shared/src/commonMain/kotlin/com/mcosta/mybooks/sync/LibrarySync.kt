@@ -76,6 +76,19 @@ class LibrarySync(
 
     private val firstMerge = FirstMerge(api, db, applier, shares, coverStore) { n -> _setAside.update { it + n } }
 
+    private val coverSync = coverStore?.let {
+        CoverSync(api, it, db.state, clock) { write ->
+            // Written between passes, and never once the session has stopped (sign-out erases next).
+            passLock.withLock {
+                currentCoroutineContext().ensureActive()
+                write()
+            }
+        }
+    }
+
+    /** The cloud has no room for more cover photos: uploads wait for the next start. Data sync is unaffected. */
+    val coversFull: StateFlow<Boolean> = coverSync?.full ?: MutableStateFlow(false)
+
     /** (books done, books in all) while the first sign-in merge combines the libraries; null otherwise. */
     val mergeProgress: StateFlow<Pair<Int, Int>?> = firstMerge.progress
 
@@ -115,6 +128,7 @@ class LibrarySync(
         stop()
         val next = Session(owner)
         _setAside.value = 0
+        coverSync?.retryUploads()
         _status.value = SyncStatus.Syncing
         // Started only once it is known that no sign-out began meanwhile (see below).
         next.job = scope.launch(start = CoroutineStart.LAZY) {
@@ -160,7 +174,6 @@ class LibrarySync(
         signingOut = true
         stop()
         val owner = lastOwner
-        val photos = mutableListOf<String>()
         // After the stopped session's last pass.
         passLock.withLock {
             // Any session that slipped past the latch is stopped too, before anything is erased.
@@ -186,13 +199,12 @@ class LibrarySync(
                 db.challenges.getAllAny().forEach { db.challenges.delete(it.year) }
                 db.shareState?.let { shares -> shares.all().forEach { shares.delete(it.bookId) } }
                 for (book in db.books.getAllAny()) {
-                    book.coverUrl?.takeIf { coverStore?.isLocal(it) == true }?.let { photos += it }
                     db.books.delete(book.id)
                 }
             }
         }
-        photos.forEach { coverStore?.delete(it) }
-        // Every file in the folder, not just those with a record: a combined twin's ebook has none.
+        // Every file in the folders, not just those with a record: a downloaded photo, a combined twin's ebook.
+        if (!keepLibrary) coverStore?.deleteAll()
         if (!keepLibrary) ebookFiles?.deleteAll()
     }
 
@@ -237,6 +249,7 @@ class LibrarySync(
             currentCoroutineContext().ensureActive()
             if (error == null) {
                 failures = 0
+                coverStep(session.owner)
                 select {
                     wake.onReceive {}
                     now.onReceive {}
@@ -254,6 +267,19 @@ class LibrarySync(
             failures++
             // Local changes wait with the rest; only "retry now" cuts the wait short.
             withTimeoutOrNull(wait) { now.receive() }
+        }
+    }
+
+    /** Photos after a pass: uploads, then downloads. Best effort: a failure is retried by the next pass. */
+    private suspend fun coverStep(owner: String) {
+        val covers = coverSync ?: return
+        try {
+            val books = db.books.getAllAny()
+            covers.uploadPending(owner, books)
+            covers.downloadMissing(owner, books)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
         }
     }
 

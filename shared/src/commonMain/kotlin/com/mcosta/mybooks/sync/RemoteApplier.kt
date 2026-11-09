@@ -142,6 +142,8 @@ class RemoteApplier(
         if (local != null && merged.times["cover_url"] == localRow?.times?.get("cover_url")) book = book.copy(coverUrl = local.coverUrl)
         book = withFreeIsbn(book)
         if (local == null) book = book.copy(id = db.books.insert(book)) else db.books.update(book)
+        // A pulled change replaced the photo (another cover, or a new file name): the old file is no longer used.
+        local?.coverUrl?.takeIf { coverStore?.isLocal(it) == true && it != book.coverUrl }?.let { photos += it }
         if (!book.deleted) pulled += book
     }
 

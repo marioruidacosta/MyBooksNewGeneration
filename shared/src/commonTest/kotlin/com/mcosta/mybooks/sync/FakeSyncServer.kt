@@ -30,18 +30,27 @@ class FakeSyncServer(
     /** The server's reason to set a pushed (or merged) row aside, or null to apply it. */
     var refuse: (SyncRow) -> String? = { null }
 
-    /** Every data call ("push", "pull", "merge", "cover"), with the [clock] time it was made at, failed ones included. */
+    /** Every data call ("push", "pull", "merge", "cover-up", "cover-down"), with the [clock] time it was made at, failed ones included. */
     val calls = mutableListOf<Pair<String, Long>>()
+
+    /** Thrown by every cover upload while set (STORAGE_FULL, say); data calls are unaffected. */
+    var uploadFail: SyncException? = null
+
+    /** Thrown by every cover download while set. */
+    var downloadFail: SyncException? = null
 
     private val rows = mutableMapOf<String, MutableMap<Pair<SyncTable, String>, SyncRow>>()
     private val covers = mutableMapOf<String, ByteArray>()
+
+    /** The stored cover of [bookUuid] for [forOwner], if any. */
+    fun cover(bookUuid: String, forOwner: String = owner): ByteArray? = covers["$forOwner/$bookUuid.jpg"]
     private val pingFlow = MutableSharedFlow<String>(extraBufferCapacity = 64)
     private var seq = 0L
 
     /** The rows stored for [forOwner], by table and id. */
     fun stored(forOwner: String = owner): Map<Pair<SyncTable, String>, SyncRow> = rows[forOwner].orEmpty()
 
-    private fun check(call: String = "cover") {
+    private fun check(call: String) {
         calls += call to clock()
         failNext?.let {
             if (--failTimes <= 0) {
@@ -130,12 +139,14 @@ class FakeSyncServer(
     override fun pings(owner: String): Flow<Unit> = pingFlow.filter { it == owner }.map { }
 
     override suspend fun uploadCover(owner: String, bookUuid: String, jpeg: ByteArray) {
-        check()
+        check("cover-up")
+        uploadFail?.let { throw it }
         covers["$owner/$bookUuid.jpg"] = jpeg
     }
 
     override suspend fun downloadCover(owner: String, bookUuid: String): ByteArray? {
-        check()
+        check("cover-down")
+        downloadFail?.let { throw it }
         return covers["$owner/$bookUuid.jpg"]
     }
 }
