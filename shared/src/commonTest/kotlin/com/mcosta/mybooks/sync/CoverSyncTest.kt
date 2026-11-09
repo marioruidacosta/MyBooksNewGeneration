@@ -241,4 +241,26 @@ class CoverSyncTest {
         assertNull(a.covers.read("cover:x.jpg"))
         assertEquals(emptyList(), a.fs.listOrNull("/covers".toPath()).orEmpty())
     }
+
+    @Test
+    fun replacedPhotoReachesOtherDeviceWithRealisticNames() = runTest {
+        val server = server()
+        val a = phone(server)
+        val b = phone(server)
+        a.covers.put("9f3a1c2e.jpg", byteArrayOf(1, 1))
+        a.seed("x", "cover:9f3a1c2e.jpg")
+        advanceTimeBy(1_000)
+        a.edit("x") { it.copy(rating = 4) }
+        for (p in listOf(a, b)) p.sync.start(OWNER)
+        advanceUntilIdle()
+        assertContentEquals(byteArrayOf(1, 1), b.covers.read("cover:x.jpg"))
+
+        a.covers.put("c7b2d4e6.jpg", byteArrayOf(2, 2, 2))
+        advanceTimeBy(1_000)
+        a.edit("x") { it.copy(coverUrl = "cover:c7b2d4e6.jpg") }
+        advanceUntilIdle()
+
+        assertContentEquals(byteArrayOf(2, 2, 2), b.covers.read("cover:x.jpg"))
+        assertEquals(2, server.count("cover-down"))
+    }
 }

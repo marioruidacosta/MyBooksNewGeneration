@@ -25,6 +25,9 @@ internal fun coverKey(uuid: String) = "cover:$uuid"
 /** `sync_state` key noting that the cloud had no photo for a book (value: the cover's time, then when it was asked). */
 internal fun coverMissingKey(uuid: String) = "cover-missing:$uuid"
 
+/** `sync_state` key holding the cover_url time of the photo last downloaded for a book. */
+internal fun coverGotKey(uuid: String) = "cover-got:$uuid"
+
 /**
  * Cover photos travel apart from the rows (which only say "photo"): uploaded after a push, downloaded after a pull.
  * The network calls run outside any lock; what they leave behind (a file, a marker) is written through [commit], which
@@ -73,13 +76,20 @@ class CoverSync(
     suspend fun downloadMissing(owner: String, books: List<BookEntity>) {
         val wanted = books.filter { book ->
             val ref = book.coverUrl
-            !book.deleted && covers.nameOf(ref) == "${book.uuid}.jpg" && !covers.exists(ref) && !recentlyMissing(book)
+            !book.deleted && covers.nameOf(ref) == "${book.uuid}.jpg" && needsDownload(book) && !recentlyMissing(book)
         }
         if (wanted.isEmpty()) return
         val gate = Semaphore(DOWNLOADS_AT_ONCE)
         coroutineScope {
             wanted.map { book -> async { gate.withPermit { download(owner, book) } } }.awaitAll()
         }
+    }
+
+    /** The file is missing, or the cover was replaced (a newer cover_url time) since the one downloaded. */
+    private suspend fun needsDownload(book: BookEntity): Boolean {
+        if (!covers.exists(book.coverUrl)) return true
+        val got = state.get(coverGotKey(book.uuid))?.toLongOrNull() ?: return false
+        return coverTime(book) > got
     }
 
     private suspend fun recentlyMissing(book: BookEntity): Boolean {
@@ -98,6 +108,7 @@ class CoverSync(
             // Tried again on the next pull.
             return
         }
+        val time = coverTime(book)
         val name = "${book.uuid}.jpg"
         if (jpeg == null) {
             commit { state.set(coverMissingKey(book.uuid), "${coverTime(book)}@${clock()}") }
@@ -107,6 +118,9 @@ class CoverSync(
             covers.put(name, jpeg)
             // Fetched, so not sent back.
             state.set(coverKey(book.uuid), name)
+            state.set(coverGotKey(book.uuid), time.toString())
+            // No longer missing (an empty value reads as no record).
+            if (state.get(coverMissingKey(book.uuid)) != null) state.set(coverMissingKey(book.uuid), "")
         }
     }
 }
