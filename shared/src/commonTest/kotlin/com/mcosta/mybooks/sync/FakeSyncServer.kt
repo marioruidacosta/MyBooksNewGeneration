@@ -110,8 +110,10 @@ class FakeSyncServer(
             val authorKey = searchKey(text(b, "authors").substringBefore(',')).trim()
             val match = (if (isbn.isNotEmpty()) live.firstOrNull { text(it, "isbn") == isbn } else null)
                 ?: if (titleKey.isNotEmpty()) {
+                    // Title and first author only when a side has no ISBN: two different ISBNs are two books.
                     live.firstOrNull {
-                        catalogTitleKey(text(it, "title")).trim() == titleKey &&
+                        (isbn.isEmpty() || text(it, "isbn").trim().isEmpty()) &&
+                            catalogTitleKey(text(it, "title")).trim() == titleKey &&
                             searchKey(text(it, "authors").substringBefore(',')).trim() == authorKey
                     }
                 } else null

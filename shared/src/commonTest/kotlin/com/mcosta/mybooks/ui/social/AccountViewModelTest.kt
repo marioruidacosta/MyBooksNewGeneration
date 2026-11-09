@@ -225,6 +225,9 @@ class AccountViewModelTest : MainDispatcherTest() {
         assertTrue(library.queue.rows.value.isEmpty())
         assertTrue(library.state.rows.isEmpty())
         assertEquals(SyncStatus.Off, library.sync.status.value)
+        // Sign-out is over: sync can start again (the next sign-in).
+        library.sync.start(ana)
+        assertEquals(SyncStatus.Syncing, library.sync.status.value)
     }
 
     @Test

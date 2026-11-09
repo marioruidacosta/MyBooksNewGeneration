@@ -306,7 +306,7 @@ revoke all on function _fold(text) from public, anon, authenticated;
 
 -- Joins a device's local books to the cloud library the first time it signs in: each book is matched to a stored,
 -- not deleted cloud book (ISBN first, then, when either side has no ISBN, title before ':' plus first author before ',')
--- and merged into it, or-- inserted under its own id. Returns {"ids": {local id: cloud id}, "set_aside": [...]}. At most 100 books per call.
+-- and merged into it, or inserted under its own id. Returns {"ids": {local id: cloud id}, "set_aside": [...]}. At most 100 books per call.
 create function merge_library(books jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare

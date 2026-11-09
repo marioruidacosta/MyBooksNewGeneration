@@ -105,8 +105,12 @@ class AccountViewModel(
     /** The answer to "Keep a copy of your library on this device?". */
     fun signOut(keepLibrary: Boolean) = launchAction {
         _state.update { it.copy(askKeepLibrary = false) }
-        sync?.signOut(keepLibrary)
-        services.auth.signOut()
+        try {
+            sync?.signOut(keepLibrary)
+            services.auth.signOut()
+        } finally {
+            sync?.signOutFinished()
+        }
         _state.update { AccountState(signedOut = true) }
     }
 

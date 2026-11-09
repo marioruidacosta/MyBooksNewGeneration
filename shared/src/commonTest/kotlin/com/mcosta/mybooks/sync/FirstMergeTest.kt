@@ -15,6 +15,7 @@ import com.mcosta.mybooks.data.db.ChallengeEntity
 import com.mcosta.mybooks.data.db.EbookEntity
 import com.mcosta.mybooks.data.db.QuoteEntity
 import com.mcosta.mybooks.data.db.ShareStateEntity
+import com.mcosta.mybooks.data.db.ShareStateDao
 import com.mcosta.mybooks.data.db.toBook
 import com.mcosta.mybooks.data.ebooks.EbookFiles
 import com.mcosta.mybooks.domain.EbookFormat
@@ -64,6 +65,29 @@ private class FlakyMerge(private val server: FakeSyncServer, private val failCal
     }
 }
 
+/** Share state that fails every call while [fail] is set, like a process dying before it gets there. */
+private class FlakyShareDao(private val inner: FakeShareStateDao = FakeShareStateDao()) : ShareStateDao by inner {
+    var fail = false
+    val rows get() = inner.rows
+
+    private fun check() = check(!fail) { "share state unavailable" }
+
+    override suspend fun get(bookId: Long): ShareStateEntity? {
+        check()
+        return inner.get(bookId)
+    }
+
+    override suspend fun upsert(row: ShareStateEntity) {
+        check()
+        inner.upsert(row)
+    }
+
+    override suspend fun all(): List<ShareStateEntity> {
+        check()
+        return inner.all()
+    }
+}
+
 /** One phone, signed in for the first time: its library, share state, files and engine. */
 private class Phone(api: SyncApi, scope: CoroutineScope, clock: () -> Long) {
     val books = FakeBookDao()
@@ -73,7 +97,7 @@ private class Phone(api: SyncApi, scope: CoroutineScope, clock: () -> Long) {
     val challenges = FakeChallengeDao()
     val queue = FakeSyncQueueDao()
     val state = FakeSyncStateDao()
-    val shareDao = FakeShareStateDao()
+    val shareDao = FlakyShareDao()
     val fs = FakeFileSystem()
     val covers = CoverStore(fs, "/covers".toPath())
     val ebookFiles = EbookFiles(fs, "/ebooks".toPath())
@@ -91,7 +115,7 @@ private class Phone(api: SyncApi, scope: CoroutineScope, clock: () -> Long) {
         api, db, recorder, applier, clock, scope, shares = shares, coverStore = covers, ebookFiles = ebookFiles,
     )
 
-    fun merge(api: SyncApi) = FirstMerge(api, db, applier, shares, covers, ebookFiles)
+    fun merge(api: SyncApi) = FirstMerge(api, db, applier, shares, covers)
 
     fun live() = books.rows.value.values.filter { !it.deleted }
     fun book(uuid: String): BookEntity? = books.rows.value.values.firstOrNull { it.uuid == uuid }
@@ -354,5 +378,192 @@ class FirstMergeTest {
         assertEquals(SyncStatus.Off, phone.sync.status.value)
         // The cloud library is untouched.
         assertEquals(1, server.liveBooks().size)
+    }
+
+    // ---- review fixes ----
+
+    private suspend fun Phone.addEbook(bookId: Long, lastOpened: Long) {
+        ebookFiles.store(bookId, EbookFormat.EPUB, Buffer().writeUtf8("epub of $bookId"))
+        ebooks.upsert(
+            EbookEntity(
+                bookId, EbookFormat.EPUB, "$bookId.epub", 4, 0, lastOpened = lastOpened,
+                uuid = books.getById(bookId)!!.uuid,
+            ),
+        )
+    }
+
+    private suspend fun Phone.share(bookId: Long, shareId: String) = shareDao.upsert(
+        ShareStateEntity(
+            bookId, shareId = shareId, owner = OWNER, hasBefore = false, beforeStatus = null, beforeRating = null,
+            beforeProgress = null, beforeReview = null, pending = false, excluded = false, deleted = false,
+        ),
+    )
+
+    private fun TestScope.publisher(phone: Phone, social: FakeSocial) = Publisher(
+        phone.shareDao, loadBook = { phone.books.getById(it)?.toBook() }, activity = social.activityService,
+        activeOwner = { OWNER }, scope = backgroundScope,
+    )
+
+    @Test
+    fun twinsBothWithEbooksKeepNewerAndDeleteNoFile() = runTest {
+        val phone = phone(server())
+        val a = phone.books.insert(book("a", "Os Maias", isbn = "9789720049572"))
+        val b = phone.books.insert(book("b", "Os Maias: episódios"))
+        phone.addEbook(a, lastOpened = 100)
+        phone.addEbook(b, lastOpened = 900)
+
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+
+        val kept = phone.live().single()
+        val ebook = phone.ebooks.get(kept.id)!!
+        assertEquals(900L, ebook.lastOpened)
+        assertEquals(kept.uuid, ebook.uuid)
+        assertTrue(phone.ebookFiles.exists(kept.id, EbookFormat.EPUB))
+        // The other copy's file stays on disk: it may exist only on this phone.
+        assertTrue(phone.ebookFiles.exists(a, EbookFormat.EPUB))
+        assertTrue(phone.ebookFiles.exists(b, EbookFormat.EPUB))
+        assertEquals(1, phone.sync.ebooksLeftOnDisk.value)
+    }
+
+    @Test
+    fun interruptedAfterCommitReplaysMoves() = runTest {
+        val server = server()
+        server.push(listOf(book("C", "Os Maias", isbn = "9789720049572", time = 500).toRow(null)))
+        val phone = phone(server)
+        val a = phone.books.insert(book("S", "Os Maias", isbn = "9789720049572"))
+        val b = phone.books.insert(book("b", "Os Maias: episódios"))
+        phone.addEbook(b, lastOpened = 900)
+        phone.share(a, "S")
+
+        // The process dies after the batch is stored, before the share state is moved.
+        phone.shareDao.fail = true
+        runCatching { phone.merge(server).run(OWNER) }
+        phone.shareDao.fail = false
+        // The app starts again.
+        phone.merge(server).run(OWNER)
+
+        val kept = phone.live().single()
+        assertEquals("C", kept.uuid)
+        assertNotNull(phone.ebooks.get(kept.id))
+        assertTrue(phone.ebookFiles.exists(kept.id, EbookFormat.EPUB))
+        assertEquals("C", phone.shareDao.get(kept.id)!!.shareId)
+        val social = FakeSocial()
+        publisher(phone, social).syncNow()
+        assertEquals(listOf("S"), social.unpublished)
+        assertEquals(listOf("C"), social.published.map { it.first.shareId })
+        assertEquals(listOf(kept.id), phone.shareDao.all().map { it.bookId })
+    }
+
+    @Test
+    fun sharedBookIsPublishedWithMergedValues() = runTest {
+        val server = server()
+        server.push(listOf(book("C", "Os Maias", isbn = "9789720049572", time = 500).copy(rating = 5).toRow(null)))
+        val phone = phone(server)
+        val id = phone.books.insert(book("S", "Os Maias", isbn = "9789720049572").copy(rating = 2))
+        phone.share(id, "S")
+
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+
+        val social = FakeSocial()
+        publisher(phone, social).syncNow()
+        val (state, before) = social.published.single()
+        assertEquals("C", state.shareId)
+        assertEquals(5, state.rating)
+        // Published against the merged values: the merge itself adds nothing to the feed.
+        assertEquals(state, before)
+    }
+
+    @Test
+    fun startDuringSignOutIsIgnored() = runTest {
+        val server = server()
+        server.push(listOf(book("c", "Os Maias").toRow(null)))
+        val phone = phone(server)
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+
+        phone.sync.signOut(keepLibrary = false)
+        // Something starts sync again before the account is signed out (session observer, foreground).
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+        assertTrue(phone.books.rows.value.isEmpty())
+        assertEquals(SyncStatus.Off, phone.sync.status.value)
+
+        phone.sync.signOutFinished()
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+        assertEquals(listOf("c"), phone.live().map { it.uuid })
+    }
+
+    @Test
+    fun twinNotesAreConcatenated() = runTest {
+        val server = server()
+        val phone = phone(server)
+        phone.books.insert(
+            book("a", "Os Maias", isbn = "9789720049572").copy(notes = "Primeira leitura", review = "Bom")
+                .retimed("notes" to 300, "review" to 300),
+        )
+        phone.books.insert(book("b", "Os Maias: episódios").copy(notes = "Releitura").retimed("notes" to 400))
+
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+
+        val kept = phone.live().single()
+        assertEquals("Releitura\n\nPrimeira leitura", kept.notes)
+        assertEquals("Bom", kept.review)
+        val cloud = server.liveBooks().single()
+        assertEquals("Releitura\n\nPrimeira leitura", cloud.fields["notes"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun differentIsbnsAreNotMerged() = runTest {
+        val server = server()
+        server.push(listOf(book("cloud", "Os Maias", isbn = "9789720049572", time = 500).toRow(null)))
+        val phone = phone(server)
+        phone.books.insert(book("local", "Os Maias: episódios", isbn = "9789720049573"))
+
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+
+        assertEquals(setOf("cloud", "local"), phone.live().map { it.uuid }.toSet())
+        assertEquals(setOf("cloud", "local"), server.liveBooks().map { it.id }.toSet())
+    }
+
+    @Test
+    fun emptyDevicePullsFromZeroAndUploadsGoals() = runTest {
+        val server = server()
+        server.push(listOf(book("c", "Os Maias").toRow(null)))
+        val phone = phone(server)
+        // A cursor left by another account.
+        phone.state.set("seq", "5")
+        phone.challenges.upsert(ChallengeEntity(2026, 30, timesJson(mapOf("goal" to 10L, "deleted" to 10L))))
+
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+
+        assertEquals(listOf("c"), phone.live().map { it.uuid })
+        assertEquals(30, server.stored()[SyncTable.CHALLENGES to "2026"]?.fields?.get("goal")?.jsonPrimitive?.intOrNull)
+        assertTrue(phone.queue.rows.value.isEmpty())
+    }
+
+    @Test
+    fun neverSyncedLocalDeletionsAreUploadedOnFirstMerge() = runTest {
+        // A device whose only row is a deletion (the empty-device path), and one with a live book too.
+        for (withLiveBook in listOf(false, true)) {
+            val server = server()
+            server.push(listOf(book("gone", "Mau").toRow(null)))
+            val phone = phone(server)
+            phone.books.insert(book("gone", "Mau").copy(deleted = true).retimed("deleted" to 200))
+            if (withLiveBook) phone.books.insert(book("x", "Os Maias"))
+
+            phone.sync.start(OWNER)
+            advanceUntilIdle()
+
+            val cloud = server.stored()[SyncTable.BOOKS to "gone"]!!
+            assertEquals(true, (cloud.fields["deleted"] as? JsonPrimitive)?.booleanOrNull, "withLiveBook=$withLiveBook")
+            assertNull(phone.book("gone"), "withLiveBook=$withLiveBook")
+            phone.sync.stop()
+        }
     }
 }

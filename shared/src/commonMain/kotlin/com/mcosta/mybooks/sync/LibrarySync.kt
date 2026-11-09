@@ -74,10 +74,13 @@ class LibrarySync(
     /** Changes the server refused (set aside) since [start]; they left the queue, the device keeps its values. */
     val setAside: StateFlow<Int> = _setAside.asStateFlow()
 
-    private val firstMerge = FirstMerge(api, db, applier, shares, coverStore, ebookFiles) { n -> _setAside.update { it + n } }
+    private val firstMerge = FirstMerge(api, db, applier, shares, coverStore) { n -> _setAside.update { it + n } }
 
     /** (books done, books in all) while the first sign-in merge combines the libraries; null otherwise. */
     val mergeProgress: StateFlow<Pair<Int, Int>?> = firstMerge.progress
+
+    /** Ebook files the first sign-in merge left on disk when it combined two copies of a book (see [FirstMerge]). */
+    val ebooksLeftOnDisk: StateFlow<Int> = firstMerge.ebooksLeftOnDisk
 
     /**
      * One signed-in run. [wake]: something changed here or on the server. [now]: retry now (connection back,
@@ -96,11 +99,16 @@ class LibrarySync(
     @Volatile
     private var session: Session? = null
 
+    /** Set from [signOut] until [signOutFinished]: [start] does nothing meanwhile. */
+    @Volatile
+    private var signingOut = false
+
     /** Keeps a stopping session's last pass from overlapping the next session's first. */
     private val passLock = Mutex()
 
-    /** Starts syncing [owner]'s library; does nothing if it already is. */
+    /** Starts syncing [owner]'s library; does nothing if it already is, or while signing out (until [signOutFinished]). */
     fun start(owner: String) {
+        if (signingOut) return
         val current = session
         if (current != null && current.owner == owner && current.job.isActive) return
         stop()
@@ -132,8 +140,11 @@ class LibrarySync(
      * Signing out: sync stops, and the queue and sync state are cleared (signing in again, to any account, runs the
      * first sign-in merge). [keepLibrary] false also erases the library: books, quotes, ebooks, bookmarks, challenges,
      * share state, cover photos and ebook files. The cloud library is untouched either way.
+     * From here until [signOutFinished], [start] does nothing: a start meanwhile (the session observer, the app coming
+     * back to the foreground) would sync, and after Remove pull, the library being signed out of.
      */
     suspend fun signOut(keepLibrary: Boolean) {
+        signingOut = true
         stop()
         val photos = mutableListOf<String>()
         val files = mutableListOf<Pair<Long, EbookFormat>>()
@@ -159,6 +170,11 @@ class LibrarySync(
         }
         photos.forEach { coverStore?.delete(it) }
         files.forEach { (book, format) -> ebookFiles?.delete(book, format) }
+    }
+
+    /** The account is signed out (or signing out failed): [start] works again. */
+    fun signOutFinished() {
+        signingOut = false
     }
 
     /** Pushes and pulls now, and returns when that pass is over (pull-to-refresh, app back in the foreground). */
