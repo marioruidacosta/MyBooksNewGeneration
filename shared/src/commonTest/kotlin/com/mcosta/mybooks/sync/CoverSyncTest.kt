@@ -263,4 +263,31 @@ class CoverSyncTest {
         assertContentEquals(byteArrayOf(2, 2, 2), b.covers.read("cover:x.jpg"))
         assertEquals(2, server.count("cover-down"))
     }
+
+    @Test
+    fun coverFileWithoutRecordIsRefreshedOnce() = runTest {
+        val server = server()
+        val a = phone(server)
+        val b = phone(server)
+        // B has a stale <uuid>.jpg (say a backup restore) and no sync_state about it.
+        b.covers.put("x.jpg", byteArrayOf(1))
+        b.seed("x", "cover:x.jpg")
+        a.covers.put("9f3a1c2e.jpg", byteArrayOf(2, 2))
+        a.seed("x")
+        advanceTimeBy(1_000)
+        a.edit("x") { it.copy(coverUrl = "cover:9f3a1c2e.jpg") }
+        a.sync.start(OWNER)
+        advanceUntilIdle()
+
+        b.sync.start(OWNER)
+        advanceUntilIdle()
+        assertContentEquals(byteArrayOf(2, 2), b.covers.read("cover:x.jpg"))
+        assertEquals("1000", b.state.rows["cover-got:x"])
+        // The stale file was not sent over A's photo.
+        assertContentEquals(byteArrayOf(2, 2), server.cover("x"))
+
+        b.sync.refresh()
+        advanceUntilIdle()
+        assertEquals(1, server.count("cover-down"))
+    }
 }

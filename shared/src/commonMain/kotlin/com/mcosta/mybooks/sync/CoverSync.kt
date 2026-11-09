@@ -88,7 +88,8 @@ class CoverSync(
     /** The file is missing, or the cover was replaced (a newer cover_url time) since the one downloaded. */
     private suspend fun needsDownload(book: BookEntity): Boolean {
         if (!covers.exists(book.coverUrl)) return true
-        val got = state.get(coverGotKey(book.uuid))?.toLongOrNull() ?: return false
+        // No record (restored backup, lost sync state): counts as time 0, so the file is refreshed once.
+        val got = state.get(coverGotKey(book.uuid))?.toLongOrNull() ?: 0L
         return coverTime(book) > got
     }
 

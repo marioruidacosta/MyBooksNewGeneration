@@ -275,8 +275,9 @@ class LibrarySync(
         val covers = coverSync ?: return
         try {
             val books = db.books.getAllAny()
-            covers.uploadPending(owner, books)
+            // Downloads first: a stale file just refreshed is then marked uploaded, not sent over the newer photo.
             covers.downloadMissing(owner, books)
+            covers.uploadPending(owner, books)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
