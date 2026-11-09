@@ -21,7 +21,8 @@ class LibraryFilesTest {
     fun accountPathsAreUnderLibraries() {
         val id = LibraryId.Account("u1")
         assertEquals(filesDir / "libraries" / "u1" / "covers", files.coversDir(id))
-        assertEquals(filesDir / "libraries" / "u1" / "ebooks", files.ebooksDir(id))
+        // Ebooks stay outside the backed-up libraries folder (backup quota).
+        assertEquals(filesDir / "ebooks" / "u1", files.ebooksDir(id))
     }
 
     @Test
@@ -32,11 +33,16 @@ class LibraryFilesTest {
         for (id in all) {
             fs.createDirectories(files.coversDir(id))
             fs.write(files.coversDir(id) / "x.jpg") { writeUtf8("x") }
+            fs.createDirectories(files.ebooksDir(id))
+            fs.write(files.ebooksDir(id) / "b.epub") { writeUtf8("b") }
         }
         files.deleteAll(a)
         assertTrue(!fs.exists(files.coversDir(a)))
         assertTrue(!fs.exists(filesDir / "libraries" / "a"))
+        assertTrue(!fs.exists(files.ebooksDir(a)))
         assertTrue(fs.exists(files.coversDir(b) / "x.jpg"))
+        assertTrue(fs.exists(files.ebooksDir(b) / "b.epub"))
+        assertTrue(fs.exists(files.ebooksDir(LibraryId.Local) / "b.epub"))
         assertTrue(fs.exists(files.coversDir(LibraryId.Local) / "x.jpg"))
         files.deleteAll(LibraryId.Local)
         assertTrue(fs.exists(files.coversDir(LibraryId.Local) / "x.jpg"))
