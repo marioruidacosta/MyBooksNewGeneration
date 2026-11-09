@@ -4,6 +4,15 @@
 
 create sequence if not exists library_seq;
 
+-- Case- and accent-insensitive key, like the app's searchKey: NFD, drop the combining marks, lowercase.
+-- Immutable: library_books.match_key is generated from it.
+create function _fold(p_text text) returns text
+language sql immutable set search_path = public, pg_temp as $$
+  select lower(regexp_replace(normalize(coalesce(p_text, ''), NFD),
+    E'[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F]', '', 'g'));
+$$;
+revoke all on function _fold(text) from public, anon, authenticated;
+
 -- Every table: owner + id (the device-independent key), the synced fields as columns, field_times (field -> ms, set
 -- by the server), deleted (a marker that reaches other devices) and seq (the pull cursor, from one shared sequence).
 create table library_books (
@@ -34,6 +43,9 @@ create table library_books (
   series_number text check (char_length(series_number) <= 100),
   lent_to text check (char_length(lent_to) <= 100),
   lent_on bigint,
+  -- What merge_library matches a book without ISBN by: title before ':' and first author before ',', folded.
+  match_key text generated always as (
+    btrim(_fold(split_part(title, ':', 1))) || '|' || btrim(_fold(split_part(authors, ',', 1)))) stored,
   primary key (owner, id)
 );
 
@@ -103,6 +115,9 @@ create table library_prefs (
 );
 
 create index library_books_owner_seq_idx on library_books (owner, seq);
+-- merge_library's lookups: by ISBN, and by title and first author.
+create index library_books_owner_isbn_idx on library_books (owner, isbn);
+create index library_books_owner_match_key_idx on library_books (owner, match_key);
 create index library_quotes_owner_seq_idx on library_quotes (owner, seq);
 create index library_challenges_owner_seq_idx on library_challenges (owner, seq);
 create index library_ebooks_owner_seq_idx on library_ebooks (owner, seq);
@@ -171,7 +186,7 @@ begin
   select array_agg(attname::text) into cols
   from pg_attribute
   where attrelid = ('public.' || tbl)::regclass and attnum > 0 and not attisdropped
-    and attname not in ('owner', 'id', 'field_times', 'seq');
+    and attgenerated = '' and attname not in ('owner', 'id', 'field_times', 'seq');
 
   execute format('select to_jsonb(t) from %I t where owner = $1 and id = $2 for update', tbl)
     into stored using p_owner, p_id;
@@ -239,9 +254,8 @@ begin
     begin
       perform _merge_row(c->>'table', me, c->>'id', c->'fields', c->'times');
       applied := applied || jsonb_build_object('table', c->>'table', 'id', c->>'id');
-    exception when check_violation or invalid_text_representation or string_data_right_truncation
-        or numeric_value_out_of_range or not_null_violation or invalid_parameter_value
-        or datetime_field_overflow or invalid_datetime_format then
+    -- Any bad value (a data exception or an integrity violation, whatever its kind) sets that change aside alone.
+    exception when data_exception or integrity_constraint_violation then
       set_aside := set_aside || jsonb_build_object('table', c->>'table', 'id', c->>'id', 'reason', sqlerrm);
     end;
   end loop;
@@ -264,7 +278,8 @@ begin
     select u.seq, jsonb_build_object('table', u.tbl, 'id', u.id, 'fields', u.fields, 'times', u.field_times,
                                      'deleted', u.deleted, 'seq', u.seq) as j
     from (
-      select 'books' as tbl, id, seq, field_times, deleted, to_jsonb(t) - 'owner' - 'id' - 'field_times' - 'deleted' - 'seq' as fields
+      select 'books' as tbl, id, seq, field_times, deleted,
+          to_jsonb(t) - 'owner' - 'id' - 'field_times' - 'deleted' - 'seq' - 'match_key' as fields
         from library_books t where owner = me and seq > coalesce(after, 0)
       union all
       select 'quotes', id, seq, field_times, deleted, to_jsonb(t) - 'owner' - 'id' - 'field_times' - 'deleted' - 'seq'
@@ -296,13 +311,44 @@ grant execute on function sync_push(jsonb) to authenticated;
 revoke all on function sync_pull(bigint, int) from public, anon;
 grant execute on function sync_pull(bigint, int) to authenticated;
 
--- Case- and accent-insensitive key, like the app's searchKey: NFD, drop the combining marks, lowercase.
-create function _fold(p_text text) returns text
-language sql immutable set search_path = public, pg_temp as $$
-  select lower(regexp_replace(normalize(coalesce(p_text, ''), NFD),
-    E'[\u0300-\u036F\u1AB0-\u1AFF\u1DC0-\u1DFF\u20D0-\u20FF\uFE20-\uFE2F]', '', 'g'));
+-- A device's book matched to a cloud book, where neither side has a real time (> 0) for a field: both libraries
+-- predate sync, so "newest wins" can't choose. Notes and reviews that differ are both kept: the cloud's text, a blank
+-- line, then the incoming one, timed now so every device takes the joined text (cut to the column's limit). Any other
+-- such field keeps a value over an empty one (null or ''). Returns {"fields": ..., "times": ...} for _merge_row.
+create function _merge_untimed(p_cloud jsonb, p_fields jsonb, p_times jsonb) returns jsonb
+language plpgsql set search_path = public, pg_temp as $$
+declare
+  fields jsonb := coalesce(p_fields, '{}'::jsonb);
+  times jsonb := coalesce(p_times, '{}'::jsonb);
+  cloud_times jsonb := coalesce(p_cloud->'field_times', '{}'::jsonb);
+  now_ms bigint := floor(extract(epoch from clock_timestamp()) * 1000)::bigint;
+  f text;
+  theirs text;
+  mine text;
+begin
+  for f in select jsonb_object_keys(fields) loop
+    continue when f = 'deleted' or not (p_cloud ? f);
+    continue when coalesce((times->>f)::bigint, 0) > 0 or coalesce((cloud_times->>f)::bigint, 0) > 0;
+    theirs := nullif(p_cloud->>f, '');
+    mine := nullif(fields->>f, '');
+    if f in ('notes', 'review') and btrim(coalesce(theirs, '')) <> '' and btrim(coalesce(mine, '')) <> '' then
+      if theirs <> mine then
+        fields := jsonb_set(fields, array[f],
+          to_jsonb(left(theirs || E'\n\n' || mine, case f when 'notes' then 20000 else 2000 end)));
+        times := jsonb_set(times, array[f], to_jsonb(now_ms));
+      end if;
+    elsif mine is not null and theirs is null then
+      -- Past the cloud's 0 or missing time, behind any real one.
+      times := jsonb_set(times, array[f], to_jsonb(1));
+    elsif mine is null and theirs is not null then
+      fields := fields - f;
+      times := times - f;
+    end if;
+  end loop;
+  return jsonb_build_object('fields', fields, 'times', times);
+end;
 $$;
-revoke all on function _fold(text) from public, anon, authenticated;
+revoke all on function _merge_untimed(jsonb, jsonb, jsonb) from public, anon, authenticated;
 
 -- Joins a device's local books to the cloud library the first time it signs in: each book is matched to a stored,
 -- not deleted cloud book (its own id first, then ISBN, then, when either side has no ISBN, title before ':' plus
@@ -314,6 +360,8 @@ declare
   me uuid := require_user();
   b jsonb;
   f jsonb;
+  t jsonb;
+  m jsonb;
   cloud_id text;
   isbn_in text;
   title_key text;
@@ -337,21 +385,28 @@ begin
         select id into cloud_id from library_books
           where owner = me and not deleted and isbn = isbn_in order by seq limit 1;
       end if;
-      -- Title and first author only when a side has no ISBN: two different ISBNs are two books (or editions).
+      -- Title and first author only when a side has no ISBN: two different ISBNs are two books (or editions). The
+      -- indexed match_key finds the candidates; the key's parts are compared too ('|' could be in a title).
       if cloud_id is null and title_key <> '' then
         select id into cloud_id from library_books
           where owner = me and not deleted
+            and match_key = title_key || '|' || author_key
             and (isbn_in is null or nullif(btrim(isbn), '') is null)
             and btrim(_fold(split_part(title, ':', 1))) = title_key
             and btrim(_fold(split_part(authors, ',', 1))) = author_key
           order by seq limit 1;
       end if;
+      t := coalesce(b->'times', '{}'::jsonb);
+      if cloud_id is not null then
+        select _merge_untimed(to_jsonb(lb), f, t) into m from library_books lb where owner = me and id = cloud_id;
+        f := m->'fields';
+        t := m->'times';
+      end if;
       cloud_id := coalesce(cloud_id, b->>'id');
-      perform _merge_row('books', me, cloud_id, f, b->'times');
+      perform _merge_row('books', me, cloud_id, f, t);
       ids := ids || jsonb_build_object(b->>'id', cloud_id);
-    exception when check_violation or invalid_text_representation or string_data_right_truncation
-        or numeric_value_out_of_range or not_null_violation or invalid_parameter_value
-        or datetime_field_overflow or invalid_datetime_format then
+    -- Any bad value (a data exception or an integrity violation, whatever its kind) sets that change aside alone.
+    exception when data_exception or integrity_constraint_violation then
       set_aside := set_aside || jsonb_build_object('id', b->>'id', 'reason', sqlerrm);
     end;
   end loop;
@@ -364,8 +419,11 @@ $$;
 revoke all on function merge_library(jsonb) from public, anon;
 grant execute on function merge_library(jsonb) to authenticated;
 
--- Private cover images, one folder per owner: covers/<owner uuid>/<file>.
-insert into storage.buckets (id, name, public) values ('covers', 'covers', false) on conflict (id) do nothing;
+-- Private cover images, one folder per owner: covers/<owner uuid>/<file>. At most 2 MB, JPEG only (the app's photos).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('covers', 'covers', false, 2097152, array['image/jpeg'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 create policy covers_select on storage.objects for select to authenticated
   using (bucket_id = 'covers' and (storage.foldername(name))[1] = (select auth.uid())::text);
 create policy covers_insert on storage.objects for insert to authenticated
