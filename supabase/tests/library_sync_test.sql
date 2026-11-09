@@ -199,6 +199,15 @@ select is(
     'fields','{"isbn":"555","title":"Válka s mloky","authors":"Karel Čapek"}'::jsonb,'times','{}'::jsonb)))->'ids'),
   '{"l7":"c5"}'::jsonb, 'merge_matches_title_when_cloud_has_no_isbn');
 
+-- A book that already has a cloud id (signed in again after a sign-out that kept the library) keeps it, even when
+-- another cloud book has the same title and author.
+select pg_temp.push_book('e1', '{"title":"Contos","authors":"Eça de Queirós"}', '{"title":1000,"authors":1000}');
+select pg_temp.push_book('e2', '{"title":"Contos","authors":"Eça de Queirós"}', '{"title":1000,"authors":1000}');
+select is(
+  (select merge_library(jsonb_build_array(jsonb_build_object('id','e2',
+    'fields','{"title":"Contos","authors":"Eça de Queirós"}'::jsonb,'times','{}'::jsonb)))->'ids'),
+  '{"e2":"e2"}'::jsonb, 'merge_matches_exact_id_first');
+
 -- covers_storage_isolation
 select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
 insert into storage.objects (bucket_id, name) values ('covers', '22222222-2222-2222-2222-222222222222/b.jpg');
