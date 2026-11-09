@@ -16,6 +16,7 @@ import com.mcosta.mybooks.social.model.Visibility
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
@@ -131,6 +132,52 @@ class SupabaseSocialTest : MainDispatcherTest() {
     fun hiddenPersonIsNull() = runTest {
         val social = social(mapOf("/rest/v1/profiles" to listOf(200 to "[]")))
         assertEquals(null, social.services.profiles.person("id-blocker"))
+    }
+
+    private fun coverObjects(range: IntRange) = range.joinToString(",", "[", "]") {
+        """{"name":"b$it.jpg","id":"id-$it","updated_at":"2026-11-09T10:00:00Z","created_at":"2026-11-09T10:00:00Z",""" +
+            """"last_accessed_at":"2026-11-09T10:00:00Z","metadata":{}}"""
+    }
+
+    @Test
+    fun deleteAccountRemovesCoverPhotosBeforeTheAccount() = runTest {
+        val social = social(
+            mapOf(
+                "/rest/v1/profiles" to listOf(200 to """[{"id":"me","username":"ana","display_name":"Ana","avatar_path":"me/avatar-1.jpg","visibility":"friends"}]"""),
+                // 103 photos: a full page of 100, then 3.
+                "/storage/v1/object/list/covers" to listOf(200 to coverObjects(1..100), 200 to coverObjects(101..103)),
+                "/storage/v1/object/covers" to listOf(200 to "[]", 200 to "[]"),
+                "/rest/v1/rpc/delete_my_account" to listOf(204 to ""),
+            ),
+        )
+
+        social.services.profiles.deleteAccount()
+
+        val paths = requests.map { it.first.method.value + " " + it.first.url.encodedPath }
+        val rpc = paths.indexOf("POST /rest/v1/rpc/delete_my_account")
+        assertTrue(rpc >= 0, paths.toString())
+        val lists = paths.indices.filter { paths[it] == "POST /storage/v1/object/list/covers" }
+        val removals = paths.indices.filter { paths[it] == "DELETE /storage/v1/object/covers" }
+        assertEquals(2, lists.size, paths.toString())
+        assertEquals(2, removals.size, paths.toString())
+        assertTrue((lists + removals).all { it < rpc }, paths.toString())
+        // Listed in the user's folder, removed by full path, at most 100 at a time.
+        assertTrue(requests[lists[0]].second.replace(" ", "").contains("\"prefix\":\"me\""), requests[lists[0]].second)
+        val removed = removals.flatMap { i ->
+            Json.parseToJsonElement(requests[i].second).jsonObject.getValue("prefixes").jsonArray.map { it.jsonPrimitive.content }
+        }
+        assertEquals((1..103).map { "me/b$it.jpg" }, removed)
+        assertEquals(100, Json.parseToJsonElement(requests[removals[0]].second).jsonObject.getValue("prefixes").jsonArray.size)
+    }
+
+    @Test
+    fun deleteAccountWithoutCoverPhotosRemovesNothing() = runTest {
+        val social = social(mapOf("/rest/v1/rpc/delete_my_account" to listOf(204 to "")))
+        social.services.profiles.deleteAccount()
+        val paths = requests.map { it.first.method.value + " " + it.first.url.encodedPath }
+        assertTrue("POST /storage/v1/object/list/covers" in paths, paths.toString())
+        assertTrue(paths.none { it == "DELETE /storage/v1/object/covers" }, paths.toString())
+        assertEquals("POST /rest/v1/rpc/delete_my_account", paths.last())
     }
 
     @Test

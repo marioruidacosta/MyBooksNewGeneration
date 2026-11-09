@@ -40,6 +40,7 @@ import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.exceptions.HttpRequestException
+import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.exception.PostgrestRestException
 import io.github.jan.supabase.postgrest.from
@@ -133,6 +134,9 @@ internal fun mapSocialError(e: Throwable): SocialException = when {
     else -> SocialException(SocialException.Kind.OTHER, e.message ?: "error", e)
 }
 
+/** Cover photos listed, and removed, per Storage call when deleting the account. */
+private const val COVERS_PAGE = 100
+
 internal class SupabaseSocial(
     private val client: SupabaseClient,
     private val currentUserId: () -> String? = { client.auth.currentUserOrNull()?.id },
@@ -160,6 +164,26 @@ internal class SupabaseSocial(
     }
 
     private suspend fun myFriendships(): List<FriendshipRow> = client.from("friendships").select().decodeList()
+
+    /** Every object in `covers/<owner>/`: listed a page at a time, then removed [COVERS_PAGE] at a time. */
+    private suspend fun removeCoverPhotos(owner: String) {
+        val bucket = client.storage.from("covers")
+        val names = mutableListOf<String>()
+        while (true) {
+            val page = try {
+                bucket.list(owner) {
+                    limit = COVERS_PAGE
+                    offset = names.size
+                }
+            } catch (e: RestException) {
+                // No covers bucket (library sync's migration not applied yet): nothing to remove.
+                if ("not found" in "${e.message} ${e.description}".lowercase()) emptyList() else throw e
+            }
+            names += page.map { "$owner/${it.name}" }
+            if (page.size < COVERS_PAGE) break
+        }
+        names.chunked(COVERS_PAGE).forEach { bucket.delete(it) }
+    }
 
     private val auth = object : AuthService {
         override val session: StateFlow<SessionState> = client.auth.sessionStatus.map { status ->
@@ -231,8 +255,11 @@ internal class SupabaseSocial(
         }
 
         override suspend fun deleteAccount() = call {
-            val avatar = client.from("profiles").select { filter { eq("id", me()) } }.decodeSingleOrNull<ProfileRow>()?.avatarPath
+            val me = me()
+            val avatar = client.from("profiles").select { filter { eq("id", me) } }.decodeSingleOrNull<ProfileRow>()?.avatarPath
             if (avatar != null) runCatching { client.storage.from("avatars").delete(avatar) }
+            // The library's cover photos go first: they'd outlive the account (or keep it from being deleted).
+            removeCoverPhotos(me)
             client.postgrest.rpc("delete_my_account")
             // The account is gone server-side; only the local session is left to clear.
             client.auth.clearSession()
