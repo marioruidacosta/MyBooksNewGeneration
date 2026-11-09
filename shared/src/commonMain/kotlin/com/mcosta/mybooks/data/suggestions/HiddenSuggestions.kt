@@ -23,7 +23,7 @@ class HiddenSuggestions(
     private val onChanged: (suspend (key: String) -> Unit)? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
-    private val _keys = MutableStateFlow(prefs?.get(KEY)?.split('\n')?.filter { it.isNotBlank() }?.toSet().orEmpty())
+    private val _keys = MutableStateFlow(parse(prefs?.get(KEY)))
     val keys: StateFlow<Set<String>> = _keys.asStateFlow()
 
     fun hide(key: String) = addAll(listOf(key))
@@ -33,11 +33,23 @@ class HiddenSuggestions(
         val all = _keys.value + keys.filter { it.isNotBlank() }
         if (all == _keys.value) return
         _keys.value = all
-        prefs?.set(KEY, all.sorted().joinToString("\n"))
+        prefs?.set(KEY, stored())
         onChanged?.let { scope.launch { try { it(KEY) } catch (e: CancellationException) { throw e } catch (_: Exception) { /* sync is best effort */ } } }
     }
 
-    private companion object {
+    /** The value as kept and synced: one key per line, sorted. */
+    fun stored(): String = _keys.value.sorted().joinToString("\n")
+
+    /** The value from another device (null: removed there): shown at once and kept, but not reported as a change. */
+    fun pulled(value: String?) {
+        _keys.value = parse(value)
+        prefs?.set(KEY, stored())
+    }
+
+    companion object {
+        /** The preference's key, also its id in sync. */
         const val KEY = "suggestions.hidden"
+
+        private fun parse(value: String?): Set<String> = value?.split('\n')?.filter { it.isNotBlank() }?.toSet().orEmpty()
     }
 }

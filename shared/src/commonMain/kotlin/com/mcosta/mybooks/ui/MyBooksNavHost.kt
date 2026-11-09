@@ -47,6 +47,7 @@ import com.mcosta.mybooks.ui.releases.ReleasesViewModel
 import com.mcosta.mybooks.ui.releases.ReleaseView
 import io.ktor.http.encodeURLPathPart
 import com.mcosta.mybooks.ui.social.AccountRoute
+import com.mcosta.mybooks.sync.SyncStatus
 import com.mcosta.mybooks.ui.social.ActivityScreen
 import com.mcosta.mybooks.ui.social.ActivityViewModel
 import com.mcosta.mybooks.ui.social.FriendsScreen
@@ -160,6 +161,9 @@ object Routes {
 fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened: () -> Unit = {}) {
     val social = container.social
     val sharing = container.sharingStatus?.state?.collectAsStateWithLifecycle()?.value ?: SharingState()
+    // While the library syncs: pull-to-refresh on Home and the library lists, and ebooks shown as on another device.
+    val syncOn = (container.sync?.status?.collectAsStateWithLifecycle()?.value ?: SyncStatus.Off) != SyncStatus.Off
+    val syncRefresh: (suspend () -> Unit)? = if (syncOn) container::syncNow else null
     val nav = rememberNavController()
     // Effects run after the graph is set, so the route can be opened here.
     LaunchedEffect(openRoute) {
@@ -251,6 +255,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     onScanSeveral = { nav.navigate(Routes.SCAN_SEVERAL) },
                     onAddEbook = pickEbook?.let { pick -> { pick(null) } },
                     onClassics = ebookPlatform?.let { { nav.navigate(Routes.CLASSICS) } },
+                    onRefresh = syncRefresh,
                     onAddManually = { nav.navigate(Routes.add()) },
                     onScan = {
                         scope.launch {
@@ -281,6 +286,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     onBack = { nav.popBackStack() },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     focusSearch = entry.savedStateHandle.get<Boolean>("search") == true,
+                    onRefresh = syncRefresh,
                 )
             }
             for ((route, kind) in listOf(Routes.TAG to "tag", Routes.SERIES to "series")) {
@@ -292,6 +298,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                         title = name,
                         onBack = { nav.popBackStack() },
                         onOpenBook = { nav.navigate(Routes.book(it)) },
+                        onRefresh = syncRefresh,
                     )
                 }
             }
@@ -344,6 +351,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     title = "Lent out",
                     onBack = { nav.popBackStack() },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
+                    onRefresh = syncRefresh,
                 )
             }
             composable(Routes.SEARCH) {
@@ -422,6 +430,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     viewModel = viewModel { BookDetailViewModel(container.repository, id, container.applicationScope, container.authors, container.quotes, container.ebooks) },
                     onRead = ebookPlatform?.let { p -> { p.openReader(id) } },
                     onAddEbookFile = pickEbook?.let { pick -> { pick(id) } },
+                    ebookElsewhere = syncOn,
                     onBack = { nav.popBackStack() },
                     onEdit = { nav.navigate(Routes.edit(id)) },
                     sharing = sharing,
@@ -554,7 +563,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     )
                 }
                 composable(Routes.ACCOUNT) {
-                    AccountRoute(social, container.sharingStatus, onBack = { nav.popBackStack() })
+                    AccountRoute(social, container.sharingStatus, onBack = { nav.popBackStack() }, sync = container.sync)
                 }
             }
             composable(Routes.EDIT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->

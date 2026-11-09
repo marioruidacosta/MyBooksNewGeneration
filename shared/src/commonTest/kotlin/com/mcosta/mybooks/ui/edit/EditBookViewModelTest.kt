@@ -159,4 +159,19 @@ class EditBookViewModelTest : MainDispatcherTest() {
         vm.save()
         assertEquals("New", repo.getBook(id)?.review)
     }
+
+    @Test
+    fun staleEditFormKeepsPulledFields() = runTest {
+        val id = (repo.save(Book(title = "Emma", rating = 3)) as SaveResult.Saved).id
+        val vm = EditBookViewModel(repo, bookId = id, isbn = null)
+        assertEquals(3, vm.state.value.form.rating)
+        // While the form is open, a pull from another device changes the rating and the notes.
+        dao.update(dao.getById(id)!!.copy(rating = 5, notes = "x"))
+        vm.update { it.copy(title = "Emma (2nd)") }
+        vm.save()
+        val saved = repo.getBook(id)!!
+        assertEquals("Emma (2nd)", saved.title)
+        assertEquals(5, saved.rating)
+        assertEquals("x", saved.notes)
+    }
 }

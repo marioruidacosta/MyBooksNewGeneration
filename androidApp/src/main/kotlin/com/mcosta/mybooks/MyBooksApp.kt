@@ -20,5 +20,7 @@ class MyBooksApp : Application(), ContainerOwner {
         // Kept scheduled while turned on (e.g. after a backup is restored on a new phone).
         if (container.releaseAlerts.enabled) ReleaseAlertWorker.schedule(this)
         ReadingWidget.follow(this, container)
+        // Library sync retries as soon as the network is back.
+        container.sync?.let { sync -> followConnectivity(this, sync::connectivityRestored) }
     }
 }

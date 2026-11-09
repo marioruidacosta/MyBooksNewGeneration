@@ -5,6 +5,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import kotlinx.coroutines.launch
 import com.mcosta.mybooks.AppContainer
 import com.mcosta.mybooks.data.covers.CoverStore
 import com.mcosta.mybooks.platform.PlatformServices
@@ -23,6 +26,10 @@ fun App(
     onOpened: () -> Unit = {},
 ) {
     val followWallpaper by container.appearance.followWallpaper.collectAsState()
+    // Back in the foreground: changes made on other devices meanwhile come in (and this phone's go out).
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (container.sync != null) container.applicationScope.launch { container.syncNow() }
+    }
     MyBooksTheme(followWallpaper) {
         CompositionLocalProvider(
             LocalCoverStore provides container.coverStore,

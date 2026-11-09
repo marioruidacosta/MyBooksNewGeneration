@@ -109,8 +109,15 @@ class BookRepository(
 
     suspend fun lookup(isbn: String): LookupResult = lookupService.lookup(isbn)
 
-    suspend fun save(book: Book): SaveResult {
-        val validated = when (val v = validate(book)) {
+    /**
+     * Adds [book] (id 0) or stores it over the saved one. [base] is the book as the edit form loaded it: then only the
+     * fields the user changed (book vs base) are applied, to the book as it is stored now, so a change that arrived
+     * meanwhile (synced from another device) isn't reverted by a form opened before it.
+     */
+    suspend fun save(book: Book, base: Book? = null): SaveResult {
+        val current = if (base != null && book.id != 0L) dao.getById(book.id)?.toBook() else null
+        val wanted = if (current != null && base != null) current.withEdits(base, book) else book
+        val validated = when (val v = validate(wanted)) {
             is Validation.Ok -> v.book
             is Validation.Invalid -> return v.result
         }
@@ -470,6 +477,34 @@ class BookRepository(
         }
         ReadingStatus.TO_READ, ReadingStatus.WISHLIST ->
             book.copy(dateRead = null, dateStarted = null, currentPage = null, progressPercent = null)
+    }
+
+    /** This (stored) book with each field [edited] changed from [base]; every other field stays as stored. */
+    private fun Book.withEdits(base: Book, edited: Book): Book {
+        fun <T> pick(field: (Book) -> T): T = if (field(edited) != field(base)) field(edited) else field(this)
+        return copy(
+            isbn = pick { it.isbn },
+            title = pick { it.title },
+            authors = pick { it.authors },
+            publisher = pick { it.publisher },
+            publishedYear = pick { it.publishedYear },
+            pageCount = pick { it.pageCount },
+            coverUrl = pick { it.coverUrl },
+            description = pick { it.description },
+            status = pick { it.status },
+            rating = pick { it.rating },
+            notes = pick { it.notes },
+            dateRead = pick { it.dateRead },
+            dateStarted = pick { it.dateStarted },
+            currentPage = pick { it.currentPage },
+            progressPercent = pick { it.progressPercent },
+            review = pick { it.review },
+            tags = pick { it.tags },
+            series = pick { it.series },
+            seriesNumber = pick { it.seriesNumber },
+            lentTo = pick { it.lentTo },
+            lentOn = pick { it.lentOn },
+        )
     }
 
     private companion object {

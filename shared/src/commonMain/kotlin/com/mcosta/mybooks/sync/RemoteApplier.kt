@@ -11,6 +11,8 @@ import com.mcosta.mybooks.data.db.ShareStateDao
 import com.mcosta.mybooks.data.db.SyncQueueDao
 import com.mcosta.mybooks.data.db.SyncStateDao
 import com.mcosta.mybooks.data.db.toBook
+import com.mcosta.mybooks.data.ebooks.EbookFiles
+import com.mcosta.mybooks.domain.EbookFormat
 import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
@@ -63,7 +65,8 @@ internal fun prefTimeKey(key: String) = "prefs/$key"
  * - Books first, then the rows that hang off a book. A child whose book isn't here yet waits in `sync_state["orphans"]`
  *   and is tried again on every [apply]; one whose book arrives deleted is dropped.
  * - A row the server holds as deleted is removed for good here (a book with its quotes, bookmarks, ebook record and
- *   cover photo). A local deletion the server doesn't have yet stays as a tombstone, to be pushed.
+ *   file, share state and cover photo). A local deletion the server doesn't have yet stays as a tombstone, to be pushed.
+ *   The share state goes without unpublishing: the deleting device did that.
  * - A pulled book is never published: it is passed to [ShareTracker.syncedFromElsewhere], not `changed`.
  */
 class RemoteApplier(
@@ -71,17 +74,19 @@ class RemoteApplier(
     private val recorder: SyncRecorder,
     private val coverStore: CoverStore? = null,
     private val shares: ShareTracker? = null,
+    private val ebookFiles: EbookFiles? = null,
 ) {
     /**
      * Applies [rows] in one transaction; [alsoInTransaction] runs inside it, so the engine's cursor is stored with the
-     * page it belongs to. Cover photos are deleted and the share state told after the commit.
+     * page it belongs to. Cover photos and ebook files are deleted, and the share state told, after the commit.
      */
     suspend fun apply(rows: List<SyncRow>, alsoInTransaction: suspend () -> Unit = {}) {
         val pulledBooks = mutableListOf<BookEntity>()
         val photos = mutableListOf<String>()
+        val removed = mutableListOf<Long>()
         recorder.transaction {
             val gone = mutableSetOf<String>()
-            for (row in rows.filter { it.table == SyncTable.BOOKS }) applyBook(row, gone, pulledBooks, photos)
+            for (row in rows.filter { it.table == SyncTable.BOOKS }) applyBook(row, gone, pulledBooks, photos, removed)
             val before = loadOrphans()
             val waiting = mergeDuplicates(before + rows.filter { it.table != SyncTable.BOOKS })
                 .filterNot { applyOther(it) }
@@ -90,6 +95,7 @@ class RemoteApplier(
             alsoInTransaction()
         }
         photos.forEach { coverStore?.delete(it) }
+        for (bookId in removed) EbookFormat.entries.forEach { ebookFiles?.delete(bookId, it) }
         val tracker = shares ?: return
         for (book in pulledBooks) {
             try {
@@ -121,7 +127,13 @@ class RemoteApplier(
 
     // ---- books ----
 
-    private suspend fun applyBook(remote: SyncRow, gone: MutableSet<String>, pulled: MutableList<BookEntity>, photos: MutableList<String>) {
+    private suspend fun applyBook(
+        remote: SyncRow,
+        gone: MutableSet<String>,
+        pulled: MutableList<BookEntity>,
+        photos: MutableList<String>,
+        removed: MutableList<Long>,
+    ) {
         val local = db.books.getByUuid(remote.id)
         val localRow = local?.toRow(coverStore)
         val merged = mergeFields(localRow, remote)
@@ -131,7 +143,9 @@ class RemoteApplier(
                 db.quotes.deleteForBook(local.id)
                 db.bookmarks.deleteForBook(local.id)
                 db.ebooks.delete(local.id)
+                db.shareState?.delete(local.id)
                 db.books.delete(local.id)
+                removed += local.id
                 local.coverUrl?.takeIf { coverStore?.isLocal(it) == true }?.let { photos += it }
             }
             return

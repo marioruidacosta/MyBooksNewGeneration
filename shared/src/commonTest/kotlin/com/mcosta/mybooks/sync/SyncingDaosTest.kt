@@ -16,6 +16,7 @@ import com.mcosta.mybooks.data.lookup.LookupResult
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.EbookFormat
 import kotlinx.coroutines.flow.first
+import okio.Path.Companion.toPath
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -268,5 +269,23 @@ class SyncingDaosTest {
         runCatching { rec.transaction { rec.record(SyncTable.BOOKS, "x"); error("rolled back") } }
         rec.transaction { }
         assertEquals(0, emitted)
+    }
+
+    @Test
+    fun addingTheFileOfAnEbookFromAnotherDeviceKeepsItsRecord() = runTest {
+        val id = saveOk(Book(title = "Os Maias"))
+        // The record arrived with the library (pulled: raw), with its place; the file is on the other device.
+        rawEbooks.upsert(EbookEntity(id, EbookFormat.EPUB, "os-maias.epub", 10, 0, position = "p", lastOpened = 5, uuid = stored(id).uuid))
+        val fs = okio.fakefilesystem.FakeFileSystem()
+        val files = com.mcosta.mybooks.data.ebooks.EbookFiles(fs, "/ebooks".toPath())
+        val ebooks = com.mcosta.mybooks.data.ebooks.EbookRepository(SyncingEbookDao(rawEbooks, rawBooks, recorder), SyncingBookmarkDao(rawBookmarks, recorder), files, repo, clock = { now })
+        assertFalse(ebooks.observe(id).first()!!.fileOnPhone)
+
+        ebooks.add(id, EbookFormat.EPUB, "os-maias.epub", okio.Buffer().write(ByteArray(10)))
+
+        val row = rawEbooks.rows.value.getValue(id)
+        assertEquals(stored(id).uuid, row.uuid)
+        assertEquals("p", row.position)
+        assertTrue(ebooks.observe(id).first()!!.fileOnPhone)
     }
 }

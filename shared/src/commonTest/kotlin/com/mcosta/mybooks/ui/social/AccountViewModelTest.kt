@@ -20,17 +20,21 @@ import com.mcosta.mybooks.sync.LibrarySync
 import com.mcosta.mybooks.sync.RemoteApplier
 import com.mcosta.mybooks.sync.SyncDatabase
 import com.mcosta.mybooks.sync.SyncRecorder
+import com.mcosta.mybooks.sync.SyncException
 import com.mcosta.mybooks.sync.SyncStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AccountViewModelTest : MainDispatcherTest() {
@@ -165,7 +169,8 @@ class AccountViewModelTest : MainDispatcherTest() {
         val state = FakeSyncStateDao()
         private val db = SyncDatabase(books, FakeQuoteDao(), FakeEbookDao(), FakeBookmarkDao(), FakeChallengeDao(), queue, state)
         private val recorder = SyncRecorder(queue, { 0L }, { true }, { it() })
-        val sync = LibrarySync(FakeSyncServer(), db, recorder, RemoteApplier(db, recorder), { 0L }, scope)
+        val server = FakeSyncServer()
+        val sync = LibrarySync(server, db, recorder, RemoteApplier(db, recorder), { 0L }, scope)
 
         suspend fun fill() {
             books.insert(
@@ -260,5 +265,63 @@ class AccountViewModelTest : MainDispatcherTest() {
         assertEquals(SessionState.SignedOut, fake.auth.session.value)
         assertEquals(1, library.books.rows.value.size)
         assertEquals(1, library.queue.rows.value.size)
+    }
+
+    // ---- the sync status line ----
+
+    @Test
+    fun withoutSyncThereIsNoStatus() = runTest {
+        fake.signInAs(ana)
+        assertNull(vm().state.value.sync)
+    }
+
+    @Test
+    fun syncStatusIsExposed() = runTest {
+        fake.signInAs(ana)
+        val library = syncedLibrary()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+        assertEquals(SyncStatus.Syncing, vm.state.value.sync?.status)
+
+        advanceUntilIdle()
+
+        val info = vm.state.value.sync!!
+        assertEquals(SyncStatus.Synced(0), info.status)
+        assertNull(info.merging)
+        assertFalse(info.coversFull)
+        assertEquals(0, info.setAside)
+    }
+
+    @Test
+    fun setAsideChangesAreCounted() = runTest {
+        fake.signInAs(ana)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob))
+        library.fill()
+        // Past the first merge (which would refuse the book once more): one change, refused once.
+        library.state.set(com.mcosta.mybooks.sync.mergedKey(ana), "1")
+        library.server.refuse = { "too long" }
+        library.sync.start(ana)
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        advanceUntilIdle()
+
+        assertEquals(1, vm.state.value.sync?.setAside)
+    }
+
+    @Test
+    fun retrySyncTriesAgainAtOnce() = runTest {
+        fake.signInAs(ana)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob))
+        library.fill()
+        library.server.failNext = SyncException(SyncException.Kind.OTHER, "500")
+        library.sync.start(ana)
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+        runCurrent()
+        assertEquals(SyncStatus.Failed(1), vm.state.value.sync?.status)
+
+        vm.retrySync()
+        runCurrent()
+
+        assertEquals(SyncStatus.Synced(0), vm.state.value.sync?.status)
+        assertEquals(0L, testScheduler.currentTime)
     }
 }

@@ -81,6 +81,14 @@ import com.mcosta.mybooks.ui.home.HomeViewModel
 import com.mcosta.mybooks.ui.library.LibraryScreen
 import com.mcosta.mybooks.ui.library.LibraryViewModel
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
+import com.mcosta.mybooks.ui.social.KeepLibraryCard
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import com.mcosta.mybooks.ui.social.SyncInfo
+import com.mcosta.mybooks.ui.social.SyncStatusSection
+import com.mcosta.mybooks.sync.SyncStatus
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -475,6 +483,69 @@ class ScreenshotTest {
             assertTrue(text, compose.onAllNodes(androidx.compose.ui.test.hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty())
         }
     }
+    /** Settings → Account's sync line: synced; offline with changes waiting, covers full and changes set aside; failed. */
+    private fun accountSync(dark: Boolean) {
+        val now = 1_000_000_000L
+        shoot("account-sync", dark, ready = { true }) {
+            androidx.compose.material3.Surface {
+                androidx.compose.foundation.layout.Column(
+                    androidx.compose.ui.Modifier.padding(16.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp),
+                ) {
+                    SyncStatusSection(SyncInfo(SyncStatus.Synced(now - 10_000)), now, onRetry = {})
+                    SyncStatusSection(SyncInfo(SyncStatus.Offline(3), coversFull = true, setAside = 2), now, onRetry = {})
+                    SyncStatusSection(SyncInfo(SyncStatus.Failed(3)), now, onRetry = {})
+                }
+            }
+        }
+        for (text in listOf("Synced just now", "Offline · 3 changes waiting", "Cover photos not syncing: storage full", "2 changes couldn't be synced", "Retry")) {
+            compose.onNodeWithText(text).assertExists()
+        }
+    }
+
+    /** The first sign-in on a phone that already has books. */
+    private fun accountCombining(dark: Boolean) {
+        shoot("account-combining", dark, ready = { true }) {
+            androidx.compose.material3.Surface {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(16.dp)) {
+                    SyncStatusSection(SyncInfo(SyncStatus.Syncing, merging = 120 to 340), 0L, onRetry = {})
+                }
+            }
+        }
+        compose.onNodeWithText("Combining your libraries… 120 of 340").assertExists()
+    }
+
+    /** Signing out while the library syncs. */
+    private fun signOutDialog(dark: Boolean) {
+        // Over a dimmed screen, as the dialog shows (Robolectric can't draw the dialog's own window).
+        shoot("sign-out-dialog", dark, ready = { true }) {
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)).padding(40.dp),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                KeepLibraryCard(onKeep = {}, onRemove = {})
+            }
+        }
+        for (text in listOf("Keep a copy of your library on this device?", "Keep", "Remove")) compose.onNodeWithText(text).assertExists()
+    }
+
+    /** A book whose ebook was added on another device: its record synced, its file didn't. */
+    private fun ebookElsewhere(dark: Boolean) {
+        val id = sampleLibrary()
+        runBlocking { db.ebookDao().upsert(com.mcosta.mybooks.data.db.EbookEntity(id, EbookFormat.EPUB, "memorial-do-convento.epub", 1_234_567, day("2026-10-02"))) }
+        val ebooks = EbookRepository(db.ebookDao(), db.bookmarkDao(), EbookFiles(FileSystem.SYSTEM, context.filesDir.toOkioPath() / "ebooks"), repo)
+        val vm = BookDetailViewModel(repo, id, CoroutineScope(SupervisorJob() + Dispatchers.Default), ebookRepo = ebooks)
+        shoot("ebook-elsewhere", dark, ready = { vm.book.value != null && vm.ebook.value != null }) {
+            BookDetailScreen(vm, onBack = {}, onEdit = {}, onRead = {}, onAddEbookFile = {}, ebookElsewhere = true)
+        }
+        compose.onNodeWithText("Ebook on another device").assertExists()
+    }
+
+    @Test fun accountSyncLight() = accountSync(dark = false)
+    @Test fun accountCombiningDark() = accountCombining(dark = true)
+    @Test fun signOutDialogLight() = signOutDialog(dark = false)
+    @Config(qualifiers = TALL) @Test fun ebookElsewhereLight() = ebookElsewhere(dark = false)
+
     @Config(qualifiers = TALL) @Test fun homeLight() = home(dark = false)
     @Config(qualifiers = TALL) @Test fun homeDark() = home(dark = true)
     @Test fun shelfLight() = shelf(dark = false)

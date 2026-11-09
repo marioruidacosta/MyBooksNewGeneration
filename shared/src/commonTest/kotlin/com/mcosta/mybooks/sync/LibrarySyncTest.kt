@@ -9,6 +9,9 @@ import com.mcosta.mybooks.data.FakeShareStateDao
 import com.mcosta.mybooks.data.FakeSyncQueueDao
 import com.mcosta.mybooks.data.FakeSyncStateDao
 import com.mcosta.mybooks.data.covers.CoverStore
+import com.mcosta.mybooks.data.db.EbookEntity
+import com.mcosta.mybooks.data.ebooks.EbookFiles
+import com.mcosta.mybooks.domain.EbookFormat
 import com.mcosta.mybooks.data.db.BookEntity
 import com.mcosta.mybooks.data.db.QuoteEntity
 import com.mcosta.mybooks.data.db.ShareStateEntity
@@ -81,9 +84,11 @@ private class Device(server: FakeSyncServer, scope: CoroutineScope, clock: () ->
     val shareDao = FakeShareStateDao()
     var pendingCalls = 0
     val shares = ShareTracker(shareDao, activeOwner = { OWNER }, onPending = { pendingCalls++ })
+    val ebooks = FakeEbookDao()
+    val ebookFiles = EbookFiles(fs, "/ebooks".toPath())
     val db = SyncDatabase(
-        books = books, quotes = quotes, ebooks = FakeEbookDao(), bookmarks = FakeBookmarkDao(),
-        challenges = FakeChallengeDao(), queue = queue, state = state,
+        books = books, quotes = quotes, ebooks = ebooks, bookmarks = FakeBookmarkDao(),
+        challenges = FakeChallengeDao(), queue = queue, state = state, shareState = shareDao,
         prefs = object : SyncedPrefs {
             override fun get(key: String) = prefValues[key]
             override fun set(key: String, value: String?) {
@@ -91,7 +96,7 @@ private class Device(server: FakeSyncServer, scope: CoroutineScope, clock: () ->
             }
         },
     )
-    val applier = RemoteApplier(db, recorder, covers, shares)
+    val applier = RemoteApplier(db, recorder, covers, shares, ebookFiles)
     val sync = LibrarySync(api ?: net, db, recorder, applier, clock, scope)
 
     fun book(uuid: String): BookEntity? = books.rows.value.values.firstOrNull { it.uuid == uuid }
@@ -535,6 +540,32 @@ class LibrarySyncTest {
         // The deleting device removes its tombstone once the server has the deletion.
         assertNull(b.book("x"))
         assertTrue(b.queue.rows.value.isEmpty())
+    }
+
+    @Test
+    fun remoteDeleteDropsShareStateAndEbookFile() = runTest {
+        val server = server()
+        val a = device(server)
+        val b = device(server)
+        a.seed("x", "Os Maias")
+        b.seed("x", "Os Maias")
+        val aBookId = a.book("x")!!.id
+        a.ebooks.upsert(EbookEntity(aBookId, EbookFormat.EPUB, "os-maias.epub", 3, 0, uuid = "x"))
+        a.ebookFiles.store(aBookId, EbookFormat.EPUB, okio.Buffer().write(byteArrayOf(1, 2, 3)))
+        a.shareDao.upsert(ShareStateEntity(aBookId, "x", OWNER, false, null, null, null, null, pending = false, excluded = false, deleted = false))
+        for (d in listOf(a, b)) d.sync.start(OWNER)
+        advanceUntilIdle()
+
+        advanceTimeBy(1_000)
+        b.syncBooks.delete(b.book("x")!!.id)
+        advanceUntilIdle()
+
+        assertNull(a.book("x"))
+        assertTrue(a.ebooks.rows.value.isEmpty())
+        // Removed for good: no share state left to publish (the deleting device unpublished), no file left on disk.
+        assertTrue(a.shareDao.rows.value.isEmpty())
+        assertFalse(a.ebookFiles.exists(aBookId, EbookFormat.EPUB))
+        assertEquals(0, a.pendingCalls)
     }
 
     @Test

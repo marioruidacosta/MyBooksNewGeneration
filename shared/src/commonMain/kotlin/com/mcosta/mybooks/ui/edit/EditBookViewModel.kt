@@ -116,7 +116,8 @@ class EditBookViewModel(
             seriesNumber = f.seriesNumber.trim().ifEmpty { null },
         )
         viewModelScope.launch {
-            val error = when (val r = repo.save(book)) {
+            // Only what the form changed is saved: a change synced in while it was open stays.
+            val error = when (val r = repo.save(book, base = original)) {
                 is SaveResult.Saved -> {
                     _state.update { it.copy(savedId = r.id, error = null, saving = false) }
                     return@launch

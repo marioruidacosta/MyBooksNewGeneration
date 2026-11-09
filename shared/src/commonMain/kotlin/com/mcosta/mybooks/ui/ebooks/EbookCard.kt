@@ -1,5 +1,6 @@
 package com.mcosta.mybooks.ui.ebooks
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -19,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mcosta.mybooks.data.ebooks.EbookState
 import com.mcosta.mybooks.ui.detail.SectionCard
@@ -41,14 +43,29 @@ fun ReadButton(onRead: () -> Unit, modifier: Modifier = Modifier) {
 
 /**
  * The book page's Ebook card: the file's format, size and date with **Remove file**; "Ebook file not on this phone"
- * with **Add it again** after a restore; or **Add ebook file** for a book without one.
+ * with **Add it again** after a restore; or **Add ebook file** for a book without one. With [elsewhere] (the library
+ * syncs), a file that isn't here shows as "Ebook on another device": its record came with the library, and adding the
+ * file here links it to that record (place and bookmarks included).
  */
 @Composable
-fun EbookCard(state: EbookState?, onAdd: () -> Unit, onRemove: () -> Unit) {
+fun EbookCard(state: EbookState?, onAdd: () -> Unit, onRemove: () -> Unit, elsewhere: Boolean = false) {
     var confirmRemove by remember { mutableStateOf(false) }
     SectionCard("Ebook") {
         when {
             state == null -> TextButton(onClick = onAdd) { Text("Add ebook file") }
+            !state.fileOnPhone && elsewhere -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Ebook on another device", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "${state.ebook.format.name} · ${state.ebook.fileName}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                TextButton(onClick = onAdd) { Text("Add it here") }
+            }
             !state.fileOnPhone -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Ebook file not on this phone", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 TextButton(onClick = onAdd) { Text("Add it again") }

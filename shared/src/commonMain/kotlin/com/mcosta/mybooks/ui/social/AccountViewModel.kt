@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -32,6 +33,19 @@ data class AccountState(
     val signedOut: Boolean = false,
     /** "Sign out" was tapped while the library syncs: ask whether to keep a copy of it on this phone. */
     val askKeepLibrary: Boolean = false,
+    /** Where library sync stands; null where sync isn't set up. */
+    val sync: SyncInfo? = null,
+)
+
+/** The "Library sync" line in Settings → Account. */
+data class SyncInfo(
+    val status: SyncStatus,
+    /** (books done, books in all) while the first sign-in combines the libraries; null otherwise. */
+    val merging: Pair<Int, Int>? = null,
+    /** The cloud has no room for more cover photos. */
+    val coversFull: Boolean = false,
+    /** Changes the server refused since sync started (this phone keeps its values). */
+    val setAside: Int = 0,
 )
 
 /** The signed-in user's community account: profile, avatar, visibility, blocked people, sign out, delete. */
@@ -48,6 +62,12 @@ class AccountViewModel(
     val state: StateFlow<AccountState> = _state.asStateFlow()
 
     init {
+        if (sync != null) {
+            viewModelScope.launch {
+                combine(sync.status, sync.mergeProgress, sync.coversFull, sync.setAside, ::SyncInfo)
+                    .collect { info -> _state.update { it.copy(sync = info) } }
+            }
+        }
         refresh()
     }
 
@@ -112,6 +132,12 @@ class AccountViewModel(
             sync?.signOutFinished()
         }
         _state.update { AccountState(signedOut = true) }
+    }
+
+    /** "Retry" after "Couldn't sync": tries again now instead of waiting. */
+    fun retrySync() {
+        val sync = sync ?: return
+        viewModelScope.launch { sync.refresh() }
     }
 
     /** The keep-library question was dismissed: still signed in. */

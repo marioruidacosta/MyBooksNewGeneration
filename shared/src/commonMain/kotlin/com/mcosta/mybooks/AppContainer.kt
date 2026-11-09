@@ -13,7 +13,12 @@ import com.mcosta.mybooks.data.suggestions.HiddenSuggestions
 import com.mcosta.mybooks.data.suggestions.SubjectSearch
 import com.mcosta.mybooks.data.suggestions.SuggestionEngine
 import com.mcosta.mybooks.social.model.SessionState
+import com.mcosta.mybooks.sync.LibraryPrefs
+import com.mcosta.mybooks.sync.LibrarySync
+import com.mcosta.mybooks.sync.RemoteApplier
+import com.mcosta.mybooks.sync.SyncDatabase
 import com.mcosta.mybooks.sync.SyncRecorder
+import com.mcosta.mybooks.sync.SyncStatus
 import com.mcosta.mybooks.sync.SyncTable
 import com.mcosta.mybooks.sync.SyncingBookDao
 import com.mcosta.mybooks.sync.SyncingBookmarkDao
@@ -48,6 +53,7 @@ import io.ktor.client.engine.HttpClientEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import okio.FileSystem
 import com.mcosta.mybooks.data.ebooks.EbookFiles
 import com.mcosta.mybooks.data.ebooks.EbookRepository
@@ -81,8 +87,10 @@ class AppContainer(
     private val writeTransaction: suspend (suspend () -> Unit) -> Unit =
         { block -> database.useWriterConnection { it.immediateTransaction { block() } } }
 
-    /** Stamps and queues every local change for cloud sync; nothing is queued until Task 10 turns `enabled` on. */
-    val syncRecorder = SyncRecorder(database.syncQueueDao(), { Clock.System.now().toEpochMilliseconds() }, { false }, writeTransaction)
+    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() }
+
+    /** Stamps every local change and, while [sync] runs for a signed-in user, queues it for upload. */
+    val syncRecorder = SyncRecorder(database.syncQueueDao(), clock, { syncRecording(sync) }, writeTransaction)
 
     private val syncBooks = SyncingBookDao(database.bookDao(), syncRecorder)
 
@@ -200,6 +208,40 @@ class AppContainer(
         kotlinx.coroutines.flow.combine(repository.observeBooks(null, ""), challenges.observe()) { books, goals ->
             com.mcosta.mybooks.domain.readingSummary(books, goals, com.mcosta.mybooks.ui.today(), kotlinx.datetime.TimeZone.currentSystemDefault())
         }
+
+    /**
+     * The library kept in step with the cloud while signed in; null without the community. Started and stopped with the
+     * session. Declared last: starting it runs work on other threads, which must find the rest of the container built.
+     *
+     * WARNING: the [SyncDatabase] must hold the RAW DAOs (`database.bookDao()` …), never the `Syncing*` wrappers. They
+     * would compile, but every pulled row would be stamped and queued again (sent back to the server, forever) and,
+     * through the repository, published as this phone's activity.
+     */
+    val sync: LibrarySync? = syncFor(
+        social,
+        SyncDatabase(
+            books = database.bookDao(),
+            quotes = database.quoteDao(),
+            ebooks = database.ebookDao(),
+            bookmarks = database.bookmarkDao(),
+            challenges = database.challengeDao(),
+            queue = database.syncQueueDao(),
+            state = database.syncStateDao(),
+            prefs = LibraryPrefs(pinnedTags, hiddenSuggestions),
+            shareState = database.shareStateDao(),
+        ),
+        syncRecorder, applicationScope, clock, sharing?.tracker, coverStore, ebookFiles,
+    )
+
+    /**
+     * Pushes and pulls now, and returns when that's done (the app back in the foreground, pull-to-refresh). A signed-in
+     * user whose sync stopped (the session had expired, or signing out failed) gets it started again.
+     */
+    suspend fun syncNow() {
+        val sync = sync ?: return
+        (social?.auth?.session?.value as? SessionState.SignedIn)?.let { sync.start(it.userId) }
+        sync.refresh()
+    }
 }
 
 /** The social services when [config] is complete, else null (nothing is created or contacted). */
@@ -232,3 +274,34 @@ internal fun sharingFor(
     status = SharingStatus(social, scope, onActivated = publisher::requestSync, onDisabled = tracker::forgetOwner)
     return Sharing(tracker, status, publisher)
 }
+
+/**
+ * Library sync for [social], or null without the community (or where it has no sync endpoint). It runs while someone is
+ * signed in: started on [SessionState.SignedIn], stopped otherwise. [db] must hold the RAW DAOs (see [AppContainer.sync]).
+ */
+internal fun syncFor(
+    social: SocialServices?,
+    db: SyncDatabase,
+    recorder: SyncRecorder,
+    scope: CoroutineScope,
+    clock: () -> Long,
+    shares: ShareTracker?,
+    coverStore: CoverStore?,
+    ebookFiles: EbookFiles?,
+): LibrarySync? {
+    val api = social?.sync ?: return null
+    val applier = RemoteApplier(db, recorder, coverStore, shares, ebookFiles)
+    val sync = LibrarySync(api, db, recorder, applier, clock, scope, shares = shares, coverStore = coverStore, ebookFiles = ebookFiles)
+    scope.launch {
+        social.auth.session.collect { session ->
+            if (session is SessionState.SignedIn) sync.start(session.userId) else sync.stop()
+        }
+    }
+    return sync
+}
+
+/**
+ * Whether local changes are queued for upload: exactly while [sync] runs for a signed-in user (an expired session
+ * included, so its changes go once the user signs in again). Not after signing out: the library kept then is local.
+ */
+internal fun syncRecording(sync: LibrarySync?): Boolean = sync != null && sync.status.value != SyncStatus.Off
