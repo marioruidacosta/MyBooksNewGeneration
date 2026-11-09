@@ -24,6 +24,17 @@ create function pg_temp.bulk(a int, b int) returns jsonb language sql as $$
   select sync_push((select jsonb_agg(jsonb_build_object('table','prefs','id','bulk' || g,'fields','{"value":"v"}'::jsonb,
     'times','{"value":1000}'::jsonb)) from generate_series(a, b) g));
 $$;
+-- A book titled poison-22 or poison-23 raises a data exception (class 22) or an integrity violation (class 23) outside
+-- the narrow list the functions used to catch, the way an unforeseen bad value would.
+create function public._test_poison() returns trigger language plpgsql as $$
+begin
+  if new.title = 'poison-22' then raise exception 'poison 22' using errcode = '22012'; end if;
+  if new.title = 'poison-23' then raise exception 'poison 23' using errcode = '23505'; end if;
+  return new;
+end;
+$$;
+create trigger _test_poison before insert or update on library_books for each row execute function public._test_poison();
+
 set local role authenticated;
 select pg_temp.act_as('11111111-1111-1111-1111-111111111111');
 
@@ -208,6 +219,60 @@ select is(
     'fields','{"title":"Contos","authors":"Eça de Queirós"}'::jsonb,'times','{}'::jsonb)))->'ids'),
   '{"e2":"e2"}'::jsonb, 'merge_matches_exact_id_first');
 
+-- push_sets_aside_other_data_exceptions: any data exception or integrity violation sets that row aside, not the batch.
+select is(
+  (select jsonb_agg(x->>'id' order by x->>'id') from jsonb_array_elements((select sync_push(jsonb_build_array(
+    jsonb_build_object('table','books','id','p22','fields','{"title":"poison-22"}'::jsonb,'times','{"title":1000}'::jsonb),
+    jsonb_build_object('table','books','id','p23','fields','{"title":"poison-23"}'::jsonb,'times','{"title":1000}'::jsonb),
+    jsonb_build_object('table','books','id','pok','fields','{"title":"Not poison"}'::jsonb,'times','{"title":1000}'::jsonb)
+  )))->'set_aside') x),
+  '["p22", "p23"]'::jsonb, 'push_sets_aside_other_data_exceptions: both set aside');
+select is(pg_temp.title_of('pok'), 'Not poison', 'push_sets_aside_other_data_exceptions: rest applied');
+select is((select count(*)::int from library_books where id in ('p22', 'p23')), 0,
+  'push_sets_aside_other_data_exceptions: poison rows absent');
+select is(
+  (select jsonb_array_length(merge_library(jsonb_build_array(
+    jsonb_build_object('id','mp23','fields','{"title":"poison-23"}'::jsonb,'times','{}'::jsonb),
+    jsonb_build_object('id','mpok','fields','{"title":"Merged fine"}'::jsonb,'times','{}'::jsonb)))->'set_aside')),
+  1, 'merge_sets_aside_other_data_exceptions');
+select is(pg_temp.title_of('mpok'), 'Merged fine', 'merge_sets_aside_other_data_exceptions: rest applied');
+
+-- merge_keeps_both_untimed_notes: two devices' libraries from before sync (no field times) meet in the cloud. Notes
+-- (and reviews) that differ are both kept, the cloud's first, timed now so every device takes them; elsewhere a
+-- value beats an empty one.
+select merge_library(jsonb_build_array(jsonb_build_object('id','na','fields',
+  '{"isbn":"777","title":"Notas","notes":"From A","review":"Same","rating":null,"publisher":"Livros do Brasil"}'::jsonb,
+  'times','{}'::jsonb)));
+select is(
+  (select merge_library(jsonb_build_array(jsonb_build_object('id','nb','fields',
+    '{"isbn":"777","title":"Notas","notes":"From B","review":"Same","rating":4,"publisher":null}'::jsonb,
+    'times','{}'::jsonb)))->'ids'),
+  '{"nb":"na"}'::jsonb, 'merge_keeps_both_untimed_notes: matched');
+select is((select notes from library_books where id = 'na'), 'From A' || chr(10) || chr(10) || 'From B', 'merge_keeps_both_untimed_notes: both notes');
+select ok((select (field_times->>'notes')::bigint >= pg_temp.now_ms() - 60000 from library_books where id = 'na'),
+  'merge_keeps_both_untimed_notes: timed now');
+select is((select review from library_books where id = 'na'), 'Same', 'merge_keeps_both_untimed_notes: same review once');
+select is((select rating from library_books where id = 'na'), 4, 'merge_keeps_both_untimed_notes: a value beats null');
+select is((select publisher from library_books where id = 'na'), 'Livros do Brasil',
+  'merge_keeps_both_untimed_notes: null does not replace a value');
+-- A timed side is merged by time as before: no joining.
+select pg_temp.push_book('nt', '{"isbn":"888","title":"Timed","notes":"Cloud"}', '{"isbn":1000,"title":1000,"notes":1000}');
+select merge_library(jsonb_build_array(jsonb_build_object('id','nt2','fields','{"isbn":"888","title":"Timed","notes":"Local"}'::jsonb,
+  'times','{}'::jsonb)));
+select is((select notes from library_books where id = 'nt'), 'Cloud', 'merge_keeps_both_untimed_notes: timed cloud notes win');
+
+-- merge_uses_match_key: title before ':' and first author before ',', folded, kept in an indexed column.
+select pg_temp.push_book('mk1', '{"title":"Ensaio sobre a Lucidez: romance","authors":"José Saramago, Outro"}',
+  '{"title":1000,"authors":1000}');
+select is((select match_key from library_books where id = 'mk1'), 'ensaio sobre a lucidez|jose saramago',
+  'merge_uses_match_key: folded key');
+select ok(not (select r->'fields' ? 'match_key' from jsonb_array_elements(sync_pull(0)->'rows') r where r->>'id' = 'mk1'),
+  'merge_uses_match_key: not pulled');
+select is(
+  (select merge_library(jsonb_build_array(jsonb_build_object('id','mk2',
+    'fields','{"title":"ENSAIO SOBRE A LUCIDEZ","authors":"Jose Saramago"}'::jsonb,'times','{}'::jsonb)))->'ids'),
+  '{"mk2":"mk1"}'::jsonb, 'merge_uses_match_key: matched');
+
 -- covers_storage_isolation
 select pg_temp.act_as('22222222-2222-2222-2222-222222222222');
 insert into storage.objects (bucket_id, name) values ('covers', '22222222-2222-2222-2222-222222222222/b.jpg');
@@ -245,6 +310,13 @@ select is(
 select is((select public from storage.buckets where id = 'covers'), false, 'covers_bucket_private');
 select is((select count(*)::int from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'covers_%'),
   4, 'covers_policies_exist');
+
+select results_eq($$select file_size_limit, allowed_mime_types from storage.buckets where id = 'covers'$$,
+  $$values (2097152::bigint, array['image/jpeg'])$$, 'covers_bucket_2mb_jpeg');
+select ok(exists(select 1 from pg_indexes where tablename = 'library_books' and indexdef like '%(owner, isbn)%'),
+  'merge_uses_match_key: (owner, isbn) index');
+select ok(exists(select 1 from pg_indexes where tablename = 'library_books' and indexdef like '%(owner, match_key)%'),
+  'merge_uses_match_key: (owner, match_key) index');
 
 select * from finish();
 rollback;
