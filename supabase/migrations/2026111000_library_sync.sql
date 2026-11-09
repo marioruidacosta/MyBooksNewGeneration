@@ -305,8 +305,9 @@ $$;
 revoke all on function _fold(text) from public, anon, authenticated;
 
 -- Joins a device's local books to the cloud library the first time it signs in: each book is matched to a stored,
--- not deleted cloud book (ISBN first, then, when either side has no ISBN, title before ':' plus first author before ',')
--- and merged into it, or inserted under its own id. Returns {"ids": {local id: cloud id}, "set_aside": [...]}. At most 100 books per call.
+-- not deleted cloud book (its own id first, then ISBN, then, when either side has no ISBN, title before ':' plus
+-- first author before ',') and merged into it, or inserted under its own id.
+-- Returns {"ids": {local id: cloud id}, "set_aside": [...]}. At most 100 books per call.
 create function merge_library(books jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -330,8 +331,9 @@ begin
       isbn_in := nullif(btrim(f->>'isbn'), '');
       title_key := btrim(_fold(split_part(coalesce(f->>'title', ''), ':', 1)));
       author_key := btrim(_fold(split_part(coalesce(f->>'authors', ''), ',', 1)));
-      cloud_id := null;
-      if isbn_in is not null then
+      -- Its own id first: a book kept from an earlier sign-in already has its cloud id.
+      select id into cloud_id from library_books where owner = me and not deleted and id = b->>'id';
+      if cloud_id is null and isbn_in is not null then
         select id into cloud_id from library_books
           where owner = me and not deleted and isbn = isbn_in order by seq limit 1;
       end if;
