@@ -266,7 +266,8 @@ select pg_temp.push_book('mk1', '{"title":"Ensaio sobre a Lucidez: romance","aut
   '{"title":1000,"authors":1000}');
 select is((select match_key from library_books where id = 'mk1'), 'ensaio sobre a lucidez|jose saramago',
   'merge_uses_match_key: folded key');
-select ok(not (select r->'fields' ? 'match_key' from jsonb_array_elements(sync_pull(0)->'rows') r where r->>'id' = 'mk1'),
+select ok(not (select r->'fields' ? 'match_key' from jsonb_array_elements(sync_pull((select seq - 1 from library_books where id = 'mk1'), 1)->'rows') r
+   where r->>'id' = 'mk1'),
   'merge_uses_match_key: not pulled');
 select is(
   (select merge_library(jsonb_build_array(jsonb_build_object('id','mk2',
