@@ -10,7 +10,6 @@ import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -40,7 +39,8 @@ internal fun mergeSharesKey(owner: String) = "merge-shares:$owner"
  *   move to the books' new ids. The moves are recorded with each batch, so a crash before they run doesn't lose them.
  * - A device with no live books does the same, minus the batches.
  *
- * Every write goes through the RAW DAOs: nothing here is stamped, recorded or published. Ebook files are never deleted.
+ * Every write goes through the RAW DAOs: nothing here is stamped, recorded or published. Ebook files are never deleted
+ * (an ebook that loses to its twin's keeps its file; "Remove" at sign-out erases the whole folder).
  */
 class FirstMerge(
     private val api: SyncApi,
@@ -55,14 +55,6 @@ class FirstMerge(
 
     /** (books done, books in all) while combining the libraries; null otherwise. */
     val progress: StateFlow<Pair<Int, Int>?> = _progress.asStateFlow()
-
-    private val _ebooksLeftOnDisk = MutableStateFlow(0)
-
-    /**
-     * Ebook files of combined copies that lost to the other copy's ebook (opened less recently). No book points at them
-     * any more, but they stay on disk (`<old book id>.<ext>`): they may exist only on this phone.
-     */
-    val ebooksLeftOnDisk: StateFlow<Int> = _ebooksLeftOnDisk.asStateFlow()
 
     /** Does nothing when [owner]'s merge already happened on this device. Throws what the server threw; run again to resume. */
     suspend fun run(owner: String) {
@@ -173,7 +165,7 @@ class FirstMerge(
         children.rebind(stays.id, stays.id)
         children.rebind(goes.id, stays.id)
         children.renameEbook(stays.id, holder.uuid)
-        if (children.dropEbook(goes.id)) _ebooksLeftOnDisk.update { it + 1 }
+        children.dropEbook(goes.id)
         // The row that goes first: it may hold the ISBN, and the uuid, that the row that stays takes.
         db.books.delete(goes.id)
         db.books.update(merged.toBookEntity(stays, coverStore).copy(coverUrl = cover))
@@ -239,12 +231,10 @@ class FirstMerge(
             return compareValuesBy(ea, eb, { it.lastOpened ?: Long.MIN_VALUE }, { it.position != null }) > 0
         }
 
-        /** Removes [book]'s ebook record; true when it was a live one (its file is left on disk). */
-        suspend fun dropEbook(book: Long): Boolean {
+        /** Removes [book]'s ebook record; its file stays on disk (it may exist only here). */
+        suspend fun dropEbook(book: Long) {
             load()
-            val ebook = ebooks.remove(book) ?: return false
-            db.ebooks.delete(book)
-            return !ebook.deleted
+            if (ebooks.remove(book) != null) db.ebooks.delete(book)
         }
 
         suspend fun drop(book: Long) {
@@ -260,20 +250,21 @@ class FirstMerge(
 
     // ---- share state ----
 
-    /**
-     * Runs the recorded share moves, now that the rows hold the merged values (the republished copy carries them). A
-     * move already done is a no-op, so replaying them all after a crash is safe. The merge is marked done with them
-     * cleared, in one transaction.
-     */
+    /** The recorded share moves, now that the rows hold the merged values (the republished copy carries them). */
     private suspend fun moveShares(owner: String) {
-        val tracker = shares
-        if (tracker != null) {
-            for ((from, to) in loadMoves(owner)) tracker.moveShare(from, to, db.books.getById(to)?.toBook())
-        }
-        applier.transaction {
-            saveMoves(owner, emptyList())
-            db.state.set(mergedKey(owner), "1")
-        }
+        replayShareMoves(owner)
+        db.state.set(mergedKey(owner), "1")
+    }
+
+    /**
+     * Runs [owner]'s recorded share moves, then forgets them. A move already done is a no-op, so replaying them all after
+     * a crash is safe. Also run at sign-out, so a merge left unfinished doesn't leave a book under its old public id.
+     */
+    internal suspend fun replayShareMoves(owner: String) {
+        val moves = loadMoves(owner)
+        if (moves.isEmpty()) return
+        shares?.let { tracker -> for ((from, to) in moves) tracker.moveShare(from, to, db.books.getById(to)?.toBook()) }
+        saveMoves(owner, emptyList())
     }
 
     private suspend fun loadMoves(owner: String): List<Pair<Long, Long>> =

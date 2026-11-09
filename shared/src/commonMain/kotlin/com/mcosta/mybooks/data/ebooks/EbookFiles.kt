@@ -36,4 +36,9 @@ class EbookFiles(
     }
 
     fun delete(bookId: Long, format: EbookFormat) = fs.delete(path(bookId, format), mustExist = false)
+
+    /** Every file in the folder, with or without a book pointing at it (signing out with "Remove"). */
+    suspend fun deleteAll() = withContext(io) {
+        fs.listOrNull(dir)?.forEach { fs.deleteRecursively(it) }
+    }
 }

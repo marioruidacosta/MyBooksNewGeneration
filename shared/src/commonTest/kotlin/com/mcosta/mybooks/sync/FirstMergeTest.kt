@@ -24,12 +24,16 @@ import com.mcosta.mybooks.domain.searchKey
 import com.mcosta.mybooks.share.Publisher
 import com.mcosta.mybooks.share.ShareTracker
 import com.mcosta.mybooks.social.FakeSocial
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
@@ -40,6 +44,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import okio.Buffer
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -353,6 +358,11 @@ class FirstMergeTest {
         phone.bookmarks.insert(BookmarkEntity(bookId = id, position = "p", label = "cap. 3", dateAdded = 0))
         phone.ebookFiles.store(id, EbookFormat.EPUB, Buffer().writeUtf8("epub"))
         phone.ebooks.upsert(EbookEntity(id, EbookFormat.EPUB, "os-maias.epub", 4, 0))
+        // Two copies of one book with an ebook each: the combine leaves the older file on disk, with no record.
+        val twin1 = phone.books.insert(book("t1", "A Cidade e as Serras", isbn = "9789720049589"))
+        val twin2 = phone.books.insert(book("t2", "A Cidade e as Serras: romance"))
+        phone.addEbook(twin1, lastOpened = 100)
+        phone.addEbook(twin2, lastOpened = 900)
         phone.challenges.upsert(ChallengeEntity(2026, 30))
         phone.shareDao.upsert(
             ShareStateEntity(
@@ -375,9 +385,10 @@ class FirstMergeTest {
         assertTrue(phone.state.rows.isEmpty())
         assertFalse(phone.fs.exists(phone.covers.fileFor(photo)!!))
         assertFalse(phone.ebookFiles.exists(id, EbookFormat.EPUB))
+        assertEquals(emptyList(), phone.fs.listOrNull("/ebooks".toPath()).orEmpty())
         assertEquals(SyncStatus.Off, phone.sync.status.value)
         // The cloud library is untouched.
-        assertEquals(1, server.liveBooks().size)
+        assertEquals(2, server.liveBooks().size)
     }
 
     // ---- review fixes ----
@@ -423,7 +434,6 @@ class FirstMergeTest {
         // The other copy's file stays on disk: it may exist only on this phone.
         assertTrue(phone.ebookFiles.exists(a, EbookFormat.EPUB))
         assertTrue(phone.ebookFiles.exists(b, EbookFormat.EPUB))
-        assertEquals(1, phone.sync.ebooksLeftOnDisk.value)
     }
 
     @Test
@@ -565,5 +575,78 @@ class FirstMergeTest {
             assertNull(phone.book("gone"), "withLiveBook=$withLiveBook")
             phone.sync.stop()
         }
+    }
+
+    // ---- review fixes, round 2 ----
+
+    @Test
+    fun keepSignOutMidMergeReplaysShareMoves() = runTest {
+        val server = server()
+        server.push(listOf(book("C", "Os Maias", isbn = "9789720049572", time = 500).toRow(null)))
+        val phone = phone(server)
+        val id = phone.books.insert(book("S", "Os Maias", isbn = "9789720049572"))
+        phone.share(id, "S")
+        phone.sync.start(OWNER)
+        // The merge stops after the batch is stored, before the share state moves (the share state fails once).
+        phone.shareDao.fail = true
+        advanceTimeBy(1)
+        phone.shareDao.fail = false
+        assertEquals("C", phone.books.getById(id)!!.uuid)
+        assertNull(phone.state.get("merged:$OWNER"))
+
+        phone.sync.signOut(keepLibrary = true)
+
+        assertEquals("C", phone.shareDao.get(id)!!.shareId)
+        val social = FakeSocial()
+        publisher(phone, social).syncNow()
+        assertEquals(listOf("S"), social.unpublished)
+        assertEquals(listOf("C"), social.published.map { it.first.shareId })
+    }
+
+    /** Runs [hook] once, at the first dispatch it sees: lets a test act in the middle of `start`. */
+    private class HookDispatcher(private val inner: CoroutineDispatcher) : CoroutineDispatcher() {
+        var hook: (() -> Unit)? = null
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            hook?.let {
+                hook = null
+                it()
+            }
+            inner.dispatch(context, block)
+        }
+    }
+
+    @Test
+    fun startRacingSignOutCannotRunAfterErase() = runTest {
+        val server = server()
+        server.push(listOf(book("c", "Os Maias").toRow(null)))
+        val dispatcher = HookDispatcher(StandardTestDispatcher(testScheduler))
+        val phone = Phone(server, CoroutineScope(dispatcher + engineJob)) { testScheduler.currentTime }
+        // A start (another thread) passed the sign-out check; the whole sign-out runs before it goes on.
+        dispatcher.hook = { launch(start = CoroutineStart.UNDISPATCHED) { phone.sync.signOut(keepLibrary = false) } }
+
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+
+        assertTrue(phone.books.rows.value.isEmpty())
+        assertTrue(server.calls.none { it.first == "pull" })
+        assertEquals(SyncStatus.Off, phone.sync.status.value)
+    }
+
+    @Test
+    fun reSignInMatchesOwnCloudIds() = runTest {
+        val server = server()
+        // Two books with the same title and author, neither with an ISBN.
+        server.push(listOf(book("e1", "Contos").toRow(null), book("e2", "Contos").toRow(null)))
+        val phone = phone(server)
+        // Kept from an earlier sign-in: the book already has its cloud id.
+        phone.books.insert(book("e2", "Contos").copy(rating = 4).retimed("rating" to 300))
+
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+
+        assertEquals(listOf("e2"), phone.live().filter { it.rating == 4 }.map { it.uuid })
+        assertEquals(setOf("e1", "e2"), phone.live().map { it.uuid }.toSet())
+        assertEquals(4, server.stored()[SyncTable.BOOKS to "e2"]?.fields?.get("rating")?.jsonPrimitive?.intOrNull)
     }
 }

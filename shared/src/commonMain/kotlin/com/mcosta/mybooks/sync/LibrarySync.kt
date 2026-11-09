@@ -2,11 +2,11 @@ package com.mcosta.mybooks.sync
 
 import com.mcosta.mybooks.data.covers.CoverStore
 import com.mcosta.mybooks.data.ebooks.EbookFiles
-import com.mcosta.mybooks.domain.EbookFormat
 import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -79,9 +79,6 @@ class LibrarySync(
     /** (books done, books in all) while the first sign-in merge combines the libraries; null otherwise. */
     val mergeProgress: StateFlow<Pair<Int, Int>?> = firstMerge.progress
 
-    /** Ebook files the first sign-in merge left on disk when it combined two copies of a book (see [FirstMerge]). */
-    val ebooksLeftOnDisk: StateFlow<Int> = firstMerge.ebooksLeftOnDisk
-
     /**
      * One signed-in run. [wake]: something changed here or on the server. [now]: retry now (connection back,
      * pull-to-refresh). [waiters]: callers of [refresh] waiting for the next pass to end.
@@ -103,6 +100,10 @@ class LibrarySync(
     @Volatile
     private var signingOut = false
 
+    /** The account last [start]ed: whose unfinished merge [signOut] settles. */
+    @Volatile
+    private var lastOwner: String? = null
+
     /** Keeps a stopping session's last pass from overlapping the next session's first. */
     private val passLock = Mutex()
 
@@ -115,7 +116,8 @@ class LibrarySync(
         val next = Session(owner)
         _setAside.value = 0
         _status.value = SyncStatus.Syncing
-        next.job = scope.launch {
+        // Started only once it is known that no sign-out began meanwhile (see below).
+        next.job = scope.launch(start = CoroutineStart.LAZY) {
             launch { recorder.changes.collect { next.wake.trySend(Unit) } }
             launch { listenForPings(owner, next.wake) }
             launch { keepWaitingCountFresh() }
@@ -125,6 +127,17 @@ class LibrarySync(
         }
         next.job.invokeOnCompletion { next.releaseWaiters() }
         session = next
+        lastOwner = owner
+        // A sign-out on another thread may have set its latch after the check above and stopped before this session was
+        // stored. Session written, then latch read here; latch written, then session read in signOut: one of the two
+        // sees the other, so this session never runs past the erase.
+        if (signingOut) {
+            if (session === next) session = null
+            next.job.cancel()
+            _status.value = SyncStatus.Off
+            return
+        }
+        next.job.start()
     }
 
     /** Stops syncing (signed out). The queue and the sync state stay as they are. */
@@ -146,18 +159,28 @@ class LibrarySync(
     suspend fun signOut(keepLibrary: Boolean) {
         signingOut = true
         stop()
+        val owner = lastOwner
         val photos = mutableListOf<String>()
-        val files = mutableListOf<Pair<Long, EbookFormat>>()
         // After the stopped session's last pass.
         passLock.withLock {
+            // Any session that slipped past the latch is stopped too, before anything is erased.
+            stop()
+            // An unfinished first merge: its recorded share moves would go with the sync state, leaving books under their
+            // old public ids. Outside the transaction: the share state takes its own lock.
+            if (keepLibrary && owner != null) {
+                try {
+                    firstMerge.replayShareMoves(owner)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Best effort: signing out goes on.
+                }
+            }
             recorder.transaction {
                 db.queue.clear()
                 db.state.clear()
                 if (keepLibrary) return@transaction
-                for (ebook in db.ebooks.getAllAny()) {
-                    files += ebook.bookId to ebook.format
-                    db.ebooks.delete(ebook.bookId)
-                }
+                db.ebooks.getAllAny().forEach { db.ebooks.delete(it.bookId) }
                 db.quotes.getAllAny().forEach { db.quotes.delete(it.id) }
                 db.bookmarks.getAllAny().forEach { db.bookmarks.delete(it.id) }
                 db.challenges.getAllAny().forEach { db.challenges.delete(it.year) }
@@ -169,7 +192,8 @@ class LibrarySync(
             }
         }
         photos.forEach { coverStore?.delete(it) }
-        files.forEach { (book, format) -> ebookFiles?.delete(book, format) }
+        // Every file in the folder, not just those with a record: a combined twin's ebook has none.
+        if (!keepLibrary) ebookFiles?.deleteAll()
     }
 
     /** The account is signed out (or signing out failed): [start] works again. */
@@ -204,7 +228,11 @@ class LibrarySync(
             wake.tryReceive()
             now.tryReceive()
             val waiting = session.takeWaiters()
-            val error = passLock.withLock { pass(session.owner) }
+            val error = passLock.withLock {
+                // Stopped while waiting for the lock (signing out): no pass after the erase.
+                currentCoroutineContext().ensureActive()
+                pass(session.owner)
+            }
             waiting.forEach { it.complete(Unit) }
             currentCoroutineContext().ensureActive()
             if (error == null) {
