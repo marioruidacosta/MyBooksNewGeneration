@@ -9,7 +9,14 @@ import com.mcosta.mybooks.data.FakeEbookDao
 import com.mcosta.mybooks.data.FakeQuoteDao
 import com.mcosta.mybooks.data.FakeSyncQueueDao
 import com.mcosta.mybooks.data.FakeSyncStateDao
+import com.mcosta.mybooks.data.covers.PhotoShrinker
+import com.mcosta.mybooks.data.db.BookEntity
+import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.social.FakeSocial
+import com.mcosta.mybooks.sync.SyncingBookDao
+import com.mcosta.mybooks.ui.social.AccountViewModel
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import com.mcosta.mybooks.sync.LibrarySync
 import com.mcosta.mybooks.sync.SyncDatabase
 import com.mcosta.mybooks.sync.SyncRecorder
@@ -30,7 +37,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** How AppContainer ties library sync to the session, and local changes to sync. */
-class SyncWiringTest {
+class SyncWiringTest : MainDispatcherTest() {
     private val engineJob = SupervisorJob()
 
     @AfterTest
@@ -40,14 +47,27 @@ class SyncWiringTest {
     private val ana = fake.addUser("ana")
     private val queue = FakeSyncQueueDao()
     private val state = FakeSyncStateDao()
-    private val db = SyncDatabase(FakeBookDao(), FakeQuoteDao(), FakeEbookDao(), FakeBookmarkDao(), FakeChallengeDao(), queue, state)
+    private val books = FakeBookDao()
+    private val db = SyncDatabase(books, FakeQuoteDao(), FakeEbookDao(), FakeBookmarkDao(), FakeChallengeDao(), queue, state)
     private var sync: LibrarySync? = null
-    private val recorder = SyncRecorder(queue, { 0L }, { syncRecording(sync) }, { it() })
+    private var now = 0L
+    private val recorder = SyncRecorder(queue, { now }, { syncRecording(sync) }, { it() })
 
     private fun TestScope.wire(social: com.mcosta.mybooks.social.SocialServices? = fake.services): LibrarySync? {
-        sync = syncFor(social, db, recorder, CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), { 0L }, null, null, null)
+        sync = syncFor(social, db, recorder, CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), { now }, null, null, null)
         return sync
     }
+
+    private suspend fun addBook(): Long = books.insert(
+        BookEntity(
+            isbn = null, title = "Os Maias", authors = "Eça de Queirós", publisher = null, publishedYear = null,
+            pageCount = null, coverUrl = null, description = null, status = ReadingStatus.READ, rating = null,
+            notes = "", dateAdded = 0, dateRead = null, searchText = "os maias",
+        ),
+    )
+
+    private fun cloudRating(uuid: String) =
+        fake.sync.stored()[SyncTable.BOOKS to uuid]?.fields?.get("rating")?.jsonPrimitive?.intOrNull
 
     @Test
     fun noSyncWithoutTheCommunity() = runTest {
@@ -67,10 +87,76 @@ class SyncWiringTest {
         assertIs<SyncStatus.Synced>(sync.status.value)
         assertTrue(recorder.enabled())
 
+        // Signing out from Settings → Account.
+        sync.signOut(keepLibrary = true)
         fake.auth.signOut()
+        sync.signOutFinished()
         advanceUntilIdle()
         assertEquals(SyncStatus.Off, sync.status.value)
         assertFalse(recorder.enabled())
+    }
+
+    @Test
+    fun expiredSessionKeepsRecordingAndShowsSignInAgain() = runTest {
+        val sync = wire()!!
+        val id = addBook()
+        fake.signInAs(ana)
+        advanceUntilIdle()
+        assertIs<SyncStatus.Synced>(sync.status.value)
+        assertEquals(1, fake.sync.calls.count { it.first == "merge" })
+
+        // The session ends without the user asking (the refresh token was rejected).
+        fake.auth.signOut()
+        advanceUntilIdle()
+        assertEquals(SyncStatus.SignInAgain, sync.status.value)
+        assertTrue(recorder.enabled())
+
+        // An edit meanwhile waits in the queue.
+        now = 1_000
+        SyncingBookDao(books, recorder).update(books.getById(id)!!.copy(rating = 4))
+        val uuid = books.getById(id)!!.uuid
+        assertEquals(listOf(uuid), queue.rows.value.map { it.rowId })
+
+        // Signing in again picks up where it was: no second merge, and the edit goes up.
+        fake.signInAs(ana)
+        advanceUntilIdle()
+        assertIs<SyncStatus.Synced>(sync.status.value)
+        assertEquals(1, fake.sync.calls.count { it.first == "merge" })
+        assertTrue(queue.rows.value.isEmpty())
+        assertEquals(4, cloudRating(uuid))
+    }
+
+    @Test
+    fun sessionExpiredWhileTheAppWasClosedShowsSignInAgain() = runTest {
+        // Synced in an earlier run; this time the stored session can't be refreshed.
+        state.rows["seq"] = "5"
+        val sync = wire()!!
+        fake.auth.signOut()
+        advanceUntilIdle()
+        assertEquals(SyncStatus.SignInAgain, sync.status.value)
+        assertTrue(recorder.enabled())
+    }
+
+    @Test
+    fun deleteAccountClearsQueueAndStopsRecording() = runTest {
+        val sync = wire()!!
+        fake.signInAs(ana)
+        advanceUntilIdle()
+        val vm = AccountViewModel(fake.services, object : PhotoShrinker {
+            override fun shrink(photo: ByteArray, maxSide: Int) = photo
+        }, sync = sync, workDispatcher = mainDispatcher)
+        recorder.record(SyncTable.BOOKS, "waiting")
+
+        vm.deleteAccount()
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.deleted)
+        assertEquals(SyncStatus.Off, sync.status.value)
+        assertFalse(recorder.enabled())
+        assertTrue(queue.rows.value.isEmpty())
+        assertTrue(state.rows.isEmpty())
+        recorder.record(SyncTable.BOOKS, "after")
+        assertTrue(queue.rows.value.isEmpty())
     }
 
     @Test

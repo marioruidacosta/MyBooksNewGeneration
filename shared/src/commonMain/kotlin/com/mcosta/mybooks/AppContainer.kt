@@ -277,7 +277,8 @@ internal fun sharingFor(
 
 /**
  * Library sync for [social], or null without the community (or where it has no sync endpoint). It runs while someone is
- * signed in: started on [SessionState.SignedIn], stopped otherwise. [db] must hold the RAW DAOs (see [AppContainer.sync]).
+ * signed in: started on [SessionState.SignedIn]. Signed out, it stops if the user asked, else it waits for them to
+ * sign in again ([LibrarySync.sessionEnded]). [db] must hold the RAW DAOs (see [AppContainer.sync]).
  */
 internal fun syncFor(
     social: SocialServices?,
@@ -294,14 +295,18 @@ internal fun syncFor(
     val sync = LibrarySync(api, db, recorder, applier, clock, scope, shares = shares, coverStore = coverStore, ebookFiles = ebookFiles)
     scope.launch {
         social.auth.session.collect { session ->
-            if (session is SessionState.SignedIn) sync.start(session.userId) else sync.stop()
+            when (session) {
+                is SessionState.SignedIn -> sync.start(session.userId)
+                SessionState.SignedOut -> sync.sessionEnded()
+                SessionState.Loading -> Unit
+            }
         }
     }
     return sync
 }
 
 /**
- * Whether local changes are queued for upload: exactly while [sync] runs for a signed-in user (an expired session
- * included, so its changes go once the user signs in again). Not after signing out: the library kept then is local.
+ * Whether local changes are queued for upload: while [sync] runs for a signed-in user, and while it waits for them to
+ * sign in again (an expired session: its changes go then). Not after the user signed out: the library kept is local.
  */
 internal fun syncRecording(sync: LibrarySync?): Boolean = sync != null && sync.status.value != SyncStatus.Off

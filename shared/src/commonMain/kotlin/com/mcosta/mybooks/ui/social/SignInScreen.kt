@@ -31,7 +31,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SignInScreen(viewModel: SignInViewModel, onBack: () -> Unit, onDone: () -> Unit) {
+fun SignInScreen(
+    viewModel: SignInViewModel,
+    onBack: () -> Unit,
+    onDone: () -> Unit,
+    /** Shown above the form ("Sign in again to sync"); null for none. */
+    notice: String? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.step) { if (state.step == SignInStep.DONE) onDone() }
 
@@ -48,6 +54,7 @@ fun SignInScreen(viewModel: SignInViewModel, onBack: () -> Unit, onDone: () -> U
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            notice?.let { Text(it, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.error) }
             when (state.step) {
                 SignInStep.LOADING -> {
                     if (state.error == null) {

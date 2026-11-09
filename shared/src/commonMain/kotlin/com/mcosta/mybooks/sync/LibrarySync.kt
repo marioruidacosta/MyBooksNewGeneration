@@ -26,6 +26,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.Volatile
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /** `sync_state` key of the last `seq` pulled. */
 internal const val SEQ_KEY = "seq"
@@ -120,35 +125,77 @@ class LibrarySync(
     /** Keeps a stopping session's last pass from overlapping the next session's first. */
     private val passLock = Mutex()
 
+    /**
+     * Guards [session] and [status]: [start], [stop] and [sessionEnded] swap the session under it (they're called from
+     * the session observer and from the UI's threads at once, and two overlapping starts would leave a session nothing
+     * can stop), and a session's worker writes the status under it only while it is the current one. Held for a few
+     * field writes only: no job is started or cancelled under it (either can run code at once, which could come back
+     * here), so a spin is enough. A spin that lasts fails loudly rather than hanging.
+     */
+    @OptIn(ExperimentalAtomicApi::class)
+    private val lifecycleBusy = AtomicBoolean(false)
+
+    @OptIn(ExperimentalAtomicApi::class)
+    private inline fun <T> lifecycle(block: () -> T): T {
+        var spins = 0
+        var since: TimeMark? = null
+        while (!lifecycleBusy.compareAndSet(false, true)) {
+            if (++spins % 1024 == 0) {
+                val mark = since ?: TimeSource.Monotonic.markNow().also { since = it }
+                check(mark.elapsedNow() < 10.seconds) { "Library sync's lifecycle lock is held too long (a call back into it?)" }
+            }
+        }
+        try {
+            return block()
+        } finally {
+            lifecycleBusy.store(false)
+        }
+    }
+
+    /** Sets the status from [from]'s worker, unless that session was stopped or replaced meanwhile. */
+    private fun report(from: Session, status: (SyncStatus) -> SyncStatus) = lifecycle {
+        if (session === from) _status.value = status(_status.value)
+    }
+
     /** Starts syncing [owner]'s library; does nothing if it already is, or while signing out (until [signOutFinished]). */
     fun start(owner: String) {
-        if (signingOut) return
-        val current = session
-        if (current != null && current.owner == owner && current.job.isActive) return
-        stop()
-        val next = Session(owner)
-        _setAside.value = 0
-        coverSync?.retryUploads()
-        _status.value = SyncStatus.Syncing
-        // Started only once it is known that no sign-out began meanwhile (see below).
-        next.job = scope.launch(start = CoroutineStart.LAZY) {
-            launch { recorder.changes.collect { next.wake.trySend(Unit) } }
-            launch { listenForPings(owner, next.wake) }
-            launch { keepWaitingCountFresh() }
-            work(next)
-            // The session expired: no retries until start() is called again.
-            cancel()
+        var replaced: Session? = null
+        val next = lifecycle {
+            if (signingOut) return@lifecycle null
+            val current = session
+            if (current != null && current.owner == owner && current.job.isActive) return@lifecycle null
+            replaced = current
+            val created = Session(owner)
+            // Lazy: it runs only once started below, outside the lock; cancelled first (by a sign-out), it never runs.
+            created.job = scope.launch(start = CoroutineStart.LAZY) {
+                launch { recorder.changes.collect { created.wake.trySend(Unit) } }
+                launch { listenForPings(owner, created.wake) }
+                launch { keepWaitingCountFresh(created) }
+                work(created)
+                // The session expired: no retries until start() is called again.
+                cancel()
+            }
+            created.job.invokeOnCompletion { created.releaseWaiters() }
+            session = created
+            lastOwner = owner
+            _setAside.value = 0
+            _status.value = SyncStatus.Syncing
+            created
         }
-        next.job.invokeOnCompletion { next.releaseWaiters() }
-        session = next
-        lastOwner = owner
-        // A sign-out on another thread may have set its latch after the check above and stopped before this session was
-        // stored. Session written, then latch read here; latch written, then session read in signOut: one of the two
-        // sees the other, so this session never runs past the erase.
+        replaced?.end()
+        if (next == null) return
+        coverSync?.retryUploads()
+        // A sign-out on another thread may have set its latch after the check above. Session written, then latch read
+        // here; latch written, then session read (in stop) by signOut: one of the two sees the other, so this session
+        // never runs past the erase. Cancelled before it starts, a lazy job never runs.
         if (signingOut) {
-            if (session === next) session = null
-            next.job.cancel()
-            _status.value = SyncStatus.Off
+            lifecycle {
+                if (session === next) {
+                    session = null
+                    _status.value = SyncStatus.Off
+                }
+            }
+            next.end()
             return
         }
         next.job.start()
@@ -156,11 +203,44 @@ class LibrarySync(
 
     /** Stops syncing (signed out). The queue and the sync state stay as they are. */
     fun stop() {
+        lifecycle { detach(SyncStatus.Off) }?.end()
+    }
+
+    /** Takes the running session off (under the lock) and shows [status]; the caller ends it, outside the lock. */
+    private fun detach(status: SyncStatus): Session? {
         val current = session
         session = null
-        current?.job?.cancel()
-        current?.releaseWaiters()
-        _status.value = SyncStatus.Off
+        _status.value = status
+        return current
+    }
+
+    /** Cancels the session's work and releases its [refresh] waiters. */
+    private fun Session.end() {
+        job.cancel()
+        releaseWaiters()
+    }
+
+    /**
+     * The account was signed out. When the user asked for it ([signOut], or [signOutRequested] before deleting the
+     * account), sync is off. Otherwise the session expired or was revoked: sync waits in [SyncStatus.SignInAgain],
+     * still queueing changes, with the queue and sync state kept, and the next sign-in carries on (no new merge for the
+     * same account). That includes a session that expired while the app was closed: this device had synced (a stored
+     * cursor) and nobody signed out.
+     */
+    suspend fun sessionEnded() {
+        val syncedBefore = db.state.get(SEQ_KEY) != null
+        lifecycle {
+            val expired = !signingOut && (_status.value != SyncStatus.Off || syncedBefore)
+            detach(if (expired) SyncStatus.SignInAgain else SyncStatus.Off)
+        }?.end()
+    }
+
+    /**
+     * The user is about to sign out other than through [signOut] (deleting the account): the session ending isn't an
+     * expiry. Lasts until [signOutFinished]; [start] does nothing meanwhile.
+     */
+    fun signOutRequested() {
+        signingOut = true
     }
 
     /**
@@ -243,7 +323,7 @@ class LibrarySync(
             val error = passLock.withLock {
                 // Stopped while waiting for the lock (signing out): no pass after the erase.
                 currentCoroutineContext().ensureActive()
-                pass(session.owner)
+                pass(session)
             }
             waiting.forEach { it.complete(Unit) }
             currentCoroutineContext().ensureActive()
@@ -257,12 +337,13 @@ class LibrarySync(
                 continue
             }
             if (error is SyncException && error.kind == SyncException.Kind.AUTH) {
-                _status.value = SyncStatus.SignInAgain
+                report(session) { SyncStatus.SignInAgain }
                 return
             }
             val count = db.queue.count().first()
-            _status.value =
+            report(session) {
                 if (error is SyncException && error.kind == SyncException.Kind.OFFLINE) SyncStatus.Offline(count) else SyncStatus.Failed(count)
+            }
             val wait = retryDelays[minOf(failures, retryDelays.lastIndex)]
             failures++
             // Local changes wait with the rest; only "retry now" cuts the wait short.
@@ -285,14 +366,15 @@ class LibrarySync(
     }
 
     /** One push and pull (after the first sign-in merge, the first time); the error that stopped it, or null. */
-    private suspend fun pass(owner: String): Exception? {
-        _status.value = SyncStatus.Syncing
+    private suspend fun pass(session: Session): Exception? {
+        val owner = session.owner
+        report(session) { SyncStatus.Syncing }
         return try {
             firstMerge.run(owner)
             pushQueue(api, db, applier) { n -> _setAside.update { it + n } }
             pullFrom(api, db, applier, db.state.get(SEQ_KEY)?.toLongOrNull() ?: 0L)
             currentCoroutineContext().ensureActive()
-            _status.value = SyncStatus.Synced(clock())
+            report(session) { SyncStatus.Synced(clock()) }
             null
         } catch (e: CancellationException) {
             throw e
@@ -323,9 +405,9 @@ class LibrarySync(
     }
 
     /** Keeps "N changes waiting" current while offline or failing. */
-    private suspend fun keepWaitingCountFresh() {
+    private suspend fun keepWaitingCountFresh(session: Session) {
         db.queue.count().collect { n ->
-            _status.update {
+            report(session) {
                 when (it) {
                     is SyncStatus.Offline -> SyncStatus.Offline(n)
                     is SyncStatus.Failed -> SyncStatus.Failed(n)

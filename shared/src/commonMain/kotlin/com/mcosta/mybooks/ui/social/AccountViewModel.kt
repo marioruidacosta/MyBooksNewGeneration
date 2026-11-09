@@ -143,8 +143,16 @@ class AccountViewModel(
     /** The keep-library question was dismissed: still signed in. */
     fun cancelSignOut() = _state.update { it.copy(askKeepLibrary = false) }
 
+    /** Deletes the community account; the library stays on this phone, as after "Keep" at sign-out. */
     fun deleteAccount() = launchAction {
-        services.profiles.deleteAccount()
+        // The session ending next is asked for, not an expiry.
+        sync?.signOutRequested()
+        try {
+            services.profiles.deleteAccount()
+            sync?.signOut(keepLibrary = true)
+        } finally {
+            sync?.signOutFinished()
+        }
         _state.update { AccountState(deleted = true) }
     }
 
