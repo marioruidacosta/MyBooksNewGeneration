@@ -86,8 +86,8 @@ The public `shared_books` copy is untouched. It keeps being produced from the li
   - An incoming time is capped at the server's `now()` plus 1 minute, so a device whose clock runs ahead can't keep
     winning.
   - On equal times, the stored value stays.
-  - Deletion is a field (`deleted`) with its own time: a deletion newer than an edit wins, and an edit newer than the
-    deletion brings the row back.
+  - Deletion is a field (`deleted`) with its own time: a deletion newer than an edit wins, and only an explicit
+    undelete (`deleted = false` newer than the deletion) brings the row back; ordinary edits don't revive a deleted row.
   - Returns the ids applied and the ids set aside with a reason (e.g. a value too long or wrongly typed).
 - **`sync_pull(after bigint, max int default 500) → jsonb`**
   - Returns the caller's rows with `seq > after`, in `seq` order, up to `max`, plus the last `seq`.
