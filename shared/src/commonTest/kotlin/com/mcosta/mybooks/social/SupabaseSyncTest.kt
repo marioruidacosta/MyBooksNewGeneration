@@ -20,10 +20,12 @@ import kotlinx.coroutines.launch
 import kotlinx.io.IOException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class SupabaseSyncTest : MainDispatcherTest() {
@@ -161,6 +163,41 @@ class SupabaseSyncTest : MainDispatcherTest() {
     fun otherFailureIsOther() = runTest {
         val api = sync(500, """{"message":"boom"}""")
         assertEquals(SyncException.Kind.OTHER, assertFailsWith<SyncException> { api.pull(0) }.kind)
+    }
+
+    @Test
+    fun refusedRequestIsRejectedAndServerErrorIsNot() = runTest {
+        // PostgREST answers 400 when it can't take the request at all (a value its JSON can't hold, say).
+        val refused = assertFailsWith<SyncException> {
+            sync(400, """{"code":"22P05","message":"unsupported Unicode escape sequence"}""").push(listOf(row("A", 1)))
+        }
+        assertEquals(SyncException.Kind.OTHER, refused.kind)
+        assertTrue(refused.rejected)
+        val down = assertFailsWith<SyncException> { sync(500, """{"message":"boom"}""").push(listOf(row("A", 1))) }
+        assertEquals(SyncException.Kind.OTHER, down.kind)
+        assertFalse(down.rejected)
+    }
+
+    @Test
+    fun nulCharactersAreStrippedOnTheWire() = runTest {
+        // Postgres's jsonb can't hold U+0000: one in any value would make the server refuse the whole request.
+        val api = sync(json = """{"applied":[],"set_aside":[],"ids":{}}""")
+        val nul = '\u0000'
+        val row = SyncRow(
+            SyncTable.BOOKS, "u1",
+            mapOf("title" to JsonPrimitive("Du${nul}ne"), "notes" to JsonPrimitive("${nul}a${nul}b$nul"), "rating" to JsonPrimitive(4)),
+            mapOf("title" to 5L),
+        )
+        api.push(listOf(row))
+        api.mergeLibrary(listOf(row))
+        for ((_, body) in requests) {
+            assertFalse(body.contains("\\u0000") || body.contains(nul), body)
+            val sent = Json.parseToJsonElement(body).jsonObject.values.single().jsonArray.single().jsonObject
+            assertEquals(JsonPrimitive("Dune"), sent["fields"]!!.jsonObject["title"])
+            assertEquals(JsonPrimitive("ab"), sent["fields"]!!.jsonObject["notes"])
+            assertEquals(JsonPrimitive(4), sent["fields"]!!.jsonObject["rating"])
+        }
+        assertEquals(2, requests.size)
     }
 
     // ---- the fake must follow the server's rule (Task 1)

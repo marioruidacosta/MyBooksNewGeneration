@@ -26,11 +26,17 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.Volatile
-import kotlin.concurrent.atomics.AtomicBoolean
-import kotlin.concurrent.atomics.ExperimentalAtomicApi
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.TimeMark
-import kotlin.time.TimeSource
+
+/**
+ * What signing out with "Remove" would lose, after the last sync before it ([LibrarySync.prepareSignOut]).
+ * [waiting]: changes not in the account yet (queued rows, books the first merge hasn't sent, cover photos not
+ * uploaded). [unconfirmed]: sync couldn't confirm the rest reached it (offline, failing, the session expired, or it
+ * timed out). [ebookFiles]: ebook files on this device; they never sync.
+ */
+data class SignOutCheck(val waiting: Int = 0, val unconfirmed: Boolean = false, val ebookFiles: Boolean = false) {
+    /** Removing now may lose changes. */
+    val anythingWaiting: Boolean get() = waiting > 0 || unconfirmed
+}
 
 /** `sync_state` key of the last `seq` pulled. */
 internal const val SEQ_KEY = "seq"
@@ -130,27 +136,11 @@ class LibrarySync(
      * the session observer and from the UI's threads at once, and two overlapping starts would leave a session nothing
      * can stop), and a session's worker writes the status under it only while it is the current one. Held for a few
      * field writes only: no job is started or cancelled under it (either can run code at once, which could come back
-     * here), so a spin is enough. A spin that lasts fails loudly rather than hanging.
+     * here), and nothing under it suspends.
      */
-    @OptIn(ExperimentalAtomicApi::class)
-    private val lifecycleBusy = AtomicBoolean(false)
+    private val lifecycleLock = plainLock()
 
-    @OptIn(ExperimentalAtomicApi::class)
-    private inline fun <T> lifecycle(block: () -> T): T {
-        var spins = 0
-        var since: TimeMark? = null
-        while (!lifecycleBusy.compareAndSet(false, true)) {
-            if (++spins % 1024 == 0) {
-                val mark = since ?: TimeSource.Monotonic.markNow().also { since = it }
-                check(mark.elapsedNow() < 10.seconds) { "Library sync's lifecycle lock is held too long (a call back into it?)" }
-            }
-        }
-        try {
-            return block()
-        } finally {
-            lifecycleBusy.store(false)
-        }
-    }
+    private inline fun <T> lifecycle(block: () -> T): T = lifecycleLock.withLock(block)
 
     /** Sets the status from [from]'s worker, unless that session was stopped or replaced meanwhile. */
     private fun report(from: Session, status: (SyncStatus) -> SyncStatus) = lifecycle {
@@ -286,6 +276,38 @@ class LibrarySync(
         // Every file in the folders, not just those with a record: a downloaded photo, a combined twin's ebook.
         if (!keepLibrary) coverStore?.deleteAll()
         if (!keepLibrary) ebookFiles?.deleteAll()
+    }
+
+    /**
+     * Whether this device's library belongs to a synced account: an account's first sign-in merge was done here and
+     * no sign-out has cleared it since. True from the app's start, before the stored session is restored, so changes
+     * made meanwhile (deletions included) are queued for that account.
+     */
+    internal suspend fun belongsToAnAccount(): Boolean = db.state.anyMerged()
+
+    /**
+     * Before asking "Keep a copy of your library on this device?": while a session runs, one more push and pull and
+     * then the cover photo uploads, waiting [timeoutMs] at most, so that "Remove" loses as little as possible. Then
+     * says what still hasn't reached the account ([SignOutCheck]).
+     */
+    suspend fun prepareSignOut(timeoutMs: Long = 20_000): SignOutCheck {
+        val current = session?.takeIf { it.job.isActive }
+        if (current != null) {
+            withTimeoutOrNull(timeoutMs) {
+                refresh()
+                if (_status.value is SyncStatus.Synced) coverSync?.uploadPending(current.owner, db.books.getAllAny())
+            }
+        }
+        val books = db.books.getAllAny()
+        val queued = db.queue.batch(Int.MAX_VALUE)
+        val queuedBooks = queued.filter { it.table == SyncTable.BOOKS.wire }.mapTo(mutableSetOf()) { it.rowId }
+        // Before the first sign-in merge is over, the books it hasn't sent yet aren't in the account at all.
+        val unmerged = lastOwner?.let { firstMerge.unmerged(it, books) }.orEmpty().count { it.uuid !in queuedBooks }
+        return SignOutCheck(
+            waiting = queued.size + unmerged + (coverSync?.pendingUploads(books) ?: 0),
+            unconfirmed = _status.value !is SyncStatus.Synced,
+            ebookFiles = ebookFiles?.any() == true,
+        )
     }
 
     /** The account is signed out (or signing out failed): [start] works again. */
@@ -432,7 +454,7 @@ internal suspend fun pushQueue(api: SyncApi, db: SyncDatabase, applier: RemoteAp
             val table = SyncTable.entries.firstOrNull { it.wire == entry.table } ?: continue
             applier.localRow(table, entry.rowId)?.let { sent[table to entry.rowId] = it }
         }
-        val result = if (sent.isEmpty()) PushResult(emptyList(), emptyList()) else api.push(sent.values.toList())
+        val result = if (sent.isEmpty()) PushResult(emptyList(), emptyList()) else pushOrSplit(api, sent.values.toList())
         val done = (result.applied + result.setAside.map { it.table to it.id }).toSet()
         val removed = applier.transaction {
             val ids = batch.filter { entry ->
@@ -449,6 +471,35 @@ internal suspend fun pushQueue(api: SyncApi, db: SyncDatabase, applier: RemoteAp
         if (removed.isEmpty()) return
     }
 }
+
+/**
+ * Pushes [rows]. When the server refuses the request as a whole ([SyncException.rejected]: a value it can't even
+ * parse, say), resends them one at a time; a row refused on its own is set aside here, as if the server had set it
+ * aside, so it leaves the queue (the device keeps its value) and the rest goes through. Any other failure (offline,
+ * the server down) is thrown as it is: the rows aren't to blame, and the batch is retried later.
+ */
+private suspend fun pushOrSplit(api: SyncApi, rows: List<SyncRow>): PushResult {
+    try {
+        return api.push(rows)
+    } catch (e: SyncException) {
+        if (!e.isRefusal()) throw e
+    }
+    val applied = mutableListOf<Pair<SyncTable, String>>()
+    val setAside = mutableListOf<SetAside>()
+    for (row in rows) {
+        try {
+            val one = api.push(listOf(row))
+            applied += one.applied
+            setAside += one.setAside
+        } catch (e: SyncException) {
+            if (!e.isRefusal()) throw e
+            setAside += SetAside(row.table, row.id, e.message ?: "refused")
+        }
+    }
+    return PushResult(applied, setAside)
+}
+
+private fun SyncException.isRefusal() = kind == SyncException.Kind.OTHER && rejected
 
 /** Pulls every row changed after [from], a page at a time; each page is stored with its cursor. */
 internal suspend fun pullFrom(api: SyncApi, db: SyncDatabase, applier: RemoteApplier, from: Long) {

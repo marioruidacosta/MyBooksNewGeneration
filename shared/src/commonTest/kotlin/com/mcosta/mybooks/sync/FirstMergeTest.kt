@@ -196,6 +196,40 @@ class FirstMergeTest {
     private fun Phone.mergeProgress() = sync.mergeProgress.value
 
     @Test
+    fun secondDeviceNotesSurviveFirstMerge() = runTest {
+        val server = server()
+        val a = phone(server)
+        val b = phone(server)
+        // Two libraries from before sync (database v7): no field times at all, so "newest wins" can't choose.
+        a.books.insert(
+            book("a1", "Os Maias", isbn = "9789720049572").copy(notes = "Notes from A", review = "Same review", fieldTimes = "{}"),
+        )
+        b.books.insert(
+            book("b1", "Os Maias", isbn = "9789720049572")
+                .copy(notes = "Notes from B", review = "Same review", rating = 4, fieldTimes = "{}"),
+        )
+
+        a.sync.start(OWNER)
+        advanceUntilIdle()
+        advanceTimeBy(1_000)
+        b.sync.start(OWNER)
+        advanceUntilIdle()
+
+        val joined = "Notes from A\n\nNotes from B"
+        val cloud = server.liveBooks().single()
+        assertEquals(joined, cloud.fields["notes"]?.jsonPrimitive?.contentOrNull)
+        for (phone in listOf(a, b)) {
+            val book = phone.live().single()
+            assertEquals("a1", book.uuid)
+            assertEquals(joined, book.notes)
+            assertEquals("Same review", book.review)
+            // A value beats an empty one when neither has a time.
+            assertEquals(4, book.rating)
+            assertTrue(phone.queue.rows.value.isEmpty())
+        }
+    }
+
+    @Test
     fun interruptedFirstMergeResumesWithoutDuplicates() = runTest {
         val server = server()
         val api = FlakyMerge(server, failCall = 2)

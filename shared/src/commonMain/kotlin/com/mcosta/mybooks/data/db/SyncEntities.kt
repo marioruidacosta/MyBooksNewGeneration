@@ -64,4 +64,8 @@ interface SyncStateDao {
 
     @Query("DELETE FROM sync_state")
     suspend fun clear()
+
+    /** Whether an account's first sign-in merge was done on this device (a `merged:<owner>` key). */
+    @Query("SELECT EXISTS(SELECT 1 FROM sync_state WHERE `key` LIKE 'merged:%')")
+    suspend fun anyMerged(): Boolean
 }

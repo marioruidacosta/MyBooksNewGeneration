@@ -15,6 +15,7 @@ import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.social.FakeSocial
 import com.mcosta.mybooks.sync.SyncingBookDao
 import com.mcosta.mybooks.ui.social.AccountViewModel
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import com.mcosta.mybooks.sync.LibrarySync
@@ -135,6 +136,39 @@ class SyncWiringTest : MainDispatcherTest() {
         advanceUntilIdle()
         assertEquals(SyncStatus.SignInAgain, sync.status.value)
         assertTrue(recorder.enabled())
+    }
+
+    @Test
+    fun editsDuringStartupLoadingAreQueued() = runTest {
+        // This device joined ana's synced library in an earlier run; the app has just started and the stored
+        // session isn't restored yet.
+        state.rows["merged:$ana"] = "1"
+        fake.loading()
+        val sync = wire()!!
+        val edited = addBook()
+        val removed = addBook()
+        advanceUntilIdle()
+        assertEquals(SyncStatus.Off, sync.status.value)
+        assertTrue(recorder.enabled())
+
+        now = 1_000
+        val dao = SyncingBookDao(books, recorder)
+        dao.update(books.getById(edited)!!.copy(rating = 4))
+        // A delete too: kept as a marker, so it reaches the other devices.
+        val removedUuid = books.getById(removed)!!.uuid
+        dao.delete(removed)
+        val editedUuid = books.getById(edited)!!.uuid
+        assertEquals(setOf(editedUuid, removedUuid), queue.rows.value.map { it.rowId }.toSet())
+
+        fake.signInAs(ana)
+        advanceUntilIdle()
+        assertIs<SyncStatus.Synced>(sync.status.value)
+        assertTrue(queue.rows.value.isEmpty())
+        assertEquals(4, cloudRating(editedUuid))
+        assertEquals(
+            true,
+            fake.sync.stored()[SyncTable.BOOKS to removedUuid]?.fields?.get("deleted")?.jsonPrimitive?.booleanOrNull,
+        )
     }
 
     @Test

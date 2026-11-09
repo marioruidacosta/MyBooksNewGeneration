@@ -10,10 +10,12 @@ import com.mcosta.mybooks.social.model.Profile
 import com.mcosta.mybooks.social.model.Visibility
 import com.mcosta.mybooks.social.socialMessage
 import com.mcosta.mybooks.sync.LibrarySync
+import com.mcosta.mybooks.sync.SignOutCheck
 import com.mcosta.mybooks.sync.SyncStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,8 +33,12 @@ data class AccountState(
     val deleted: Boolean = false,
     /** True after signing out; the screen then closes. */
     val signedOut: Boolean = false,
+    /** "Sign out" was tapped while the library syncs: a last sync runs before asking about the library. */
+    val preparingSignOut: Boolean = false,
     /** "Sign out" was tapped while the library syncs: ask whether to keep a copy of it on this phone. */
     val askKeepLibrary: Boolean = false,
+    /** With [askKeepLibrary]: what "Remove" would lose. */
+    val signOutCheck: SignOutCheck = SignOutCheck(),
     /** Where library sync stands; null where sync isn't set up. */
     val sync: SyncInfo? = null,
 )
@@ -47,6 +53,19 @@ data class SyncInfo(
     /** Changes the server refused since sync started (this phone keeps its values). */
     val setAside: Int = 0,
 )
+
+/** The keep-library question's lines after the question itself: what "Remove" would lose. */
+fun SignOutCheck.warnings(): List<String> = buildList {
+    when {
+        waiting == 1 -> add("1 change hasn't reached your account yet. Removing now loses it.")
+        waiting > 1 -> add("$waiting changes haven't reached your account yet. Removing now loses them.")
+        unconfirmed -> add("Some changes may not have reached your account yet. Removing now loses them.")
+    }
+    if (ebookFiles) add("Ebook files are only on this phone and will be deleted.")
+}
+
+/** The keep-library question's "Remove" button. */
+val SignOutCheck.removeLabel: String get() = if (anythingWaiting) "Remove anyway" else "Remove"
 
 /** The signed-in user's community account: profile, avatar, visibility, blocked people, sign out, delete. */
 class AccountViewModel(
@@ -109,11 +128,32 @@ class AccountViewModel(
         _state.update { s -> s.copy(blocked = s.blocked.filterNot { it.id == userId }) }
     }
 
-    /** "Sign out" tapped: while the library syncs, first ask whether to keep it ([signOut] with the answer). */
+    private var preparing: Job? = null
+
+    /**
+     * "Sign out" tapped: while the library syncs, a last sync first (20 s at most), then ask whether to keep the
+     * library, saying what "Remove" would lose ([signOut] with the answer).
+     */
     fun signOut() {
         val syncing = sync != null && sync.status.value != SyncStatus.Off
         if (syncing) {
-            _state.update { it.copy(askKeepLibrary = true) }
+            if (preparing?.isActive == true) return
+            preparing = viewModelScope.launch {
+                _state.update { it.copy(preparingSignOut = true, message = null) }
+                try {
+                    val check = try {
+                        sync.prepareSignOut()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // Nothing could be checked: warn rather than reassure.
+                        SignOutCheck(unconfirmed = true)
+                    }
+                    _state.update { it.copy(askKeepLibrary = true, signOutCheck = check) }
+                } finally {
+                    _state.update { it.copy(preparingSignOut = false) }
+                }
+            }
             return
         }
         launchAction {
@@ -124,6 +164,7 @@ class AccountViewModel(
 
     /** The answer to "Keep a copy of your library on this device?". */
     fun signOut(keepLibrary: Boolean) = launchAction {
+        preparing?.cancel()
         _state.update { it.copy(askKeepLibrary = false) }
         try {
             sync?.signOut(keepLibrary)
@@ -141,7 +182,10 @@ class AccountViewModel(
     }
 
     /** The keep-library question was dismissed: still signed in. */
-    fun cancelSignOut() = _state.update { it.copy(askKeepLibrary = false) }
+    fun cancelSignOut() {
+        preparing?.cancel()
+        _state.update { it.copy(askKeepLibrary = false, preparingSignOut = false) }
+    }
 
     /** Deletes the community account; the library stays on this phone, as after "Keep" at sign-out. */
     fun deleteAccount() = launchAction {

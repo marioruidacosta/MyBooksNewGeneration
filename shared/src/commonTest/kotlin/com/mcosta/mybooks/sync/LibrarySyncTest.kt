@@ -265,6 +265,55 @@ class LibrarySyncTest {
     }
 
     @Test
+    fun poisonRowIsSetAsideAndTheRestSync() = runTest {
+        val server = server()
+        val a = device(server)
+        for ((uuid, title) in listOf("x" to "Os Maias", "y" to "Mau", "z" to "A Cidade e as Serras")) {
+            a.seed(uuid, title)
+            a.edit(uuid) { it.copy(rating = 3) }
+        }
+        // The server refuses outright any request holding "Mau" (as PostgREST does with a value it can't take).
+        server.rejectRequest = { row -> row.fields["title"] == JsonPrimitive("Mau") }
+
+        a.sync.start(OWNER)
+        // Bounded: a batch that keeps failing would retry forever (advanceUntilIdle would never return).
+        advanceTimeBy(60 * 60_000)
+        runCurrent()
+        val status = a.sync.status.value
+        // Stopped before asserting: a session still retrying would keep the test's end from ever going idle.
+        a.sync.stop()
+
+        assertIs<SyncStatus.Synced>(status)
+        assertTrue(a.queue.rows.value.isEmpty())
+        assertEquals(1, a.sync.setAside.value)
+        assertEquals(setOf("x", "z"), server.stored().keys.map { it.second }.toSet())
+        // Kept on this device.
+        assertEquals(3, a.book("y")!!.rating)
+    }
+
+    @Test
+    fun serverErrorSetsNothingAside() = runTest {
+        val server = server()
+        val a = device(server)
+        a.seed("x", "Os Maias")
+        a.edit("x") { it.copy(rating = 5) }
+        a.seed("y", "Mau")
+        a.edit("y") { it.copy(rating = 2) }
+        // Down, not refusing: every call fails the same way, so the rows aren't to blame.
+        server.failNext = SyncException(SyncException.Kind.OTHER, "503")
+        server.failTimes = 3
+
+        a.sync.start(OWNER)
+        runCurrent()
+        assertEquals(SyncStatus.Failed(2), a.sync.status.value)
+        assertEquals(0, a.sync.setAside.value)
+        advanceUntilIdle()
+
+        assertEquals(0, a.sync.setAside.value)
+        assertEquals(setOf("x", "y"), server.stored().keys.map { it.second }.toSet())
+    }
+
+    @Test
     fun pushIsSentInBatchesOf200() = runTest {
         val server = server()
         val a = device(server)

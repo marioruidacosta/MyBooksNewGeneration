@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.mcosta.mybooks.sync.SignOutCheck
 import com.mcosta.mybooks.sync.SyncStatus
 import com.mcosta.mybooks.sync.label
 import kotlinx.coroutines.delay
@@ -190,7 +191,9 @@ fun AccountScreen(viewModel: AccountViewModel, onBack: () -> Unit) {
             }
 
             HorizontalDivider()
-            OutlinedButton(onClick = { viewModel.signOut() }, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
+            OutlinedButton(onClick = { viewModel.signOut() }, enabled = !state.preparingSignOut, modifier = Modifier.fillMaxWidth()) {
+                Text(if (state.preparingSignOut) "Syncing before signing out…" else "Sign out")
+            }
             TextButton(onClick = { confirmDelete = true }, modifier = Modifier.fillMaxWidth()) {
                 Text("Delete account", color = MaterialTheme.colorScheme.error)
             }
@@ -199,6 +202,7 @@ fun AccountScreen(viewModel: AccountViewModel, onBack: () -> Unit) {
 
     if (state.askKeepLibrary) {
         KeepLibraryDialog(
+            state.signOutCheck,
             onKeep = { viewModel.signOut(keepLibrary = true) },
             onRemove = { viewModel.signOut(keepLibrary = false) },
             onDismiss = viewModel::cancelSignOut,
@@ -285,16 +289,19 @@ fun SyncStatusSection(info: SyncInfo, now: Long, onRetry: () -> Unit, modifier: 
     }
 }
 
-/** Signing out while the library syncs: keep a local copy of it ("Keep", the default) or erase it ("Remove"). */
+/**
+ * Signing out while the library syncs: keep a local copy of it ("Keep", the default) or erase it ("Remove", or
+ * "Remove anyway" when [check] says changes would be lost).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun KeepLibraryDialog(onKeep: () -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
-    BasicAlertDialog(onDismissRequest = onDismiss) { KeepLibraryCard(onKeep, onRemove) }
+fun KeepLibraryDialog(check: SignOutCheck, onKeep: () -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
+    BasicAlertDialog(onDismissRequest = onDismiss) { KeepLibraryCard(check, onKeep, onRemove) }
 }
 
 /** [KeepLibraryDialog]'s card, drawn like an alert dialog (on its own for screenshots, which can't draw dialog windows). */
 @Composable
-fun KeepLibraryCard(onKeep: () -> Unit, onRemove: () -> Unit) {
+fun KeepLibraryCard(check: SignOutCheck, onKeep: () -> Unit, onRemove: () -> Unit) {
     Surface(
         shape = AlertDialogDefaults.shape,
         color = AlertDialogDefaults.containerColor,
@@ -310,10 +317,18 @@ fun KeepLibraryCard(onKeep: () -> Unit, onRemove: () -> Unit) {
                 "The library in your account stays as it is.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = AlertDialogDefaults.textContentColor,
-                modifier = Modifier.padding(top = 16.dp, bottom = 24.dp),
+                modifier = Modifier.padding(top = 16.dp),
             )
-            Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onRemove) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+            for (warning in check.warnings()) {
+                Text(
+                    warning,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
+            Row(Modifier.padding(top = 24.dp).align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onRemove) { Text(check.removeLabel, color = MaterialTheme.colorScheme.error) }
                 TextButton(onClick = onKeep) { Text("Keep") }
             }
         }

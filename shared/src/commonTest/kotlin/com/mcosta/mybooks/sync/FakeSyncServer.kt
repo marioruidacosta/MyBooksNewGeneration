@@ -30,6 +30,12 @@ class FakeSyncServer(
     /** The server's reason to set a pushed (or merged) row aside, or null to apply it. */
     var refuse: (SyncRow) -> String? = { null }
 
+    /**
+     * True for a row the server can't take at all: a push holding one is refused whole, before any row is looked at
+     * (as PostgREST refuses a request whose JSON Postgres can't hold), with a [SyncException.rejected] OTHER.
+     */
+    var rejectRequest: (SyncRow) -> Boolean = { false }
+
     /** Every data call ("push", "pull", "merge", "cover-up", "cover-down"), with the [clock] time it was made at, failed ones included. */
     val calls = mutableListOf<Pair<String, Long>>()
 
@@ -86,6 +92,7 @@ class FakeSyncServer(
     override suspend fun push(rows: List<SyncRow>): PushResult {
         check("push")
         require(rows.size <= 200) { "sync_push takes at most 200 changes" }
+        if (rows.any(rejectRequest)) throw SyncException(SyncException.Kind.OTHER, "request refused", rejected = true)
         val refused = rows.mapNotNull { row -> refuse(row)?.let { SetAside(row.table, row.id, it) } }
         val accepted = rows.filter { row -> refused.none { it.table == row.table && it.id == row.id } }
         accepted.forEach { mergeRow(it) }
@@ -129,11 +136,37 @@ class FakeSyncServer(
                     }
                 } else null
             val cloudId = match?.id ?: b.id
-            mergeRow(b, cloudId)
+            mergeRow(if (match != null) mergeUntimed(match, b) else b, cloudId)
             ids[b.id] = cloudId
         }
         if (ids.isNotEmpty()) pingFlow.tryEmit(owner)
         return MergeResult(ids, refused)
+    }
+
+    /**
+     * merge_library's rule for fields neither [cloud] nor [incoming] has a real time (> 0) for: differing notes and
+     * reviews are joined (the cloud's, a blank line, the incoming one), timed now; elsewhere a value beats an empty one.
+     */
+    private fun mergeUntimed(cloud: SyncRow, incoming: SyncRow): SyncRow {
+        val fields = incoming.fields.toMutableMap()
+        val times = incoming.times.toMutableMap()
+        for (f in incoming.fields.keys) {
+            if (f == "deleted" || (times[f] ?: 0L) > 0 || (cloud.times[f] ?: 0L) > 0) continue
+            val theirs = (cloud.fields[f] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content?.ifEmpty { null }
+            val mine = (fields[f] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content?.ifEmpty { null }
+            when {
+                f in setOf("notes", "review") && !theirs.isNullOrBlank() && !mine.isNullOrBlank() -> if (theirs != mine) {
+                    fields[f] = JsonPrimitive("$theirs\n\n$mine".take(if (f == "notes") 20_000 else 2_000))
+                    times[f] = clock()
+                }
+                mine != null && theirs == null -> times[f] = 1L
+                mine == null && theirs != null -> {
+                    fields -= f
+                    times -= f
+                }
+            }
+        }
+        return incoming.copy(fields = fields, times = times)
     }
 
     override fun pings(owner: String): Flow<Unit> = pingFlow.filter { it == owner }.map { }

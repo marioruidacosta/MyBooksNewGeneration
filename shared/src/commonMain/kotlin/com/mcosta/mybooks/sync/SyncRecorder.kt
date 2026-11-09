@@ -24,7 +24,7 @@ private class InTransaction : AbstractCoroutineContextElement(Key) {
 class SyncRecorder(
     private val queue: SyncQueueDao,
     private val clock: () -> Long,
-    val enabled: () -> Boolean,
+    val enabled: suspend () -> Boolean,
     private val runTransaction: suspend (suspend () -> Unit) -> Unit,
 ) {
     private val _changes = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)

@@ -66,6 +66,13 @@ class FirstMerge(
         }
     }
 
+    /** The live [books] [owner]'s first merge on this device hasn't sent yet (all of them before it starts). */
+    internal suspend fun unmerged(owner: String, books: List<BookEntity>): List<BookEntity> {
+        if (db.state.get(mergedKey(owner)) != null) return emptyList()
+        val done = loadDone(owner)
+        return books.filter { !it.deleted && it.uuid !in done }
+    }
+
     private suspend fun combineLibraries(owner: String) {
         val live = db.books.getAllAny().filter { !it.deleted }
         if (live.isNotEmpty()) {

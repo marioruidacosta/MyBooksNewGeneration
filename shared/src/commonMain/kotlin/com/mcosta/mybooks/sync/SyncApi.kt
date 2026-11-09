@@ -13,7 +13,16 @@ data class PullPage(val rows: List<SyncRow>, val last: Long)
 /** [ids] maps a device's local book id to the cloud id it was merged into. */
 data class MergeResult(val ids: Map<String, String>, val setAside: List<SetAside>)
 
-class SyncException(val kind: Kind, message: String, cause: Throwable? = null) : Exception(message, cause) {
+/**
+ * A failed sync call. [rejected]: the server answered and refused the request itself (an HTTP 4xx other than an expired
+ * session or a full store), so sending the same request again can't work; false when it was down or unreachable.
+ */
+class SyncException(
+    val kind: Kind,
+    message: String,
+    cause: Throwable? = null,
+    val rejected: Boolean = false,
+) : Exception(message, cause) {
     enum class Kind { OFFLINE, AUTH, STORAGE_FULL, OTHER }
 }
 

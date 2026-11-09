@@ -306,7 +306,9 @@ internal fun syncFor(
 }
 
 /**
- * Whether local changes are queued for upload: while [sync] runs for a signed-in user, and while it waits for them to
- * sign in again (an expired session: its changes go then). Not after the user signed out: the library kept is local.
+ * Whether local changes are queued for upload: while [sync] runs for a signed-in user, while it waits for them to
+ * sign in again (an expired session: its changes go then), and whenever this device's library belongs to a synced
+ * account (at start, before the stored session is restored). Not after the user signed out: the library kept is local.
  */
-internal fun syncRecording(sync: LibrarySync?): Boolean = sync != null && sync.status.value != SyncStatus.Off
+internal suspend fun syncRecording(sync: LibrarySync?): Boolean =
+    sync != null && (sync.status.value != SyncStatus.Off || sync.belongsToAnAccount())

@@ -72,6 +72,12 @@ class CoverSync(
         }
     }
 
+    /** How many of [books]' photos [uploadPending] would send: taken here, still on this device, not uploaded. */
+    suspend fun pendingUploads(books: List<BookEntity>): Int = books.count { book ->
+        val name = covers.nameOf(book.coverUrl)
+        name != null && !book.deleted && state.get(coverKey(book.uuid)) != name && covers.exists(book.coverUrl)
+    }
+
     /** Fetches the photos of pulled books (`cover:<uuid>.jpg`) not on this device, [DOWNLOADS_AT_ONCE] at a time. */
     suspend fun downloadMissing(owner: String, books: List<BookEntity>) {
         val wanted = books.filter { book ->

@@ -82,6 +82,7 @@ import com.mcosta.mybooks.ui.library.LibraryScreen
 import com.mcosta.mybooks.ui.library.LibraryViewModel
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
 import com.mcosta.mybooks.ui.social.KeepLibraryCard
+import com.mcosta.mybooks.sync.SignOutCheck
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import com.mcosta.mybooks.ui.social.SyncInfo
@@ -515,18 +516,32 @@ class ScreenshotTest {
         compose.onNodeWithText("Combining your libraries… 120 of 340").assertExists()
     }
 
-    /** Signing out while the library syncs. */
-    private fun signOutDialog(dark: Boolean) {
+    /** Signing out while the library syncs; [check]: what "Remove" would lose. */
+    private fun signOutDialog(dark: Boolean, check: SignOutCheck = SignOutCheck(), name: String = "sign-out-dialog") {
         // Over a dimmed screen, as the dialog shows (Robolectric can't draw the dialog's own window).
-        shoot("sign-out-dialog", dark, ready = { true }) {
+        shoot(name, dark, ready = { true }) {
             androidx.compose.foundation.layout.Box(
                 androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)).padding(40.dp),
                 contentAlignment = androidx.compose.ui.Alignment.Center,
             ) {
-                KeepLibraryCard(onKeep = {}, onRemove = {})
+                KeepLibraryCard(check, onKeep = {}, onRemove = {})
             }
         }
-        for (text in listOf("Keep a copy of your library on this device?", "Keep", "Remove")) compose.onNodeWithText(text).assertExists()
+        for (text in listOf("Keep a copy of your library on this device?", "Keep")) compose.onNodeWithText(text).assertExists()
+    }
+
+    /** Signing out with changes the last sync couldn't send: "Remove" says what it loses. */
+    private fun signOutDialogPending(dark: Boolean) {
+        signOutDialog(dark, SignOutCheck(waiting = 3, unconfirmed = true), "sign-out-dialog-pending")
+        compose.onNodeWithText("3 changes haven't reached your account yet. Removing now loses them.").assertExists()
+        compose.onNodeWithText("Remove anyway").assertExists()
+    }
+
+    /** Signing out with ebook files on the phone (they never sync). */
+    private fun signOutDialogEbooks(dark: Boolean) {
+        signOutDialog(dark, SignOutCheck(ebookFiles = true), "sign-out-dialog-ebooks")
+        compose.onNodeWithText("Ebook files are only on this phone and will be deleted.").assertExists()
+        compose.onNodeWithText("Remove").assertExists()
     }
 
     /** A book whose ebook was added on another device: its record synced, its file didn't. */
@@ -543,7 +558,13 @@ class ScreenshotTest {
 
     @Test fun accountSyncLight() = accountSync(dark = false)
     @Test fun accountCombiningDark() = accountCombining(dark = true)
-    @Test fun signOutDialogLight() = signOutDialog(dark = false)
+    @Test fun signOutDialogLight() {
+        signOutDialog(dark = false)
+        compose.onNodeWithText("Remove").assertExists()
+    }
+    @Test fun signOutDialogPendingLight() = signOutDialogPending(dark = false)
+    @Test fun signOutDialogPendingDark() = signOutDialogPending(dark = true)
+    @Test fun signOutDialogEbooksLight() = signOutDialogEbooks(dark = false)
     @Config(qualifiers = TALL) @Test fun ebookElsewhereLight() = ebookElsewhere(dark = false)
 
     @Config(qualifiers = TALL) @Test fun homeLight() = home(dark = false)

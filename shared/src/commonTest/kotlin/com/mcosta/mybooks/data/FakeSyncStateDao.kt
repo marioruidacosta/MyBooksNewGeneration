@@ -12,4 +12,5 @@ class FakeSyncStateDao : SyncStateDao {
         rows[entry.key] = entry.value
     }
     override suspend fun clear() = rows.clear()
+    override suspend fun anyMerged(): Boolean = rows.keys.any { it.startsWith("merged:") }
 }

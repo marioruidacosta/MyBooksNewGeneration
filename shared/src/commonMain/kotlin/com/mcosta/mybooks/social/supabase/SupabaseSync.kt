@@ -56,8 +56,19 @@ internal fun mapSyncError(e: Throwable): SyncException {
         isTlsFailure(e) || chain.any { it is HttpRequestTimeoutException } || e is HttpRequestException || e is IOException ||
             message.contains("timeout has expired", ignoreCase = true) ->
             SyncException(SyncException.Kind.OFFLINE, "offline", e)
-        else -> SyncException(SyncException.Kind.OTHER, e.message ?: "error", e)
+        // A 4xx: the server took the request and refused it (sending it again can't work); else it was down.
+        else -> SyncException(SyncException.Kind.OTHER, e.message ?: "error", e, rejected = status != null && status in 400..499)
     }
+}
+
+/**
+ * [this] without U+0000 in any string: Postgres's jsonb can't hold it, so one anywhere would make the server refuse the
+ * whole request.
+ */
+internal fun JsonElement.withoutNul(): JsonElement = when (this) {
+    is JsonObject -> JsonObject(mapValues { it.value.withoutNul() })
+    is JsonArray -> JsonArray(map { it.withoutNul() })
+    is JsonPrimitive -> if (isString && '\u0000' in content) JsonPrimitive(content.replace("\u0000", "")) else this
 }
 
 internal class SupabaseSync(
@@ -78,7 +89,7 @@ internal class SupabaseSync(
     private fun change(row: SyncRow) = buildJsonObject {
         put("table", row.table.wire)
         put("id", row.id)
-        put("fields", JsonObject(row.fields))
+        put("fields", JsonObject(row.fields).withoutNul())
         put("times", JsonObject(row.times.mapValues { JsonPrimitive(it.value) }))
     }
 
