@@ -62,6 +62,10 @@ interface SyncStateDao {
 
     suspend fun set(key: String, value: String) = put(SyncStateEntity(key, value))
 
+    /** The rows whose key starts with `pref:` (a library's own preferences). */
+    @Query("SELECT * FROM sync_state WHERE `key` LIKE 'pref:%'")
+    suspend fun prefs(): List<SyncStateEntity>
+
     @Query("DELETE FROM sync_state")
     suspend fun clear()
 
