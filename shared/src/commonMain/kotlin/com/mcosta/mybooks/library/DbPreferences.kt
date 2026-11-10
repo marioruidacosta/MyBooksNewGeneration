@@ -2,17 +2,20 @@ package com.mcosta.mybooks.library
 
 import com.mcosta.mybooks.data.Preferences
 import com.mcosta.mybooks.data.db.SyncStateDao
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.getAndUpdate
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 /** The preferences that belong to one library, so they travel with it instead of the device. */
 val PER_LIBRARY_PREF_KEYS = setOf("home.pinnedTags", "suggestions.hidden")
 
+/** Distinct from the sync engine's `prefs/<key>` time rows, which [load] must not read. */
 private const val PREFIX = "pref:"
 
 /**
@@ -39,13 +42,30 @@ class DbPreferences(
     override fun set(key: String, value: String) {
         cache.update { it + (key to value) }
         pending.update { it + (key to value) }
-        // Writes drain one at a time and always take the latest pending value, so the last set wins.
-        scope.launch {
-            writing.withLock {
-                while (true) {
-                    val batch = pending.getAndUpdate { emptyMap() }
-                    if (batch.isEmpty()) break
-                    for ((k, v) in batch) state.set(PREFIX + k, v)
+        // Drains run one at a time and write the latest pending values, so the last set wins.
+        scope.launch { drain() }
+    }
+
+    /** Writes everything still pending; call before closing the database (works after [scope] is cancelled). */
+    suspend fun flush() {
+        withContext(NonCancellable) { drain() }
+    }
+
+    private suspend fun drain() {
+        writing.withLock {
+            while (true) {
+                val batch = pending.value
+                if (batch.isEmpty()) return
+                for ((k, v) in batch) {
+                    try {
+                        state.set(PREFIX + k, v)
+                    } catch (e: CancellationException) {
+                        throw e // stays pending for flush()
+                    } catch (_: Exception) {
+                        return // best effort: stays pending
+                    }
+                    // Remove only what was written; a newer value for the key stays pending.
+                    pending.update { if (it[k] == v) it - k else it }
                 }
             }
         }
