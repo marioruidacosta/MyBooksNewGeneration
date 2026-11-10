@@ -1,18 +1,22 @@
 package com.mcosta.mybooks
 
 import android.content.Context
-import com.mcosta.mybooks.data.covers.CoverStore
-import com.mcosta.mybooks.data.db.createAndroidDatabase
+import com.mcosta.mybooks.library.LibraryFiles
+import com.mcosta.mybooks.library.deleteLibraryDatabase
+import com.mcosta.mybooks.library.openLibraryDatabase
 import com.mcosta.mybooks.social.SocialConfig
 import com.russhwolf.settings.SharedPreferencesSettings
 import io.ktor.client.engine.okhttp.OkHttp
+import kotlinx.coroutines.runBlocking
 import okio.FileSystem
 import java.util.concurrent.TimeUnit
 import okio.Path.Companion.toOkioPath
 
-/** The Android app's dependencies: existing database file, OkHttp, photos in files/covers. */
+/** The Android app's dependencies, started: the libraries' databases, OkHttp, photos and ebooks under files/. */
 fun androidAppContainer(context: Context, googleBooksApiKey: String, appVersion: String, socialConfig: SocialConfig) = AppContainer(
-    database = createAndroidDatabase(context),
+    openDatabase = { id -> openLibraryDatabase(context, id) },
+    deleteDatabase = { id -> deleteLibraryDatabase(context, id) },
+    libraryFiles = LibraryFiles(FileSystem.SYSTEM, context.filesDir.toOkioPath()),
     // OkHttp waits 10 s for data by default; sending the sign-in email can take longer.
     httpEngine = OkHttp.create {
         config {
@@ -20,7 +24,6 @@ fun androidAppContainer(context: Context, googleBooksApiKey: String, appVersion:
             writeTimeout(30, TimeUnit.SECONDS)
         }
     },
-    coverStore = CoverStore(FileSystem.SYSTEM, context.filesDir.toOkioPath() / "covers"),
     releasesFileSystem = FileSystem.SYSTEM,
     releasesDir = context.filesDir.toOkioPath() / "releases",
     googleBooksApiKey = googleBooksApiKey,
@@ -29,4 +32,7 @@ fun androidAppContainer(context: Context, googleBooksApiKey: String, appVersion:
     // Session in the app's own preferences (the library default needs an androidx-startup hook).
     socialSettings = SharedPreferencesSettings(context.getSharedPreferences("mybooks_community", Context.MODE_PRIVATE)),
     appSettings = SharedPreferencesSettings(context.getSharedPreferences("mybooks", Context.MODE_PRIVATE)),
-)
+).also {
+    // Everything after needs the library open. The no-account library opens without waiting (Room opens the file lazily).
+    runBlocking { it.start() }
+}

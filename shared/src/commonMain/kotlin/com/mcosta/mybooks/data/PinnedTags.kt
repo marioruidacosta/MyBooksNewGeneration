@@ -33,6 +33,11 @@ class PinnedTags(
     /** The value as kept and synced: one tag per line, in the order pinned. */
     fun stored(): String = _tags.value.joinToString("\n")
 
+    /** Reads the stored value again (once the library's preferences have loaded). */
+    fun reload() {
+        _tags.value = parse(prefs?.get(KEY))
+    }
+
     /** The value from another device (null: removed there): shown at once and kept, but not reported as a change. */
     fun pulled(value: String?) {
         _tags.value = parse(value)

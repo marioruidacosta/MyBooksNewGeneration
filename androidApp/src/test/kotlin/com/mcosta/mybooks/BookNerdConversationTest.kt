@@ -11,8 +11,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
-import com.mcosta.mybooks.data.covers.CoverStore
 import com.mcosta.mybooks.data.db.createAndroidDatabase
+import com.mcosta.mybooks.library.LibraryFiles
 import com.mcosta.mybooks.platform.CoverCamera
 import com.mcosta.mybooks.platform.DocumentPicker
 import com.mcosta.mybooks.platform.IsbnScanner
@@ -23,6 +23,7 @@ import com.mcosta.mybooks.ui.App
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
+import kotlinx.coroutines.runBlocking
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import org.junit.After
@@ -45,14 +46,15 @@ class BookNerdConversationTest {
     private val dbName = "booknerd-${System.nanoTime()}.db"
     private val files = context.filesDir.toOkioPath() / dbName.removeSuffix(".db")
     private val container = AppContainer(
-        database = createAndroidDatabase(context, dbName),
+        openDatabase = { createAndroidDatabase(context, dbName) },
+        deleteDatabase = {},
+        libraryFiles = LibraryFiles(FileSystem.SYSTEM, files),
         httpEngine = MockEngine { respondError(HttpStatusCode.NotFound) },
-        coverStore = CoverStore(FileSystem.SYSTEM, files / "covers"),
         googleBooksApiKey = "",
         userAgent = "MyBooks test",
         releasesFileSystem = FileSystem.SYSTEM,
         releasesDir = files / "releases",
-    )
+    ).also { runBlocking { it.start() } }
     private val services = PlatformServices(
         scanner = object : IsbnScanner { override suspend fun scan() = ScanOutcome.Cancelled },
         camera = object : CoverCamera { override suspend fun takePhoto(): ByteArray? = null },

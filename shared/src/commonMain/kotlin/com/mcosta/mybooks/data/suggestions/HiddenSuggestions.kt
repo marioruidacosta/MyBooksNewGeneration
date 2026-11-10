@@ -40,6 +40,11 @@ class HiddenSuggestions(
     /** The value as kept and synced: one key per line, sorted. */
     fun stored(): String = _keys.value.sorted().joinToString("\n")
 
+    /** Reads the stored value again (once the library's preferences have loaded). */
+    fun reload() {
+        _keys.value = parse(prefs?.get(KEY))
+    }
+
     /** The value from another device (null: removed there): shown at once and kept, but not reported as a change. */
     fun pulled(value: String?) {
         _keys.value = parse(value)
