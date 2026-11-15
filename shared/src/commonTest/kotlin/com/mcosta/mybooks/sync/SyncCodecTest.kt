@@ -54,7 +54,7 @@ class SyncCodecTest {
     @Test
     fun quoteCarriesBookUuid() = runTest {
         val q = QuoteEntity(id = 3, bookId = 42, text = "t", page = 9, dateAdded = 5, position = "p", uuid = "q-uuid")
-        val row = q.toRow { if (it == 42L) "book-uuid" else null }!!
+        val row = q.toRow("book-uuid")!!
         assertEquals(JsonPrimitive("book-uuid"), row.fields["book_id"])
         assertEquals(q, row.toQuoteEntity(q) { if (it == "book-uuid") 42L else null })
         assertNull(row.toQuoteEntity(null) { null })
@@ -63,11 +63,11 @@ class SyncCodecTest {
     @Test
     fun bookmarkEbookChallengeAndPrefRoundTrip() = runTest {
         val bm = BookmarkEntity(id = 4, bookId = 42, position = "pos", label = "l", dateAdded = 8, uuid = "bm-uuid")
-        assertEquals(bm, bm.toRow { "book-uuid" }!!.toBookmarkEntity(bm) { 42L })
+        assertEquals(bm, bm.toRow("book-uuid")!!.toBookmarkEntity(bm) { 42L })
 
         val e = EbookEntity(bookId = 42, format = EbookFormat.PDF, fileName = "f.pdf", size = 123456789012, dateAdded = 1,
             position = "p", lastOpened = 2, uuid = "book-uuid")
-        val er = e.toRow { "book-uuid" }!!
+        val er = e.toRow("book-uuid")!!
         assertEquals("book-uuid", er.id)
         assertEquals(JsonPrimitive(123456789012), er.fields["size"])
         assertEquals(e, er.toEbookEntity(e) { 42L })
