@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mcosta.mybooks.library.Libraries
 import com.mcosta.mybooks.library.LibrarySessions
 import com.mcosta.mybooks.share.SharingStatus
 import com.mcosta.mybooks.social.SocialServices
@@ -19,13 +20,14 @@ fun AccountRoute(
     onBack: () -> Unit,
     sync: LibrarySync? = null,
     sessions: LibrarySessions<*>? = null,
+    libraries: Libraries<*>? = null,
 ) {
     val signIn = viewModel { SignInViewModel(services.auth, services.profiles, onProfileCreated = { sharing?.refresh() }) }
     val state by signIn.state.collectAsStateWithLifecycle()
     val syncStatus = sync?.status?.collectAsStateWithLifecycle()?.value
     if (state.step == SignInStep.DONE) {
         val shrinker = LocalPlatformServices.current.shrinker
-        AccountScreen(viewModel { AccountViewModel(services, shrinker, sharing, sync = sync, sessions = sessions) }, onBack = onBack)
+        AccountScreen(viewModel { AccountViewModel(services, shrinker, sharing, sync = sync, sessions = sessions, libraries = libraries) }, onBack = onBack)
     } else {
         // The session expired: the library keeps its changes until the user signs in again.
         SignInScreen(signIn, onBack = onBack, onDone = {}, notice = if (syncStatus == SyncStatus.SignInAgain) "Sign in again to sync" else null)

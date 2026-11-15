@@ -3,7 +3,10 @@ package com.mcosta.mybooks.ui.social
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mcosta.mybooks.data.covers.PhotoShrinker
+import com.mcosta.mybooks.library.AddBooksOffer
+import com.mcosta.mybooks.library.Libraries
 import com.mcosta.mybooks.library.LibrarySessions
+import com.mcosta.mybooks.library.OnSignOut
 import com.mcosta.mybooks.share.SharingStatus
 import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.social.model.Person
@@ -42,7 +45,27 @@ data class AccountState(
     val signOutCheck: SignOutCheck = SignOutCheck(),
     /** Where library sync stands; null where sync isn't set up. */
     val sync: SyncInfo? = null,
-)
+    /** The first sign-in's "Add this phone's N books to your account?", while it waits for an answer. */
+    val offer: AddBooksOffer? = null,
+    /** Live books in the phone's own (no-account) library: "Add this phone's books" shows while there are any. */
+    val phoneBooks: Int = 0,
+    /** "Add this phone's books" was tapped: the same question, asked from here. */
+    val askAddPhoneBooks: Boolean = false,
+    /** The phone's books are moving into the account's library. */
+    val addingPhoneBooks: Boolean = false,
+) {
+    /** The "Add this phone's N books" question to show (N), or null. */
+    val addPhoneBooksQuestion: Int?
+        get() = when {
+            addingPhoneBooks -> null
+            offer != null -> offer.count
+            askAddPhoneBooks && phoneBooks > 0 -> phoneBooks
+            else -> null
+        }
+
+    /** Settings → Account's "Add this phone's books": the phone has books of its own, and no question is open. */
+    val canAddPhoneBooks: Boolean get() = phoneBooks > 0 && offer == null && !addingPhoneBooks
+}
 
 /** The "Library sync" line in Settings → Account. */
 data class SyncInfo(
@@ -79,6 +102,8 @@ class AccountViewModel(
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
     /** Switches libraries on sign-out; null in tests without libraries (signing out then only ends the session). */
     private val sessions: LibrarySessions<*>? = null,
+    /** The phone's libraries, for moving the phone's books into the account's; null in tests without libraries. */
+    private val libraries: Libraries<*>? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(AccountState())
     val state: StateFlow<AccountState> = _state.asStateFlow()
@@ -90,7 +115,54 @@ class AccountViewModel(
                     .collect { info -> _state.update { it.copy(sync = info) } }
             }
         }
+        if (libraries != null) {
+            viewModelScope.launch { libraries.offer.collect { offer -> _state.update { it.copy(offer = offer) } } }
+            countPhoneBooks()
+        }
         refresh()
+    }
+
+    private fun countPhoneBooks() {
+        val libraries = libraries ?: return
+        viewModelScope.launch {
+            val count = try {
+                libraries.phoneBooks()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                0
+            }
+            _state.update { it.copy(phoneBooks = count) }
+        }
+    }
+
+    /** "Add this phone's books" in Settings → Account: asks first, as at the first sign-in. */
+    fun askAddPhoneBooks() = _state.update { it.copy(askAddPhoneBooks = true) }
+
+    /** "Add them": the phone's books move into the account's library, and sync to its other devices. */
+    fun addPhoneBooks() {
+        val libraries = libraries ?: return
+        if (_state.value.addingPhoneBooks) return
+        _state.update { it.copy(askAddPhoneBooks = false, addingPhoneBooks = true, message = null) }
+        viewModelScope.launch {
+            try {
+                libraries.addPhoneBooks()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Nothing is lost: what didn't move is still on the phone, and it can be tried again.
+                _state.update { it.copy(message = "Couldn't add this phone's books. Try again.") }
+            } finally {
+                _state.update { it.copy(addingPhoneBooks = false) }
+            }
+            countPhoneBooks()
+        }
+    }
+
+    /** "Not now": the phone's books stay where they are (they can still be added from here later). */
+    fun notNow() {
+        _state.update { it.copy(askAddPhoneBooks = false) }
+        if (_state.value.offer != null) libraries?.notNow()
     }
 
     fun refresh() = launchAction {
@@ -161,7 +233,7 @@ class AccountViewModel(
         }
         launchAction {
             // Nothing to lose by keeping it: the account's library stays on the phone, and the phone shows its own.
-            leave(keepLibrary = true) { services.auth.signOut() }
+            leave(OnSignOut.KEEP) { services.auth.signOut() }
             _state.update { AccountState(signedOut = true) }
         }
     }
@@ -173,7 +245,7 @@ class AccountViewModel(
     fun signOut(keepLibrary: Boolean) = launchAction {
         preparing?.cancel()
         _state.update { it.copy(askKeepLibrary = false) }
-        leave(keepLibrary) { services.auth.signOut() }
+        leave(if (keepLibrary) OnSignOut.KEEP else OnSignOut.REMOVE) { services.auth.signOut() }
         _state.update { AccountState(signedOut = true) }
     }
 
@@ -190,17 +262,17 @@ class AccountViewModel(
     }
 
     /**
-     * Deletes the community account. As after "Keep" at sign-out, the phone shows its own library, and the account's
-     * stays on the phone.
+     * Deletes the community account. The phone then shows its own library, with the account's books moved into it (the
+     * account's library is removed; it stays if they can't be moved).
      */
     fun deleteAccount() = launchAction {
-        leave(keepLibrary = true) { services.profiles.deleteAccount() }
+        leave(OnSignOut.MOVE_TO_PHONE) { services.profiles.deleteAccount() }
         _state.update { AccountState(deleted = true) }
     }
 
     /** Ends the session with [signOutOfServer], through [sessions] (which switches libraries) where there is one. */
-    private suspend fun leave(keepLibrary: Boolean, signOutOfServer: suspend () -> Unit) {
-        if (sessions != null) return sessions.signOut(keepLibrary, signOutOfServer)
+    private suspend fun leave(after: OnSignOut, signOutOfServer: suspend () -> Unit) {
+        if (sessions != null) return sessions.signOut(after, signOutOfServer)
         sync?.signOut()
         try {
             signOutOfServer()

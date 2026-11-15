@@ -81,6 +81,7 @@ import com.mcosta.mybooks.ui.home.HomeViewModel
 import com.mcosta.mybooks.ui.library.LibraryScreen
 import com.mcosta.mybooks.ui.library.LibraryViewModel
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
+import com.mcosta.mybooks.ui.social.AddPhoneBooksCard
 import com.mcosta.mybooks.ui.social.KeepLibraryCard
 import com.mcosta.mybooks.sync.SignOutCheck
 import androidx.compose.foundation.background
@@ -530,6 +531,25 @@ class ScreenshotTest {
         for (text in listOf("Keep a copy of your library on this device?", "Keep")) compose.onNodeWithText(text).assertExists()
     }
 
+    /** An account's first sign-in on a phone with books of its own: add them to the account? */
+    private fun addPhoneBooks(dark: Boolean) {
+        // Over a dimmed screen, as the dialog shows (Robolectric can't draw the dialog's own window).
+        shoot("add-phone-books", dark, ready = { true }) {
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)).padding(40.dp),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                AddPhoneBooksCard(3, onAdd = {}, onNotNow = {})
+            }
+        }
+        for (text in listOf(
+            "Add this phone's 3 books to your account?",
+            "They'll move into your account's library and sync to your other devices.",
+            "Add them",
+            "Not now",
+        )) compose.onNodeWithText(text).assertExists()
+    }
+
     /** Signing out with changes the last sync couldn't send: "Remove" says what it loses. */
     private fun signOutDialogPending(dark: Boolean) {
         signOutDialog(dark, SignOutCheck(waiting = 3, unconfirmed = true), "sign-out-dialog-pending")
@@ -565,6 +585,8 @@ class ScreenshotTest {
     @Test fun signOutDialogPendingLight() = signOutDialogPending(dark = false)
     @Test fun signOutDialogPendingDark() = signOutDialogPending(dark = true)
     @Test fun signOutDialogEbooksLight() = signOutDialogEbooks(dark = false)
+    @Test fun addPhoneBooksLight() = addPhoneBooks(dark = false)
+    @Test fun addPhoneBooksDark() = addPhoneBooks(dark = true)
     @Config(qualifiers = TALL) @Test fun ebookElsewhereLight() = ebookElsewhere(dark = false)
 
     @Config(qualifiers = TALL) @Test fun homeLight() = home(dark = false)

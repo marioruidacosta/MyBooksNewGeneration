@@ -572,7 +572,7 @@ fun MyBooksNavHost(
                     )
                 }
                 composable(Routes.ACCOUNT) {
-                    AccountRoute(social, container.sharingStatus, onBack = { nav.popBackStack() }, sync = container.sync, sessions = container.sessions)
+                    AccountRoute(social, container.sharingStatus, onBack = { nav.popBackStack() }, sync = container.sync, sessions = container.sessions, libraries = container.libraries)
                 }
             }
             composable(Routes.EDIT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->

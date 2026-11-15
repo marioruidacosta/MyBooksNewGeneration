@@ -160,8 +160,13 @@ class AppContainer(
         },
     )
 
-    /** Switches libraries with the session (each account its own library); null without the community. */
-    val sessions: LibrarySessions<LibrarySpace>? = social?.let { LibrarySessions(libraries, it.auth.session, applicationScope) }
+    /**
+     * Switches libraries with the session (each account its own library), asking at an account's first sign-in here
+     * whether to add the phone's books to it; null without the community.
+     */
+    val sessions: LibrarySessions<LibrarySpace>? = social?.let {
+        LibrarySessions(libraries, it.auth.session, applicationScope) { space -> libraries.offerPhoneBooks(space) }
+    }
 
     /**
      * Picks the library active at the last launch, at once (no database query: it may run on the main thread); call

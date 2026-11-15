@@ -100,7 +100,7 @@ class SyncWiringTest : MainDispatcherTest() {
     }
 
     @Test
-    fun deletingTheAccountShowsThePhoneLibraryAndKeepsTheAccounts() = runTest(timeout = 30.seconds) {
+    fun deletingTheAccountMovesItsBooksIntoThePhoneLibrary() = runTest(timeout = 30.seconds) {
         val app = FakeLibraries(this, fake, engineJob).also { it.start() }
         app.signIn(ana)
         advanceUntilIdle()
@@ -115,7 +115,42 @@ class SyncWiringTest : MainDispatcherTest() {
         assertTrue(vm.state.value.deleted)
         assertEquals(LibraryId.Local, app.active.id)
         assertEquals(SyncStatus.Off, accountLibrary.sync!!.status.value)
-        assertTrue(app.deleted.isEmpty())
-        assertEquals(listOf("Os Maias"), app.stores.getValue(LibraryId.Account(ana)).live().map { it.title })
+        assertEquals(listOf("Os Maias"), app.active.store.live().map { it.title })
+        assertEquals(listOf<LibraryId>(LibraryId.Account(ana)), app.deleted)
+    }
+
+    @Test
+    fun theAccountScreenAsksToAddThePhoneBooks() = runTest(timeout = 30.seconds) {
+        val app = FakeLibraries(this, fake, engineJob).also {
+            it.offers()
+            it.start()
+        }
+        app.active.addBook("Mensagem")
+        app.signIn(ana)
+        advanceUntilIdle()
+        val vm = AccountViewModel(
+            fake.services, shrinker, sync = app.active.sync, workDispatcher = mainDispatcher, sessions = app.sessions,
+            libraries = app.libraries,
+        )
+        advanceUntilIdle()
+
+        // The first sign-in's question, on the account screen.
+        assertEquals(1, vm.state.value.addPhoneBooksQuestion)
+        assertFalse(vm.state.value.canAddPhoneBooks)
+        vm.notNow()
+        advanceUntilIdle()
+        assertNull(vm.state.value.addPhoneBooksQuestion)
+        assertTrue(vm.state.value.canAddPhoneBooks)
+
+        // Later: Settings → Account → "Add this phone's books" asks again, and "Add them" moves them.
+        vm.askAddPhoneBooks()
+        assertEquals(1, vm.state.value.addPhoneBooksQuestion)
+        vm.addPhoneBooks()
+        advanceUntilIdle()
+
+        assertNull(vm.state.value.addPhoneBooksQuestion)
+        assertFalse(vm.state.value.canAddPhoneBooks)
+        assertEquals(listOf("Mensagem"), app.active.store.live().map { it.title })
+        assertTrue(app.stores.getValue(LibraryId.Local).empty())
     }
 }

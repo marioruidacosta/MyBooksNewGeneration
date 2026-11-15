@@ -9,7 +9,9 @@ import com.mcosta.mybooks.data.FakeShareStateDao
 import com.mcosta.mybooks.data.FakeSyncQueueDao
 import com.mcosta.mybooks.data.FakeSyncStateDao
 import com.mcosta.mybooks.data.Preferences
+import com.mcosta.mybooks.data.covers.CoverStore
 import com.mcosta.mybooks.data.db.BookEntity
+import com.mcosta.mybooks.data.ebooks.EbookFiles
 import com.mcosta.mybooks.data.db.toBook
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.sharingFor
@@ -47,9 +49,17 @@ class FakeLibraryStore {
     val queue = FakeSyncQueueDao()
     val state = FakeSyncStateDao()
     val shares = FakeShareStateDao()
-    val db = SyncDatabase(books, FakeQuoteDao(), FakeEbookDao(), FakeBookmarkDao(), FakeChallengeDao(), queue, state)
+    val quotes = FakeQuoteDao()
+    val ebooks = FakeEbookDao()
+    val bookmarks = FakeBookmarkDao()
+    val challenges = FakeChallengeDao()
+    val db = SyncDatabase(books, quotes, ebooks, bookmarks, challenges, queue, state)
 
     fun live(): List<BookEntity> = books.rows.value.values.filter { !it.deleted }
+
+    /** Whether nothing at all is left: no book, quote, ebook record, bookmark or goal, deleted or not. */
+    fun empty(): Boolean = books.rows.value.isEmpty() && quotes.rows.value.isEmpty() && ebooks.rows.value.isEmpty() &&
+        bookmarks.rows.value.isEmpty() && challenges.rows.value.isEmpty()
 }
 
 /**
@@ -59,6 +69,7 @@ class FakeLibraryStore {
 class FakeLibrarySpace(
     override val id: LibraryId,
     val store: FakeLibraryStore,
+    files: LibraryFiles,
     social: SocialServices?,
     parent: CoroutineScope,
     clock: () -> Long,
@@ -77,18 +88,23 @@ class FakeLibrarySpace(
 
     private val books = SyncingBookDao(store.books, recorder)
 
+    override val contents = LibraryContents(
+        store.db, recorder, CoverStore(files.fileSystem, files.coversDir(id)), EbookFiles(files.fileSystem, files.ebooksDir(id)),
+        files.fileSystem,
+    )
+
     var opened = false
         private set
     var closed = false
         private set
 
     /** Adds a book as the app does: stamped, queued (if this library records) and shared (if it shares). */
-    suspend fun addBook(title: String): BookEntity {
+    suspend fun addBook(title: String, isbn: String? = null, notes: String = "", coverUrl: String? = null): BookEntity {
         val id = books.insert(
             BookEntity(
-                isbn = null, title = title, authors = "Eça de Queirós", publisher = null, publishedYear = null,
-                pageCount = null, coverUrl = null, description = null, status = ReadingStatus.READ, rating = null,
-                notes = "", dateAdded = 0, dateRead = null, searchText = title.lowercase(),
+                isbn = isbn, title = title, authors = "Eça de Queirós", publisher = null, publishedYear = null,
+                pageCount = null, coverUrl = coverUrl, description = null, status = ReadingStatus.READ, rating = null,
+                notes = notes, dateAdded = 0, dateRead = null, searchText = title.lowercase(),
             ),
         )
         val book = store.books.getById(id)!!
@@ -133,7 +149,7 @@ class FakeLibraries(private val test: TestScope, val social: FakeSocial, engines
         factory = { id ->
             if (id == failing) error("can't open")
             val gate = openGate.also { openGate = null }
-            FakeLibrarySpace(id, stores.getOrPut(id) { FakeLibraryStore() }, social.services, scope, { test.testScheduler.currentTime }, log, gate)
+            FakeLibrarySpace(id, stores.getOrPut(id) { FakeLibraryStore() }, files, social.services, scope, { test.testScheduler.currentTime }, log, gate)
         },
         deviceSettings = settings,
         scope = scope,
@@ -144,8 +160,16 @@ class FakeLibraries(private val test: TestScope, val social: FakeSocial, engines
         },
     )
 
-    /** What runs between a library opening and its sync starting (the first sign-in offer's hold). */
+    /**
+     * What runs between a library opening and its sync starting: nothing here unless a test asks for the app's own
+     * first sign-in offer ([offers]).
+     */
     var beforeSync: suspend (FakeLibrarySpace) -> Unit = {}
+
+    /** As the app does: an account's first sign-in asks to add the phone's books ([Libraries.offerPhoneBooks]). */
+    fun offers() {
+        beforeSync = { libraries.offerPhoneBooks(it) }
+    }
 
     val sessions = LibrarySessions(libraries, social.auth.session, scope) { beforeSync(it) }
 

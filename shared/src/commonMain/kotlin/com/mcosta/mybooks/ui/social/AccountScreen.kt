@@ -173,6 +173,11 @@ fun AccountScreen(viewModel: AccountViewModel, onBack: () -> Unit) {
                 HorizontalDivider()
                 SyncStatusSection(sync, now, onRetry = viewModel::retrySync)
             }
+            if (state.canAddPhoneBooks) {
+                OutlinedButton(onClick = viewModel::askAddPhoneBooks, modifier = Modifier.fillMaxWidth()) {
+                    Text("Add this phone's books")
+                }
+            }
 
             HorizontalDivider()
             Text("Blocked people", style = MaterialTheme.typography.titleSmall)
@@ -200,6 +205,9 @@ fun AccountScreen(viewModel: AccountViewModel, onBack: () -> Unit) {
         }
     }
 
+    state.addPhoneBooksQuestion?.let { count ->
+        AddPhoneBooksDialog(count, onAdd = viewModel::addPhoneBooks, onNotNow = viewModel::notNow)
+    }
     if (state.askKeepLibrary) {
         KeepLibraryDialog(
             state.signOutCheck,

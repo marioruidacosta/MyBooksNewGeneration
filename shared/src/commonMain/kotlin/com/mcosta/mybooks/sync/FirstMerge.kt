@@ -327,7 +327,7 @@ private fun parseArray(json: String?): JsonArray = try {
 }
 
 /** [fieldTimes] with `book_id` timed after every other field of the row. */
-private fun bumped(fieldTimes: String): String {
+internal fun bumped(fieldTimes: String): String {
     val times = parseTimes(fieldTimes)
     return timesJson(times + ("book_id" to (times.values.maxOrNull() ?: 0L) + 1))
 }

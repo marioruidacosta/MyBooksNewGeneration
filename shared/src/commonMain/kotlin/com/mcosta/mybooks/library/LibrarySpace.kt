@@ -103,6 +103,22 @@ class LibrarySpace(
     /** Ebook files, in this library's folder (the no-account library's also holds the accounts' folders). */
     val ebookFiles = EbookFiles(files.fileSystem, files.ebooksDir(id))
 
+    /** Its raw tables and folders, for moving books into or out of it ([LibraryTransfer]). */
+    override val contents: LibraryContents by lazy {
+        LibraryContents(
+            SyncDatabase(
+                books = database.bookDao(),
+                quotes = database.quoteDao(),
+                ebooks = database.ebookDao(),
+                bookmarks = database.bookmarkDao(),
+                challenges = database.challengeDao(),
+                queue = database.syncQueueDao(),
+                state = database.syncStateDao(),
+            ),
+            syncRecorder, coverStore, ebookFiles, files.fileSystem,
+        )
+    }
+
     private val writeTransaction: suspend (suspend () -> Unit) -> Unit =
         { block -> database.useWriterConnection { it.immediateTransaction { block() } } }
 
