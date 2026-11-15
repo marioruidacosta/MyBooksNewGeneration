@@ -23,6 +23,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import okio.FileSystem
+import okio.ForwardingFileSystem
+import okio.IOException
 import okio.Path
 import okio.Path.Companion.toOkioPath
 import org.junit.After
@@ -35,6 +37,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 import kotlin.time.Duration.Companion.seconds
 
 /** The one-time upgrade of today's single library, with real files and a real Room database. */
@@ -48,9 +51,33 @@ class LibraryUpgradeTest {
 
     private class MemoryPreferences : Preferences {
         val values = mutableMapOf<String, String>()
+
+        /** The next write of this key throws (as if the process died there). */
+        var failOn: String? = null
+
         override fun get(key: String) = values[key]
         override fun set(key: String, value: String) {
+            if (key == failOn) {
+                failOn = null
+                throw IllegalStateException("injected: $key")
+            }
             values[key] = value
+        }
+    }
+
+    /** The real file system, but deleting or moving the paths given fails. */
+    private class FaultyFileSystem(
+        private val failDelete: (Path) -> Boolean = { false },
+        private val failMove: (Path) -> Boolean = { false },
+    ) : ForwardingFileSystem(FileSystem.SYSTEM) {
+        override fun delete(path: Path, mustExist: Boolean) {
+            if (failDelete(path)) throw IOException("injected: delete $path")
+            super.delete(path, mustExist)
+        }
+
+        override fun atomicMove(source: Path, target: Path) {
+            if (failMove(source)) throw IOException("injected: move $source")
+            super.atomicMove(source, target)
         }
     }
 
@@ -60,8 +87,20 @@ class LibraryUpgradeTest {
 
     private fun dbPath(id: LibraryId): Path = libraryDatabaseFile(context, id).toOkioPath()
 
-    private fun upgrade(open: (LibraryId) -> AppDatabase = { openLibraryDatabase(context, it) }) =
-        LibraryUpgrade(devicePrefs, files, ::dbPath, open)
+    private fun upgrade(
+        open: (LibraryId) -> AppDatabase = { openLibraryDatabase(context, it) },
+        fileSystem: FileSystem = fs,
+    ) = LibraryUpgrade(devicePrefs, LibraryFiles(fileSystem, files.filesDir), ::dbPath, open)
+
+    private fun localDbFile(suffix: String) = dbPath(LibraryId.Local).let { it.parent!! / (it.name + suffix) }
+
+    /**
+     * Files next to `mybooks.db` that only the upgrade makes (the original set aside); none once it's done. SQLite's own
+     * files (journals, Robolectric's `.lck`) aren't counted.
+     */
+    private fun upgradeLeftovers() = fs.listOrNull(dbPath(LibraryId.Local).parent!!).orEmpty().map { it.name }
+        .filter { it.startsWith("mybooks.db") && !it.endsWith(".lck") }
+        .filter { it !in setOf("mybooks.db", "mybooks.db-wal", "mybooks.db-shm", "mybooks.db-journal") }
 
     @After
     fun tearDown() {
@@ -70,6 +109,7 @@ class LibraryUpgradeTest {
             val db = dbPath(id)
             for (suffix in listOf("", "-wal", "-shm", "-journal")) fs.delete(db.parent!! / (db.name + suffix))
         }
+        for (name in upgradeLeftovers()) fs.delete(dbPath(LibraryId.Local).parent!! / name)
         fs.deleteRecursively(files.filesDir)
     }
 
@@ -133,6 +173,7 @@ class LibraryUpgradeTest {
         assertEquals(emptyList<String>(), regularFiles(files.ebooksDir(LibraryId.Local)))
         assertEquals("owner-1", devicePrefs.values["library.active"])
         assertTrue(devicePrefs.values.containsKey("library.upgraded"))
+        assertEquals(emptyList<String>(), upgradeLeftovers())
     }
 
     @Test
@@ -225,6 +266,7 @@ class LibraryUpgradeTest {
         val result = upgrade(badCopy).run(signedInUser = null)
 
         assertTrue(result is UpgradeResult.Failed)
+        assertTrue(ShadowLog.getLogsForTag("MyBooks").any { it.msg.contains("upgrade", ignoreCase = true) })
         assertEquals(listOf("Dune", "Emma"), books(LibraryId.Local))
         assertTrue(withDb(LibraryId.Local) { it.syncStateDao().anyMerged() })
         assertEquals("jpeg", read(files.coversDir(LibraryId.Local) / "c1.jpg"))
@@ -274,6 +316,101 @@ class LibraryUpgradeTest {
         assertEquals(emptyList<String>(), regularFiles(files.ebooksDir(LibraryId.Local)))
         // Account ebooks stay out of the backed-up libraries folder.
         assertFalse(fs.exists(files.filesDir / "libraries" / "owner-1" / "ebooks"))
+    }
+
+    /** After the upgrade finished with [owner]'s library: the copy kept, the no-account library empty, nothing left over. */
+    private suspend fun assertFinished(titles: List<String> = listOf("Dune", "Emma")) {
+        assertEquals(titles, books(owner))
+        assertEquals("Poetry", libraryPref(owner, "home.pinnedTags"))
+        assertEquals(listOf("1.epub", "2.pdf"), regularFiles(files.ebooksDir(owner)))
+        assertEquals(listOf("c1.jpg"), regularFiles(files.coversDir(owner)))
+        assertEquals(emptyList<String>(), regularFiles(files.coversDir(LibraryId.Local)))
+        assertEquals(emptyList<String>(), books(LibraryId.Local))
+        assertNull(libraryPref(LibraryId.Local, "home.pinnedTags"))
+        assertNull(libraryPref(LibraryId.Local, "suggestions.hidden"))
+        assertEquals(emptyList<String>(), upgradeLeftovers())
+        assertEquals("owner-1", devicePrefs.values["library.active"])
+        assertTrue(devicePrefs.values.containsKey("library.upgraded"))
+    }
+
+    @Test
+    fun crashAfterTheOriginalWentFinishesTheCleanup() = runTest(timeout = 60.seconds) {
+        seedPhone("owner-1")
+        // Killed once the original database was out of the way, before its journal files and covers went.
+        val killed = FaultyFileSystem(failDelete = { it.name == "mybooks.db-wal" })
+        assertTrue(upgrade(fileSystem = killed).run(signedInUser = null) is UpgradeResult.Failed)
+        writeFile(localDbFile("-wal"), "stale wal")
+        writeFile(localDbFile("-shm"), "stale shm")
+        assertEquals("jpeg", read(files.coversDir(LibraryId.Local) / "c1.jpg"))
+
+        assertEquals(UpgradeResult.MovedTo("owner-1"), upgrade().run(signedInUser = null))
+
+        assertFalse(fs.exists(localDbFile("-wal")) && read(localDbFile("-wal")) == "stale wal")
+        assertFalse(fs.exists(localDbFile("-shm")) && read(localDbFile("-shm")) == "stale shm")
+        assertFinished()
+    }
+
+    @Test
+    fun crashAfterTheNewLocalWasCreatedFinishesTheCleanup() = runTest(timeout = 60.seconds) {
+        seedPhone("owner-1")
+        // Killed after the new, empty no-account library was made, before the upgrade was marked done.
+        devicePrefs.failOn = "library.upgraded"
+        assertTrue(upgrade().run(signedInUser = null) is UpgradeResult.Failed)
+        assertTrue(fs.exists(dbPath(LibraryId.Local)))
+        assertFalse(devicePrefs.values.containsKey("library.upgraded"))
+
+        assertEquals(UpgradeResult.MovedTo("owner-1"), upgrade().run(signedInUser = null))
+
+        assertFinished()
+    }
+
+    @Test
+    fun failedDeleteOfTheOriginalKeepsTheCopyInUse() = runTest(timeout = 60.seconds) {
+        seedPhone("owner-1")
+        // The original database can't be deleted, and the app goes on running.
+        val stuck = FaultyFileSystem(failDelete = { it == dbPath(LibraryId.Local) || it.name.startsWith("mybooks.db.") })
+        assertTrue(upgrade(fileSystem = stuck).run(signedInUser = null) is UpgradeResult.Failed)
+        assertEquals("owner-1", devicePrefs.values["library.active"])
+        // The session that follows works on the copy.
+        withDb(owner) { it.bookDao().insert(Book(title = "Persuasion").toEntity()) }
+
+        assertEquals(UpgradeResult.MovedTo("owner-1"), upgrade().run(signedInUser = null))
+
+        // Never copied again from the original.
+        assertFinished(titles = listOf("Dune", "Emma", "Persuasion"))
+    }
+
+    @Test
+    fun failureSettingTheOriginalAsidePutsEverythingBack() = runTest(timeout = 60.seconds) {
+        seedPhone("owner-1")
+        val stuck = FaultyFileSystem(failMove = { it == dbPath(LibraryId.Local) })
+
+        assertTrue(upgrade(fileSystem = stuck).run(signedInUser = null) is UpgradeResult.Failed)
+
+        assertEquals(listOf("Dune", "Emma"), books(LibraryId.Local))
+        assertTrue(withDb(LibraryId.Local) { it.syncStateDao().anyMerged() })
+        assertEquals("jpeg", read(files.coversDir(LibraryId.Local) / "c1.jpg"))
+        assertEquals(listOf("1.epub", "2.pdf"), regularFiles(files.ebooksDir(LibraryId.Local)))
+        assertFalse(fs.exists(dbPath(owner)))
+        assertNotEquals("owner-1", devicePrefs.values["library.active"])
+        assertFalse(devicePrefs.values.containsKey("library.upgraded"))
+
+        assertEquals(UpgradeResult.MovedTo("owner-1"), upgrade().run(signedInUser = null))
+        assertFinished()
+    }
+
+    @Test
+    fun ebookRenameNeverOverwrites() = runTest(timeout = 60.seconds) {
+        seedPhone("owner-1")
+        // A file already in the account's folder under the same name as one of the phone's.
+        writeFile(files.ebooksDir(owner) / "1.epub", "older")
+
+        assertEquals(UpgradeResult.MovedTo("owner-1"), upgrade().run(signedInUser = null))
+
+        // The library's own file is where its record expects it; the other is kept beside it.
+        assertEquals("epub-1", read(files.ebooksDir(owner) / "1.epub"))
+        val kept = regularFiles(files.ebooksDir(owner)).map { read(files.ebooksDir(owner) / it) }
+        assertEquals(listOf("epub-1", "older", "pdf-2"), kept.sorted())
     }
 
     private fun device() = run {
