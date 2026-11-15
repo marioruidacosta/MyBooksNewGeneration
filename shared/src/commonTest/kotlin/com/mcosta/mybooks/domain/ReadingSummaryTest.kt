@@ -26,6 +26,21 @@ class ReadingSummaryTest {
         assertEquals(ChallengeProgress(2026, 25, 1), summary.challenge)
     }
 
+    /** The widget's stack: every book being read, most recently started first. */
+    @Test
+    fun everyBookBeingReadInOrder() {
+        val books = listOf(
+            Book(title = "First", status = ReadingStatus.READING, dateStarted = 1),
+            Book(title = "Third", status = ReadingStatus.READING, dateStarted = 3),
+            Book(title = "Second", status = ReadingStatus.READING, dateStarted = 2),
+            Book(title = "Done", status = ReadingStatus.READ, dateRead = day("2026-03-01")),
+        )
+        val summary = readingSummary(books, emptyList(), today, utc)
+        assertEquals(listOf("Third", "Second", "First"), summary.reading.map { it.title })
+        assertEquals("Third", summary.current?.title)
+        assertEquals(2, summary.alsoReading)
+    }
+
     @Test
     fun nothingBeingReadAndNoGoal() {
         val summary = readingSummary(listOf(Book(title = "Later", status = ReadingStatus.TO_READ)), emptyList(), today, utc)

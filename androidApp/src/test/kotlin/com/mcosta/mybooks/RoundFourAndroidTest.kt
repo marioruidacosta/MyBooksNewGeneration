@@ -51,7 +51,7 @@ class RoundFourAndroidTest {
     @Test
     fun widgetShowsTheBookItsProgressAndTheChallenge() {
         val book = Book(id = 7, title = "Princípio, meio, fim", authors = "Valeria Luiselli", status = ReadingStatus.READING, progressPercent = 26)
-        val view = widget(ReadingSummary(book, alsoReading = 1, challenge = ChallengeProgress(2026, 25, 5)))
+        val view = widget(ReadingSummary(listOf(book, book.copy(id = book.id + 1, title = "Other")), challenge = ChallengeProgress(2026, 25, 5)))
         assertEquals("Reading · and 1 more", view.text(R.id.widget_label))
         assertEquals("Princípio, meio, fim", view.text(R.id.widget_title))
         assertEquals("Valeria Luiselli", view.text(R.id.widget_author))
@@ -63,7 +63,7 @@ class RoundFourAndroidTest {
 
     @Test
     fun widgetWithNothingBeingReadAndNoGoal() {
-        val view = widget(ReadingSummary(null, 0, null))
+        val view = widget(ReadingSummary(emptyList(), null))
         assertEquals("Nothing on the go", view.text(R.id.widget_title))
         assertEquals(View.GONE, view.findViewById<View>(R.id.widget_progress_row).visibility)
         assertEquals(View.GONE, view.findViewById<View>(R.id.widget_challenge).visibility)
