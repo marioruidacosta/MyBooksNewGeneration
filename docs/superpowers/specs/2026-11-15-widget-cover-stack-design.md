@@ -45,3 +45,14 @@ active library).
   cached web cover is reused without a second download.
 - The "nothing on the go" state.
 - Screenshots of a card (light and dark).
+
+## Revision (2026-11-15, after trying it on the phone): a shelf row instead of the stack
+
+The flickable stack didn't work well on the person's phone and they didn't like it; they chose **option D**:
+- **A shelf row:** up to 4 covers side by side, each with a thin progress bar under it (hidden when unknown); tapping a
+  cover opens that book. More than 4 being read: the first 3 covers, then a "+N" spot that opens the Reading shelf.
+- Header "Reading · N books" ("Reading" for one), the challenge row below, "Nothing on the go" when nothing is read,
+  default size 4×3 — unchanged.
+- Built with plain `RemoteViews` (fixed cover spots, no collection adapter, no `RemoteViewsService`): nothing to scroll
+  or flick, so it behaves the same on every launcher. Covers stay as before (photo, cached web cover, generated; all the
+  same book shape), drawn small (120×180) so four fit comfortably in one widget update.
