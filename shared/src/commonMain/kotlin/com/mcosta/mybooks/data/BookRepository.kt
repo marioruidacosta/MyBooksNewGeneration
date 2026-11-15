@@ -14,6 +14,7 @@ import com.mcosta.mybooks.data.lookup.BookLookupService
 import com.mcosta.mybooks.data.lookup.LookupResult
 import com.mcosta.mybooks.data.suggestions.HiddenSuggestions
 import com.mcosta.mybooks.domain.IsbnQuery
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.isbnQuery
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.Isbn
@@ -126,7 +127,7 @@ class BookRepository(
             if (existing != null && existing.id != validated.id) return SaveResult.DuplicateIsbn
         }
         return if (validated.id == 0L) {
-            val inserted = withStatusDates(validated.copy(dateAdded = clock()))
+            val inserted = withStatusDates(validated.copy(authors = inLibrarySpelling(validated.authors), dateAdded = clock()))
             val id = dao.insert(inserted.toEntity())
             shareTracker?.changed(null, inserted.copy(id = id))
             SaveResult.Saved(id)
@@ -140,6 +141,21 @@ class BookRepository(
             if (stored != null) announceIfFinished(stored.status, updated)
             SaveResult.Saved(validated.id)
         }
+    }
+
+    /**
+     * [authors] ("A, B") with each name written as the library already writes that author: a book added from the
+     * National Library as "Kang Han" joins the library's "Han Kang". Names the library doesn't have stay as they are.
+     */
+    private suspend fun inLibrarySpelling(authors: String): String {
+        val names = authors.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        if (names.isEmpty()) return authors
+        val known = mutableMapOf<String, String>()
+        for (book in dao.getAll()) {
+            for (name in book.authors.split(',').map { it.trim() }.filter { it.isNotEmpty() }) known.getOrPut(authorKey(name)) { name }
+        }
+        val spelled = names.map { known[authorKey(it)] ?: it }
+        return if (spelled == names) authors else spelled.joinToString(", ")
     }
 
     suspend fun setStatus(id: Long, status: ReadingStatus) {

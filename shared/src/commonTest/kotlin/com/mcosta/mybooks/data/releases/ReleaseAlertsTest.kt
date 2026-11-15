@@ -39,12 +39,21 @@ class ReleaseAlertsTest {
     @Test
     fun booksByYourAuthorsThenFromYourPublishers() {
         val alert = releaseAlert("2026-10", october, library)!!
-        assertEquals(listOf("Os túmulos de Atuan"), alert.byAuthors.map { it.title })
-        assertEquals(listOf("O ickabog", "A mais breve história do Japão"), alert.byPublishers.map { it.title })
-        assertEquals(listOf("Ursula K. Le Guin"), alert.authors)
+        // "J. K. Rowling" in the list is the library's "J.K. Rowling": O ickabog is hers, not just one from Presença.
+        assertEquals(listOf("O ickabog", "Os túmulos de Atuan"), alert.byAuthors.map { it.title })
+        assertEquals(listOf("A mais breve história do Japão"), alert.byPublishers.map { it.title })
+        assertEquals(listOf("J.K. Rowling", "Ursula K. Le Guin"), alert.authors)
         assertEquals("New in Portugal · October 2026", alert.title)
-        assertEquals("1 by Ursula K. Le Guin · 2 from Presença", alert.text)
+        assertEquals("2 by J.K. Rowling and Ursula K. Le Guin · 1 from Presença", alert.text)
         assertEquals(3, alert.count)
+    }
+
+    @Test
+    fun anAuthorListedInTheOtherNameOrderIsStillYourAuthor() {
+        val tinta = ReleaseBook(id = "1", isbn = "9789722089876", title = "Tinta e sangue", authors = listOf("Kang Han"))
+        val alert = releaseAlert("2026-11", listOf(tinta), listOf(Book(title = "Lições de Grego", authors = "Han Kang")))!!
+        assertEquals(listOf("Tinta e sangue"), alert.byAuthors.map { it.title })
+        assertEquals(listOf("Han Kang"), alert.authors)
     }
 
     @Test

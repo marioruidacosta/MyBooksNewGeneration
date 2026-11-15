@@ -1,6 +1,7 @@
 package com.mcosta.mybooks.data.authors
 
 import com.mcosta.mybooks.domain.Book
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 
 /**
@@ -25,10 +26,10 @@ fun catalogTitleKey(title: String): String = searchKey(title.substringBefore(':'
 
 /** The library's copy of a catalogue book: same ISBN, or the same title (before any subtitle) by the same first author. */
 fun findInLibrary(book: AuthorBook, library: List<Book>): Book? {
-    val author = searchKey(book.authors.substringBefore(',').trim())
+    val author = authorKey(book.authors.substringBefore(',').trim())
     val title = catalogTitleKey(book.title)
     return library.firstOrNull { book.isbn != null && it.isbn == book.isbn }
-        ?: library.firstOrNull { catalogTitleKey(it.title) == title && searchKey(it.authors.substringBefore(',').trim()) == author }
+        ?: library.firstOrNull { catalogTitleKey(it.title) == title && authorKey(it.authors.substringBefore(',').trim()) == author }
 }
 
 /**
@@ -45,5 +46,5 @@ class LibraryIndex(library: List<Book>) {
 
     fun contains(book: AuthorBook): Boolean = contains(book.isbn, book.title, book.authors)
 
-    private fun key(title: String, authors: String) = catalogTitleKey(title) + "|" + searchKey(authors.substringBefore(',').trim())
+    private fun key(title: String, authors: String) = catalogTitleKey(title) + "|" + authorKey(authors.substringBefore(',').trim())
 }

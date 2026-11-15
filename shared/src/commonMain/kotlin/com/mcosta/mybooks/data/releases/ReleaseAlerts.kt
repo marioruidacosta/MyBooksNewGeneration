@@ -4,6 +4,7 @@ import com.mcosta.mybooks.data.Preferences
 import com.mcosta.mybooks.data.authors.LibraryIndex
 import com.mcosta.mybooks.data.suggestions.tasteProfile
 import com.mcosta.mybooks.domain.Book
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 
 /** A month of New in Portugal with books for you: by authors you have, or from publishers you read most. */
@@ -36,13 +37,13 @@ data class ReleaseAlert(
  */
 fun releaseAlert(month: String, books: List<ReleaseBook>, library: List<Book>): ReleaseAlert? {
     val owned = LibraryIndex(library)
-    val authors = library.map { it.authors.substringBefore(',').trim() }.filter { it.isNotEmpty() }.associateBy { searchKey(it) }
+    val authors = library.map { it.authors.substringBefore(',').trim() }.filter { it.isNotEmpty() }.associateBy { authorKey(it) }
     val publishers = tasteProfile(library).publishers.associateBy { searchKey(it.name) }
     val byAuthors = mutableListOf<Pair<ReleaseBook, String>>()
     val byPublishers = mutableListOf<Pair<ReleaseBook, String>>()
     for (b in books) {
         if (owned.contains(b.isbn.takeIf { it.isNotBlank() }, b.title, b.authors.joinToString(", "))) continue
-        val author = authors[searchKey(b.authors.firstOrNull().orEmpty().trim())]
+        val author = authors[authorKey(b.authors.firstOrNull().orEmpty().trim())]
         val publisher = b.publisherKey().takeIf { it != NOT_STATED }?.let { publishers[searchKey(it)] }
         when {
             author != null -> byAuthors += b to author

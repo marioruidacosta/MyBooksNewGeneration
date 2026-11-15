@@ -38,6 +38,22 @@ class BookRepositoryTest {
         assertEquals("Dune Messiah", get(id).title)
     }
 
+    /** "Han, Kang" in the National Library becomes "Kang Han"; the library already knows her as "Han Kang". */
+    @Test
+    fun aNewBookTakesTheLibrarysSpellingOfItsAuthors() = runTest {
+        saveOk(Book(title = "Lições de Grego", authors = "Han Kang"))
+        val id = saveOk(Book(title = "Tinta e sangue", authors = "Kang Han, Luísa Benvinda Álvares"))
+        assertEquals("Han Kang, Luísa Benvinda Álvares", get(id).authors)
+    }
+
+    @Test
+    fun editingABookKeepsTheAuthorsAsTyped() = runTest {
+        saveOk(Book(title = "Lições de Grego", authors = "Han Kang"))
+        val id = saveOk(Book(title = "Tinta e sangue", authors = "Someone"))
+        saveOk(get(id).copy(authors = "Kang Han"))
+        assertEquals("Kang Han", get(id).authors)
+    }
+
     @Test
     fun titleIsTrimmed() = runTest {
         val id = saveOk(Book(title = "  Dune  "))

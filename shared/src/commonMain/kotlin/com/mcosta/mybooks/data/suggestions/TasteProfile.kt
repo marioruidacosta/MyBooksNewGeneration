@@ -2,6 +2,7 @@ package com.mcosta.mybooks.data.suggestions
 
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 
 /** How many favourite authors suggestions look at. */
@@ -30,7 +31,7 @@ fun tasteProfile(books: List<Book>): TasteProfile {
         .sortedWith(compareByDescending<Book> { it.rating }.thenByDescending { it.dateRead ?: 0 })
     val favourites = rated.ifEmpty { read.sortedByDescending { it.dateRead ?: 0 } }
 
-    val authors = read.groupBy { searchKey(firstAuthor(it)) }
+    val authors = read.groupBy { authorKey(firstAuthor(it)) }
         .filterKeys { it.isNotEmpty() }
         .map { (_, theirs) ->
             val best = theirs.sortedWith(compareByDescending<Book> { it.rating ?: 0 }.thenByDescending { it.dateRead ?: 0 }).first()
