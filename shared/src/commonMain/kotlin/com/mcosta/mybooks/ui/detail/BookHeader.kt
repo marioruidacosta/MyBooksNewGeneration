@@ -17,12 +17,18 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -53,6 +59,8 @@ fun BookHeader(
     onOpenBook: (Long) -> Unit,
     /** Shown as "Add a cover photo" when there is no cover; null hides it. */
     onAddPhoto: (() -> Unit)? = null,
+    /** Chooses a photo already on the device; with [onAddPhoto], "Add a cover photo" then offers both. */
+    onChoosePhoto: (() -> Unit)? = null,
 ) {
     val pages = rememberPagerState { 3 }
     // The author's biography is fetched only when their panel is first shown.
@@ -81,8 +89,8 @@ fun BookHeader(
                 }
             }
             PageDots(current = pages.currentPage, count = pages.pageCount)
-            // No cover found: photograph the book.
-            if (coverUrl.isNullOrBlank() && onAddPhoto != null) TextButton(onClick = onAddPhoto) { Text("Add a cover photo") }
+            // No cover found: photograph the book, or choose a photo already on the phone.
+            if (coverUrl.isNullOrBlank() && onAddPhoto != null) AddCoverPhoto(onAddPhoto, onChoosePhoto)
             Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
             if (authors.isNotBlank()) Text(authors, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         }
@@ -90,6 +98,23 @@ fun BookHeader(
 }
 
 private val COVER_HEIGHT = 225.dp
+
+/** "Add a cover photo": the camera straight away, or a menu with the camera and the device's photos. */
+@Composable
+private fun AddCoverPhoto(onTakePhoto: () -> Unit, onChoosePhoto: (() -> Unit)?) {
+    if (onChoosePhoto == null) {
+        TextButton(onClick = onTakePhoto) { Text("Add a cover photo") }
+        return
+    }
+    var open by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { open = true }) { Text("Add a cover photo") }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(text = { Text("Take photo") }, onClick = { open = false; onTakePhoto() })
+            DropdownMenuItem(text = { Text("Choose from photos") }, onClick = { open = false; onChoosePhoto() })
+        }
+    }
+}
 
 /** The book's details in the cover's place, as plain text over the blurred backdrop: label and value per line. */
 @Composable

@@ -39,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import com.mcosta.mybooks.data.MAX_REVIEW_LENGTH
 import com.mcosta.mybooks.data.covers.CoverStore
+import com.mcosta.mybooks.ui.components.rememberCoverPhotoChooser
 import com.mcosta.mybooks.ui.components.rememberCoverPhotoTaker
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.ui.components.BookCover
@@ -60,6 +61,10 @@ fun EditBookScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val takePhoto = rememberCoverPhotoTaker(
+        onPhoto = { ref -> viewModel.update { it.copy(coverUrl = ref) } },
+        onError = { scope.launch { snackbar.showSnackbar(it) } },
+    )
+    val choosePhoto = rememberCoverPhotoChooser(
         onPhoto = { ref -> viewModel.update { it.copy(coverUrl = ref) } },
         onError = { scope.launch { snackbar.showSnackbar(it) } },
     )
@@ -106,6 +111,7 @@ fun EditBookScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     BookCover(f.coverUrl, Modifier.width(80.dp).height(120.dp), title = f.title.ifBlank { null }, authors = f.authors)
                     TextButton(onClick = takePhoto) { Text("Take photo") }
+                    choosePhoto?.let { TextButton(onClick = it) { Text("Choose photo") } }
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Field("Title *", f.title) { v -> viewModel.update { it.copy(title = v) } }
