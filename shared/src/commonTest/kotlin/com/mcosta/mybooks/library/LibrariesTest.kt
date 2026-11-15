@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -125,9 +126,11 @@ class LibrariesTest {
         failing = LibraryId.Account("a")
         val libraries = libraries(backgroundScope)
 
+        assertNull(libraries.openFailed.value)
         libraries.start()
 
         assertEquals(LibraryId.Local, libraries.active.value.id)
+        assertEquals(LibraryId.Account("a"), libraries.openFailed.value)
         assertTrue(deleted.isEmpty())
     }
 
@@ -203,6 +206,22 @@ class LibrariesTest {
 
         assertEquals(LibraryId.Local, libraries.active.value.id)
         assertTrue(libraries.active.value.opened)
+        assertEquals(LibraryId.Account("a"), libraries.openFailed.value)
         assertTrue(deleted.isEmpty())
+    }
+
+    @Test
+    fun anActivationThatFailsIsRememberedUntilItWorks() = runTest {
+        val libraries = libraries(backgroundScope)
+        libraries.start()
+        failing = LibraryId.Account("a")
+
+        assertFailsWith<IllegalStateException> { libraries.activate(LibraryId.Account("a")) }
+        assertEquals(LibraryId.Account("a"), libraries.openFailed.value)
+        assertEquals(LibraryId.Local, libraries.active.value.id)
+
+        failing = null
+        libraries.activate(LibraryId.Account("a"))
+        assertNull(libraries.openFailed.value)
     }
 }

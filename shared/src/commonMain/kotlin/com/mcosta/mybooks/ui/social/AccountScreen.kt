@@ -102,6 +102,7 @@ fun AccountScreen(viewModel: AccountViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            state.openFailure?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
             if (profile == null) {
                 if (!state.busy) {
                     Text("Your profile couldn't be loaded.", style = MaterialTheme.typography.bodyMedium)

@@ -80,6 +80,20 @@ class Libraries<S : LibraryHandle>(
     /** Libraries switched away from, closing once no screen holds them; touched under [lock]. */
     private val closing = mutableMapOf<LibraryId, Job>()
 
+    private val _openFailed = MutableStateFlow<LibraryId.Account?>(null)
+
+    /**
+     * The account whose library couldn't be opened (at start, or when it was activated): the no-account library is
+     * shown instead, and nothing is deleted. Cleared when that account's library is next activated, or by
+     * [clearOpenFailure] (sign-out).
+     */
+    val openFailed: StateFlow<LibraryId.Account?> = _openFailed.asStateFlow()
+
+    /** The failure is over (signed out, or the session ended): there is nothing more to say about it. */
+    fun clearOpenFailure() {
+        _openFailed.value = null
+    }
+
     /** The active library. Available once [start] has returned. */
     val active: StateFlow<S>
         get() {
@@ -109,6 +123,7 @@ class Libraries<S : LibraryHandle>(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
+                _openFailed.value = last as? LibraryId.Account
                 factory(LibraryId.Local)
             }
         }
@@ -127,6 +142,7 @@ class Libraries<S : LibraryHandle>(
             throw e
         } catch (e: Exception) {
             if (space.id == LibraryId.Local) throw e
+            _openFailed.value = space.id as? LibraryId.Account
             swapTo(LibraryId.Local)
         }
     }
@@ -136,7 +152,17 @@ class Libraries<S : LibraryHandle>(
      * screen holds it. Nothing changes if [id] is already active, or if it can't be opened (the exception is thrown).
      */
     suspend fun activate(id: LibraryId) = switching {
-        if (active.value.id != id) swapTo(id)
+        if (active.value.id != id) {
+            try {
+                swapTo(id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (id is LibraryId.Account) _openFailed.value = id
+                throw e
+            }
+        }
+        _openFailed.update { if (it == id) null else it }
     }
 
     /** Deletes an account library's database and files, once it's closed. Never the no-account library, nor the active one. */

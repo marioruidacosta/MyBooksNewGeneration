@@ -57,6 +57,8 @@ data class AccountState(
     val askAddPhoneBooks: Boolean = false,
     /** The phone's books are moving into the account's library. */
     val addingPhoneBooks: Boolean = false,
+    /** The account's library couldn't be opened: the phone's own is shown meanwhile, and nothing was deleted. */
+    val openFailure: String? = null,
 ) {
     /** "Add this phone's books" asked from here: the question to show (N), or null. */
     val addPhoneBooksQuestion: Int?
@@ -90,6 +92,9 @@ fun SignOutCheck.warnings(): List<String> = buildList {
 /** The keep-library question's "Remove" button. */
 val SignOutCheck.removeLabel: String get() = if (anythingWaiting) "Remove anyway" else "Remove"
 
+/** Shown in Settings → Account when the account's library couldn't be opened. */
+const val OPEN_FAILED = "Couldn't open your library. Try signing in again."
+
 /** The signed-in user's community account: profile, avatar, visibility, blocked people, sign out, delete. */
 class AccountViewModel(
     private val services: SocialServices,
@@ -116,6 +121,11 @@ class AccountViewModel(
         }
         if (libraries != null) {
             viewModelScope.launch { libraries.offer.collect { offer -> _state.update { it.copy(offer = offer) } } }
+            viewModelScope.launch {
+                libraries.openFailed.collect { failed ->
+                    _state.update { it.copy(openFailure = failed?.let { OPEN_FAILED }) }
+                }
+            }
             countPhoneBooks()
         }
         refresh()

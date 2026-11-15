@@ -10,6 +10,8 @@ import com.mcosta.mybooks.data.FakeSyncQueueDao
 import com.mcosta.mybooks.data.FakeSyncStateDao
 import com.mcosta.mybooks.data.db.BookEntity
 import com.mcosta.mybooks.data.covers.PhotoShrinker
+import com.mcosta.mybooks.library.FakeLibraries
+import com.mcosta.mybooks.library.LibraryId
 import com.mcosta.mybooks.social.FakeSocial
 import com.mcosta.mybooks.share.SharingStatus
 import com.mcosta.mybooks.social.model.SessionState
@@ -43,6 +45,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class AccountViewModelTest : MainDispatcherTest() {
     private val fake = FakeSocial()
@@ -454,5 +457,51 @@ class AccountViewModelTest : MainDispatcherTest() {
 
         assertEquals(SyncStatus.Synced(0), vm.state.value.sync?.status)
         assertEquals(0L, testScheduler.currentTime)
+    }
+
+    // ---- a library that can't be opened ----
+
+    @Test
+    fun openFailureShowsMessage() = runTest(timeout = 30.seconds) {
+        val app = FakeLibraries(this, fake, engineJob)
+        app.start()
+        advanceUntilIdle()
+        app.active.addBook("Mensagem")
+        app.failing = LibraryId.Account(ana)
+        val vm = AccountViewModel(fake.services, shrinker, sessions = app.sessions, libraries = app.libraries, workDispatcher = mainDispatcher)
+        assertNull(vm.state.value.openFailure)
+
+        app.signIn(ana)
+        advanceUntilIdle()
+
+        // The phone's own library is shown, with the reason; nothing is deleted.
+        assertEquals(LibraryId.Local, app.active.id)
+        assertEquals("Couldn't open your library. Try signing in again.", vm.state.value.openFailure)
+        assertTrue(app.deleted.isEmpty())
+        assertEquals(setOf("Mensagem"), app.stores.getValue(LibraryId.Local).live().mapTo(mutableSetOf()) { it.title })
+    }
+
+    @Test
+    fun openFailureGoesAtSignOutAndAtTheNextGoodSignIn() = runTest(timeout = 30.seconds) {
+        val app = FakeLibraries(this, fake, engineJob)
+        app.start()
+        advanceUntilIdle()
+        app.failing = LibraryId.Account(ana)
+        val vm = AccountViewModel(fake.services, shrinker, sessions = app.sessions, libraries = app.libraries, workDispatcher = mainDispatcher)
+        app.signIn(ana)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.openFailure != null)
+
+        // Signing out clears it.
+        app.signOut(keep = true)
+        advanceUntilIdle()
+        assertNull(vm.state.value.openFailure)
+
+        // A good sign-in doesn't bring it back.
+        app.failing = null
+        app.signIn(ana)
+        advanceUntilIdle()
+        assertEquals(LibraryId.Account(ana), app.active.id)
+        assertNull(vm.state.value.openFailure)
     }
 }

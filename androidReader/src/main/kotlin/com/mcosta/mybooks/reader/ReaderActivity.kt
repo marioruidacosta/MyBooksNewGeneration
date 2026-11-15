@@ -24,6 +24,9 @@ import com.mcosta.mybooks.AppContainer
 import com.mcosta.mybooks.ContainerOwner
 import com.mcosta.mybooks.domain.EbookFormat
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.library.Libraries
+import com.mcosta.mybooks.library.LibraryHandle
+import com.mcosta.mybooks.library.LibrarySpace
 import com.mcosta.mybooks.reader.ui.ReaderActions
 import com.mcosta.mybooks.reader.ui.ReaderBars
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
@@ -90,7 +93,9 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
     private val links = mutableMapOf<String, Link>()
 
     /** The library the book was opened from: kept, and held open, for as long as the reader shows it. */
-    private val library: ReaderLibrary by viewModels { viewModelFactory { initializer { ReaderLibrary(container) } } }
+    private val library: ReaderLibrary<LibrarySpace> by viewModels {
+        viewModelFactory { initializer { ReaderLibrary(container.libraries, container.applicationScope) } }
+    }
 
     private val viewModel: ReaderViewModel by viewModels {
         viewModelFactory {
@@ -129,7 +134,7 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
         // Another library is shown now (signed in or out): this book belongs to the one left behind.
         if (library.gone) return finish()
         lifecycleScope.launch {
-            container.libraries.active.first { it !== library.space }
+            library.untilLeft()
             finish()
         }
         enableEdgeToEdge()
@@ -364,27 +369,37 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
 }
 
 /**
- * The library a reader opened its book from, held open ([com.mcosta.mybooks.library.Libraries.hold]) until the reader
- * is gone and its last saves (run in [writes]) are written: a switch closes it only then.
+ * The library a reader opened its book from, held open ([Libraries.hold]) until the reader is gone and its last saves
+ * (run in [writes]) are written: a switch closes it only then.
  */
-private class ReaderLibrary(container: AppContainer) : ViewModel() {
-    val space = container.libraries.active.value
-    private val hold = container.libraries.hold(space)
+internal class ReaderLibrary<S : LibraryHandle>(
+    private val libraries: Libraries<S>,
+    private val appScope: CoroutineScope,
+) : ViewModel() {
+    val space: S = libraries.active.value
+    private val hold = libraries.hold(space)
 
     /** The library was switched away from before the reader opened: it closes at once. */
     val gone: Boolean get() = hold == null
 
-    private val appScope = container.applicationScope
     private val writesJob = SupervisorJob(appScope.coroutineContext[Job])
 
     /** Where the reader's saves run: they finish after it closes, and the library is let go after them. */
     val writes = CoroutineScope(appScope.coroutineContext + writesJob)
 
-    override fun onCleared() {
+    /** Returns once another library is the active one: the reader then closes. */
+    suspend fun untilLeft() {
+        libraries.active.first { it !== space }
+    }
+
+    /** The reader is gone: its saves finish, then the library is let go. */
+    fun release() {
         appScope.launch {
             writesJob.complete()
             writesJob.join()
             hold?.release()
         }
     }
+
+    override fun onCleared() = release()
 }

@@ -132,6 +132,19 @@ Then check the rollout:
 2. With the app open and signed in to the same account on two devices, change a book on device A (a rating, say):
    device B shows the change within a few seconds, without being touched.
 
+### 3f. One library per account on each phone
+
+Each account has its own library on each phone, apart from the phone's own books (the library you see when nobody is
+signed in):
+
+- Signing in switches to that account's library; signing out shows the phone's own library.
+- At sign-out, Keep and Remove act only on that account's library on this phone. Other accounts' libraries, and the
+  phone's own, are never touched.
+- The first time an account signs in on a phone, the app asks whether to add the phone's own books to it. "Not now"
+  leaves them where they are; "Add this phone's books" in Settings → Account asks again.
+- If an account's library can't be opened, the phone's own library is shown, with "Couldn't open your library. Try
+  signing in again." in Settings → Account. Nothing is deleted.
+
 ## 4. Give the apps the URL and key
 
 - **Android** (your PC): add to `local.properties`, then rebuild:

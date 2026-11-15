@@ -64,6 +64,7 @@ class LibrarySessions<S : LibraryHandle>(
                     SessionState.SignedOut -> {
                         // Nothing more starts for the account that left (and its question goes away).
                         holding?.job?.cancel()
+                        libraries.clearOpenFailure()
                         // Asked for: [signOut] switches. Otherwise the account's library waits for its account to sign in again.
                         libraries.active.value.sync?.sessionEnded()
                     }
@@ -145,6 +146,7 @@ class LibrarySessions<S : LibraryHandle>(
             sync?.signOut()
             signOutOfServer()
             started = null
+            libraries.clearOpenFailure()
             libraries.activate(LibraryId.Local)
             if (id is LibraryId.Account) {
                 when (after) {
