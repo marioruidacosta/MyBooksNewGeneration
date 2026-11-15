@@ -150,7 +150,7 @@ Edits made on the site publish to the community exactly as the phone does:
 - **Same rules as the app:** the account's share setting, books excluded from sharing, and which changes publish (status, score and review).
 - **Same writes as the phone:** `share/ShareTracker.kt` and `share/Publisher.kt`, against the existing community RPCs in the social and feed migrations.
 - **One public id per book:** the book's uuid, as with the phones. Changes the site *pulls* from a phone are never published by the site, because the phone that made them already did.
-- **The book page shows and edits the book's own "Don't share this book" switch.** The account-wide share setting stays in the app.
+- **The book page shows whether the book is shared** (see "Which books count as shared" below). Excluding a book stays on the phone.
 - **Backup import carries** each book's share id and excluded flag, as the app's importer does.
 - **Tests:** parity with `PublisherTest` and `ShareTracker` behaviour. A change to a shared book publishes exactly once; an excluded book never publishes; a pulled change doesn't publish.
 
@@ -178,6 +178,12 @@ Edits made on the site publish to the community exactly as the phone does:
 - **Community copy:** the site publishes like the phone. Decided by the person.
 - **Lookups:** BNP and Google Books go through the `lookup` Edge Function, with the Google key as a Supabase secret. Open Library is called directly. *(My call.)*
 - **Covers:** `cover_url`'s time is set again on every upload, so phones fetch the new photo. *(From the review; the app works this way.)*
+- **Which books count as shared** *(found while planning; my call)*:
+  - The phones keep "Don't share this book" on the device, and it isn't synced. Excluded books have no public copy.
+  - The site can't read public copies directly, so it gets a small read-only server function, `my_shared_book_ids()`, which returns the caller's shared book ids.
+  - The site publishes changes only for those books, and for books it adds itself.
+  - The book page **shows** "Shared with friends" or "Not shared" but has **no switch**. A switch on the site would last only until a phone shared the book again.
+  - This is the one server addition besides the `lookup` function. It is applied only with the person's OK.
 
 ## Left to the builder
 - Component structure.
