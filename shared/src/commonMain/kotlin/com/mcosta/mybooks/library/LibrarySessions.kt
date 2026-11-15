@@ -31,14 +31,23 @@ class LibrarySessions<S : LibraryHandle>(
     @Volatile
     private var started: S? = null
 
-    /** Follows the session for good. Call once, after [Libraries.openActive]. */
+    /**
+     * Follows the session for good. Call once, after [Libraries.openActive]. An event that fails (a library that can't
+     * be read, the first sign-in offer failing) is dropped; the next one is still followed.
+     */
     suspend fun follow() {
         session.collect { state ->
-            when (state) {
-                is SessionState.SignedIn -> signedIn(state.userId)
-                // Asked for: [signOut] switches. Otherwise the account's library waits for its account to sign in again.
-                SessionState.SignedOut -> libraries.active.value.sync?.sessionEnded()
-                SessionState.Loading -> Unit
+            try {
+                when (state) {
+                    is SessionState.SignedIn -> signedIn(state.userId)
+                    // Asked for: [signOut] switches. Otherwise the account's library waits for its account to sign in again.
+                    SessionState.SignedOut -> libraries.active.value.sync?.sessionEnded()
+                    SessionState.Loading -> Unit
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Nothing more to do for this event.
             }
         }
     }
@@ -49,25 +58,25 @@ class LibrarySessions<S : LibraryHandle>(
         } catch (_: IllegalArgumentException) {
             return
         }
-        if (libraries.active.value.id != id) {
+        val current = libraries.active.value
+        if (current.id != id) {
+            // Another account's library: its sync must not go on with this account's session, even for a moment.
+            current.sync?.stop()
             try {
                 libraries.activate(id)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
                 // Its library can't be opened: the no-account library is shown (it never syncs); nothing is deleted.
-                try {
-                    libraries.activate(LibraryId.Local)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                }
+                libraries.activate(LibraryId.Local)
                 return
             }
         }
         val space = libraries.active.value
         if (space.id != id) return
         beforeSync(space)
+        // While it waited, the user may have signed out, or another account signed in: then nothing starts.
+        if (libraries.active.value !== space || (session.value as? SessionState.SignedIn)?.userId != userId) return
         started = space
         space.sync?.start(userId)
     }

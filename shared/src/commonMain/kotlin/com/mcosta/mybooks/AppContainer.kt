@@ -76,6 +76,8 @@ class AppContainer(
     /** Where New in Portugal's downloaded lists are saved. */
     releasesFileSystem: FileSystem,
     releasesDir: Path,
+    /** The community services to use instead of building them from [socialConfig] (tests). */
+    socialServices: SocialServices? = null,
 ) {
     /** The phone's file system (where ebooks and incoming files live). */
     val fileSystem: FileSystem = releasesFileSystem
@@ -91,7 +93,7 @@ class AppContainer(
     val releases = ReleasesRepository(ReleasesClient(http), releasesFileSystem, releasesDir)
 
     /** The community features, or null when Supabase isn't configured (then they're hidden). */
-    val social: SocialServices? = socialFor(socialConfig, httpEngine) { config, engine ->
+    val social: SocialServices? = socialServices ?: socialFor(socialConfig, httpEngine) { config, engine ->
         createSocialServices(config, engine, socialSettings)
     }
 
@@ -207,6 +209,9 @@ class AppContainer(
 
     /** Looks up missing covers (e.g. after a Goodreads import) in the background. */
     val coverFinder get() = space.coverFinder
+
+    /** Where screens run writes to the active library that must outlive them; see [LibrarySpace.writes]. */
+    val writes: CoroutineScope get() = space.writes
 
     /** Books' ebook files, reading positions and bookmarks. */
     val ebooks get() = space.ebooks

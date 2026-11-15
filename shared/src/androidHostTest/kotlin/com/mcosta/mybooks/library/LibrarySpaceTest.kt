@@ -14,7 +14,15 @@ import com.mcosta.mybooks.data.lookup.lookupHttpClient
 import com.mcosta.mybooks.data.releases.ReleasesClient
 import com.mcosta.mybooks.data.releases.ReleasesRepository
 import com.mcosta.mybooks.data.suggestions.SubjectSearch
+import com.mcosta.mybooks.data.SaveResult
+import com.mcosta.mybooks.domain.Book
+import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.social.FakeSocial
+import com.mcosta.mybooks.ui.library.LibraryViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.sync.SyncTable
 import io.ktor.client.engine.mock.MockEngine
@@ -137,6 +145,31 @@ class LibrarySpaceTest {
 
         val again = openLibraryDatabase(context, account)
         assertEquals(listOf(SyncTable.PREFS.wire to "home.pinnedTags"), again.syncQueueDao().batch(10).map { it.table to it.rowId })
+        again.close()
+    }
+
+    @Test
+    fun writesFromAClearedScreenLandBeforeTheLibraryCloses() = runTest(timeout = 30.seconds) {
+        val space = open(account, openLibraryDatabase(context, account))
+        val ids = listOf("Os Maias", "A Relíquia", "O Primo Basílio").map { title ->
+            (space.repository.save(Book(title = title, status = ReadingStatus.READ)) as SaveResult.Saved).id
+        }
+        // Home, with three books swiped away and Undo still offered…
+        val screens = ViewModelStore()
+        val home = ViewModelProvider.create(screens, viewModelFactory { initializer { LibraryViewModel(space.repository, appScope = space.writes) } })[LibraryViewModel::class]
+        ids.forEach(home::hide)
+        val failures = mutableListOf<Throwable>()
+        val before = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { _, e -> failures += e }
+
+        // …is cleared by a switch (its deletions go ahead), then the library closes.
+        screens.clear()
+        space.close()
+
+        Thread.setDefaultUncaughtExceptionHandler(before)
+        assertEquals(emptyList<Throwable>(), failures)
+        val again = openLibraryDatabase(context, account)
+        assertEquals(emptyList<Long>(), again.bookDao().getAll().map { it.id })
         again.close()
     }
 }

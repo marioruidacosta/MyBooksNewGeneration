@@ -391,4 +391,91 @@ class LibrarySwitchingTest {
         assertEquals(accountA, app.active.id)
         assertEquals(emptySet(), cloudTitles(a))
     }
+
+    // ---- review fixes, round 1 ----
+
+    @Test
+    fun signOutDuringTheHoldNeverStartsTheHeldSync() = runTest(timeout = 30.seconds) {
+        val app = app()
+        val hold = CompletableDeferred<Unit>()
+        app.beforeSync = { hold.await() }
+        app.signIn(b)
+        advanceUntilIdle()
+        val held = app.active
+        assertEquals(accountB, held.id)
+
+        // Signed out while the first sign-in waits (Task 5's question still open).
+        app.signOut(keep = true)
+        advanceUntilIdle()
+        hold.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(LibraryId.Local, app.active.id)
+        assertEquals(SyncStatus.Off, held.sync!!.status.value)
+        assertTrue(social.sync.calls.isEmpty())
+    }
+
+    @Test
+    fun anotherSignInDuringTheHoldNeverStartsTheHeldSync() = runTest(timeout = 30.seconds) {
+        val app = app()
+        val hold = CompletableDeferred<Unit>()
+        app.beforeSync = { if (it.id == accountB) hold.await() }
+        app.signIn(b)
+        advanceUntilIdle()
+        val held = app.active
+        held.addBook("Os Maias")
+
+        // B's session expires while it waits, and A signs in.
+        social.auth.signOut()
+        app.signIn(a)
+        hold.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(accountA, app.active.id)
+        assertEquals(SyncStatus.Off, held.sync!!.status.value)
+        assertIs<SyncStatus.Synced>(app.active.sync!!.status.value)
+        // B's book went nowhere: not into A's cloud (A's session), nor B's.
+        assertEquals(emptySet(), cloudTitles(a))
+        assertEquals(emptySet(), cloudTitles(b))
+    }
+
+    @Test
+    fun anotherAccountsSignInStopsTheOldSyncAtOnce() = runTest(timeout = 30.seconds) {
+        val app = app()
+        app.signIn(b)
+        advanceUntilIdle()
+        val old = app.active
+        assertIs<SyncStatus.Synced>(old.sync!!.status.value)
+        // A's library takes a while to open.
+        val opening = CompletableDeferred<Unit>()
+        app.openGate = opening
+
+        app.signIn(a)
+        advanceUntilIdle()
+
+        // Still B's library on screen, but its sync no longer runs (it would use A's session).
+        assertEquals(accountB, app.active.id)
+        assertEquals(SyncStatus.Off, old.sync!!.status.value)
+        opening.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(accountA, app.active.id)
+    }
+
+    @Test
+    fun aFailingSessionEventDoesNotStopFollowingTheSession() = runTest(timeout = 30.seconds) {
+        val app = app()
+        var failures = 1
+        app.beforeSync = { if (failures-- > 0) error("offer failed") }
+        app.signIn(b)
+        advanceUntilIdle()
+        assertEquals(accountB, app.active.id)
+
+        app.signOut(keep = true)
+        advanceUntilIdle()
+        app.signIn(a)
+        advanceUntilIdle()
+
+        assertEquals(accountA, app.active.id)
+        assertIs<SyncStatus.Synced>(app.active.sync!!.status.value)
+    }
 }

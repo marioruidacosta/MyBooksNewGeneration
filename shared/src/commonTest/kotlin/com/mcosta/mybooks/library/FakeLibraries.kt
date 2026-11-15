@@ -144,7 +144,10 @@ class FakeLibraries(private val test: TestScope, val social: FakeSocial, engines
         },
     )
 
-    val sessions = LibrarySessions(libraries, social.auth.session, scope)
+    /** What runs between a library opening and its sync starting (the first sign-in offer's hold). */
+    var beforeSync: suspend (FakeLibrarySpace) -> Unit = {}
+
+    val sessions = LibrarySessions(libraries, social.auth.session, scope) { beforeSync(it) }
 
     val active: FakeLibrarySpace get() = libraries.active.value
 

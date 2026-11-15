@@ -89,6 +89,14 @@ class LibrarySpace(
     private val prefJob: CompletableJob = SupervisorJob(job)
     private val prefScope = CoroutineScope(scope.coroutineContext + prefJob)
 
+    private val writesJob: CompletableJob = SupervisorJob(job)
+
+    /**
+     * Where screens run writes that must outlive them (a swipe-delete past its Undo, a note saved on leaving): [close]
+     * waits for them, so none lands on a closed database or is lost to a switch.
+     */
+    val writes = CoroutineScope(scope.coroutineContext + writesJob)
+
     /** Cover photos, in this library's folder. */
     val coverStore = CoverStore(files.fileSystem, files.coversDir(id))
 
@@ -217,14 +225,16 @@ class LibrarySpace(
     }
 
     /**
-     * Stops its sync, lets the preference changes being recorded finish (their queue entries go with the database),
-     * stops its other background work (waiting for it to end), writes its pending preferences, then closes its
-     * database. Call it from outside this library's own work, which it waits for.
+     * Stops its sync, lets the preference changes being recorded and the screens' last [writes] finish (their queue
+     * entries go with the database), stops its other background work (waiting for it to end), writes its pending
+     * preferences, then closes its database. Call it from outside this library's own work, which it waits for.
      */
     override suspend fun close() {
         sync?.stop()
         prefJob.complete()
+        writesJob.complete()
         prefJob.join()
+        writesJob.join()
         job.cancelAndJoin()
         libraryPrefs?.flush()
         database.close()

@@ -90,6 +90,7 @@ import com.mcosta.mybooks.ui.library.LibraryScreen
 import com.mcosta.mybooks.ui.library.LibraryViewModel
 import com.mcosta.mybooks.ui.settings.SettingsScreen
 import com.mcosta.mybooks.ui.settings.SettingsViewModel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 
@@ -158,16 +159,23 @@ object Routes {
 }
 
 @Composable
-fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened: () -> Unit = {}) {
+fun MyBooksNavHost(
+    container: AppContainer,
+    openRoute: String? = null,
+    onOpened: () -> Unit = {},
+    /** The route shown now (a destination pattern), each time it changes. */
+    onRouteShown: (String?) -> Unit = {},
+) {
     val social = container.social
     val sharing = container.sharingStatus?.state?.collectAsStateWithLifecycle()?.value ?: SharingState()
     // While the library syncs: pull-to-refresh on Home and the library lists, and ebooks shown as on another device.
     val syncOn = (container.sync?.status?.collectAsStateWithLifecycle()?.value ?: SyncStatus.Off) != SyncStatus.Off
     val syncRefresh: (suspend () -> Unit)? = if (syncOn) container::syncNow else null
     val nav = rememberNavController()
-    // Effects run after the graph is set, so the route can be opened here.
+    // Once the graph is set (on the first composition it may not be yet): the start screen is then on the stack.
     LaunchedEffect(openRoute) {
         if (openRoute != null) {
+            nav.currentBackStackEntryFlow.first()
             nav.navigate(openRoute) { launchSingleTop = true }
             onOpened()
         }
@@ -210,6 +218,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
     }
     val current by nav.currentBackStackEntryAsState()
     val route = current?.destination?.route
+    LaunchedEffect(route) { onRouteShown(route) }
     val tabs = bottomTabs(community = social != null)
     Scaffold(
         bottomBar = {
@@ -281,7 +290,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
             ) { entry ->
                 val section = ReadingStatus.entries.firstOrNull { it.name == entry.savedStateHandle.get<String>("section") }
                 LibraryScreen(
-                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, section, container.applicationScope) },
+                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, section, container.writes) },
                     title = section.shelfLabel(),
                     onBack = { nav.popBackStack() },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
@@ -294,7 +303,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
                     val name = entry.savedStateHandle.get<String>("name")!!
                     val filter = if (kind == "tag") BookFilter.Tag(name) else BookFilter.Series(name)
                     LibraryScreen(
-                        viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, null, container.applicationScope, filter, container.pinnedTags) },
+                        viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, null, container.writes, filter, container.pinnedTags) },
                         title = name,
                         onBack = { nav.popBackStack() },
                         onOpenBook = { nav.navigate(Routes.book(it)) },
@@ -347,7 +356,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
             }
             composable(Routes.LENT) {
                 LibraryScreen(
-                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, null, container.applicationScope, BookFilter.Lent) },
+                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, null, container.writes, BookFilter.Lent) },
                     title = "Lent out",
                     onBack = { nav.popBackStack() },
                     onOpenBook = { nav.navigate(Routes.book(it)) },
@@ -356,7 +365,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
             }
             composable(Routes.SEARCH) {
                 LibraryScreen(
-                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, section = null, appScope = container.applicationScope) },
+                    viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, section = null, appScope = container.writes) },
                     title = "Search",
                     onBack = null,
                     onOpenBook = { nav.navigate(Routes.book(it)) },
@@ -427,7 +436,7 @@ fun MyBooksNavHost(container: AppContainer, openRoute: String? = null, onOpened:
             composable(Routes.BOOK, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.savedStateHandle.get<Long>("id")!!
                 BookDetailScreen(
-                    viewModel = viewModel { BookDetailViewModel(container.repository, id, container.applicationScope, container.authors, container.quotes, container.ebooks) },
+                    viewModel = viewModel { BookDetailViewModel(container.repository, id, container.writes, container.authors, container.quotes, container.ebooks) },
                     onRead = ebookPlatform?.let { p -> { p.openReader(id) } },
                     onAddEbookFile = pickEbook?.let { pick -> { pick(id) } },
                     ebookElsewhere = syncOn,
