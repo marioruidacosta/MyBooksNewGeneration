@@ -24,6 +24,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.platform.testTag
+import kotlin.random.Random
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.grid.LazyGridItemScope
 
 /** True when the phone's animations are off: every animation then shows its end state at once. */
 val LocalReduceMotion = staticCompositionLocalOf { false }
@@ -107,3 +115,64 @@ fun Modifier.shimmer(): Modifier = composed {
         )
     }
 }
+
+/** One piece of confetti: where it starts (fractions of the area), how it flies, and how it looks. */
+private class Piece(val x: Float, val y: Float, val vx: Float, val vy: Float, val spin: Float, val color: Color, val wide: Boolean)
+
+/**
+ * A short burst of confetti over [modifier]'s area (finishing a book): pieces fly up and out, fall, spin and fade, and
+ * the layer goes away after ~1.5 s. Nothing at all with reduced motion.
+ */
+@Composable
+fun Confetti(modifier: Modifier = Modifier) {
+    if (LocalReduceMotion.current) return
+    val colors = listOf(
+        MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.secondary,
+        Color(0xFFE9B949), Color(0xFFD9645B), Color(0xFF6FA8DC),
+    )
+    val pieces = remember {
+        val random = Random(7)
+        List(60) {
+            Piece(
+                x = 0.5f + (random.nextFloat() - 0.5f) * 0.2f,
+                y = 0.35f,
+                vx = (random.nextFloat() - 0.5f) * 1.3f,
+                vy = -(0.5f + random.nextFloat() * 0.8f),
+                spin = (random.nextFloat() - 0.5f) * 1080f,
+                color = colors[it % colors.size],
+                wide = random.nextBoolean(),
+            )
+        }
+    }
+    val time = remember { Animatable(0f) }
+    val done = remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        time.animateTo(1f, tween(CONFETTI_MS, easing = LinearEasing))
+        done.value = true
+    }
+    if (done.value) return
+    Canvas(modifier.testTag("confetti")) {
+        val t = time.value
+        val fade = if (t < 0.7f) 1f else (1f - (t - 0.7f) / 0.3f).coerceIn(0f, 1f)
+        for (p in pieces) {
+            val x = (p.x + p.vx * t) * size.width
+            val y = (p.y + p.vy * t + 1.6f * t * t) * size.height
+            val unit = 2.5.dp.toPx()
+            val w = if (p.wide) 3 * unit else 2 * unit
+            val h = 3.5f * unit
+            rotate(p.spin * t, pivot = Offset(x, y)) {
+                drawRect(p.color.copy(alpha = fade), topLeft = Offset(x - w / 2, y - h / 2), size = Size(w, h))
+            }
+        }
+    }
+}
+
+internal const val CONFETTI_MS = 1500
+
+/** A list row that slides into place when added and closes the gap when removed (none with reduced motion). */
+@Composable
+fun LazyItemScope.motionItem(): Modifier = if (LocalReduceMotion.current) Modifier else Modifier.animateItem()
+
+/** The grid version of [motionItem]. */
+@Composable
+fun LazyGridItemScope.motionItem(): Modifier = if (LocalReduceMotion.current) Modifier else Modifier.animateItem()

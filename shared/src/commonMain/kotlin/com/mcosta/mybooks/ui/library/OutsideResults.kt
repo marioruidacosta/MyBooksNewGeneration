@@ -28,6 +28,7 @@ import com.mcosta.mybooks.data.authors.AuthorBook
 import com.mcosta.mybooks.data.releases.monthLabel
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.ui.components.BookCover
+import com.mcosta.mybooks.ui.components.motionItem
 
 /**
  * Search's results in labelled groups: "In your library" (the first [LIBRARY_PREVIEW], then "Show all"), the ISBN
@@ -52,8 +53,10 @@ fun OutsideResults(
         item(key = "header:library", contentType = "header") { Header(if (library.isEmpty()) "In your library" else "In your library (${library.size})") }
         if (library.isEmpty()) item(key = "empty:library") { Note("No books match") }
         items(libraryPreview(library, libraryExpanded), key = { "book:${it.id}" }, contentType = { "book" }) { book ->
-            libraryRow(book)
-            HorizontalDivider()
+            Column(motionItem()) {
+                libraryRow(book)
+                HorizontalDivider()
+            }
         }
         if (!libraryExpanded && library.size > LIBRARY_PREVIEW) {
             item(key = "more:library") {

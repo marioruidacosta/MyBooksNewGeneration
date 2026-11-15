@@ -149,4 +149,29 @@ class MotionTest {
         assertEquals(1f, shown, 0.001f)
         assertEquals(1f, scale, 0.001f)
     }
+
+    /** Finishing a book: a burst of confetti that goes away by itself. */
+    @Test
+    fun confettiBurstsThenGoes() {
+        compose.mainClock.autoAdvance = false
+        compose.setContent { com.mcosta.mybooks.ui.components.Confetti(androidx.compose.ui.Modifier.size(200.dp)) }
+        compose.mainClock.advanceTimeBy(200)
+        compose.onNodeWithTag("confetti").assertExists()
+        compose.mainClock.advanceTimeBy(1600)
+        compose.onNodeWithTag("confetti").assertDoesNotExist()
+    }
+
+    @Test
+    fun noConfettiWithReducedMotion() {
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            CompositionLocalProvider(LocalReduceMotion provides true) {
+                com.mcosta.mybooks.ui.components.Confetti(androidx.compose.ui.Modifier.size(200.dp))
+            }
+        }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithTag("confetti").assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(200)
+        compose.onNodeWithTag("confetti").assertDoesNotExist()
+    }
 }
