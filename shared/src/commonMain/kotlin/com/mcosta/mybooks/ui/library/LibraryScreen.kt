@@ -278,7 +278,7 @@ private fun BookRow(book: Book, onClick: () -> Unit, showSeriesNumber: Boolean =
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BookCover(book.coverUrl, Modifier.width(48.dp).height(72.dp), title = book.title, authors = book.authors)
+        BookCover(book.coverUrl, Modifier.width(48.dp).height(72.dp), title = book.title, authors = book.authors, shareKey = "book-${book.id}")
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             if (showSeriesNumber && book.seriesNumber != null) {
@@ -399,7 +399,7 @@ private fun SwipeRow(book: Book, onSwipeRight: () -> Unit, onSwipeLeft: () -> Un
 private fun GridCell(book: Book, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Surface(shape = RoundedCornerShape(4.dp), shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
-            BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
+            BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors, shareKey = "book-${book.id}")
         }
         Text(book.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (book.rating != null) RatingStars(book.rating, onRate = null, size = 12.dp)

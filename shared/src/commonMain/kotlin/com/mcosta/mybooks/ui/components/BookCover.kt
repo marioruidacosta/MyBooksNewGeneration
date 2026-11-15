@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.SubcomposeAsyncImage
 import com.mcosta.mybooks.ui.LocalCoverStore
 import androidx.compose.ui.platform.testTag
+import com.mcosta.mybooks.ui.sharedCover
 
 /** The cover's place while its image loads: a soft shimmer (plain with reduced motion). */
 @Composable
@@ -30,7 +31,7 @@ fun CoverLoading(modifier: Modifier = Modifier) {
  * a cover drawn from [title] and [authors] (a book icon when the title isn't known).
  */
 @Composable
-fun BookCover(url: String?, modifier: Modifier = Modifier, title: String? = null, authors: String = "") {
+fun BookCover(url: String?, modifier: Modifier = Modifier, title: String? = null, authors: String = "", shareKey: String? = null) {
     val placeholder: @Composable () -> Unit = if (title != null) {
         { GeneratedCover(title, authors, Modifier.fillMaxSize()) }
     } else {
@@ -48,7 +49,7 @@ fun BookCover(url: String?, modifier: Modifier = Modifier, title: String? = null
             }
         }
     }
-    Box(modifier.clip(RoundedCornerShape(4.dp))) {
+    Box(modifier.sharedCover(shareKey).clip(RoundedCornerShape(4.dp))) {
         if (url.isNullOrBlank()) {
             placeholder()
         } else {

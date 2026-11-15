@@ -105,5 +105,7 @@ dependencies {
     testImplementation(libs.ktor.client.mock)
     // Whole-app tests that start on the library active at the last launch (the app's settings).
     testImplementation(libs.multiplatform.settings)
+    // Tests that build a small NavHost (the shared cover transition), with the navigation the app already uses.
+    testImplementation(libs.jb.navigation.compose)
     debugImplementation(libs.compose.ui.test.manifest)
 }

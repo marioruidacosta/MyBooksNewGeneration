@@ -23,7 +23,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
@@ -245,8 +244,10 @@ fun MyBooksNavHost(
         // Each screen handles the system bars; the bottom bar's space is taken off here.
         contentWindowInsets = WindowInsets(0),
     ) { bars ->
+        // A book's cover moves from the list into its page (and back).
+        SharedCovers {
         NavHost(nav, startDestination = Routes.LIBRARY, modifier = Modifier.padding(bars).consumeWindowInsets(bars)) {
-            composable(Routes.LIBRARY) {
+            screen(Routes.LIBRARY) {
                 val suggestionsVm = viewModel { SuggestionsViewModel(container.suggestions, container.hiddenSuggestions) }
                 val suggestions by suggestionsVm.state.collectAsStateWithLifecycle()
                 // The account's library couldn't be opened: the phone's is shown, and Home says so (as Account does).
@@ -286,7 +287,7 @@ fun MyBooksNavHost(
                     },
                 )
             }
-            composable(
+            screen(
                 Routes.SHELF,
                 arguments = listOf(
                     navArgument("section") { type = NavType.StringType },
@@ -304,7 +305,7 @@ fun MyBooksNavHost(
                 )
             }
             for ((route, kind) in listOf(Routes.TAG to "tag", Routes.SERIES to "series")) {
-                composable(route, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
+                screen(route, arguments = listOf(navArgument("name") { type = NavType.StringType })) { entry ->
                     val name = entry.savedStateHandle.get<String>("name")!!
                     val filter = if (kind == "tag") BookFilter.Tag(name) else BookFilter.Series(name)
                     LibraryScreen(
@@ -316,7 +317,7 @@ fun MyBooksNavHost(
                     )
                 }
             }
-            composable(
+            screen(
                 Routes.ADD_EBOOK,
                 arguments = listOf(
                     navArgument("key") { type = NavType.StringType },
@@ -328,7 +329,7 @@ fun MyBooksNavHost(
                 val platform = ebookPlatform
                 if (file == null || platform == null) {
                     LaunchedEffect(Unit) { nav.popBackStack() }
-                    return@composable
+                    return@screen
                 }
                 val forBook = entry.savedStateHandle.get<Long>("book")?.takeIf { it >= 0 }
                 AddEbookScreen(
@@ -343,7 +344,7 @@ fun MyBooksNavHost(
                     },
                 )
             }
-            composable(Routes.CLASSICS) {
+            screen(Routes.CLASSICS) {
                 ClassicsScreen(
                     viewModel = viewModel { ClassicsViewModel(container.classics, EbookMatcher(container.repository), container.ebooks, container.repository) },
                     onBack = { nav.popBackStack() },
@@ -351,7 +352,7 @@ fun MyBooksNavHost(
                     onRead = ebookPlatform?.let { p -> { id: Long -> p.openReader(id) } },
                 )
             }
-            composable(Routes.SCAN_SEVERAL) {
+            screen(Routes.SCAN_SEVERAL) {
                 BatchScanScreen(
                     viewModel = viewModel { BatchScanViewModel(container.repository) },
                     onBack = { nav.popBackStack() },
@@ -359,7 +360,7 @@ fun MyBooksNavHost(
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
-            composable(Routes.LENT) {
+            screen(Routes.LENT) {
                 LibraryScreen(
                     viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, null, container.writes, BookFilter.Lent) },
                     title = "Lent out",
@@ -368,7 +369,7 @@ fun MyBooksNavHost(
                     onRefresh = syncRefresh,
                 )
             }
-            composable(Routes.SEARCH) {
+            screen(Routes.SEARCH) {
                 LibraryScreen(
                     viewModel = viewModel { LibraryViewModel(container.repository, container.preferences, section = null, appScope = container.writes) },
                     title = "Search",
@@ -383,7 +384,7 @@ fun MyBooksNavHost(
                     onAddYourself = { nav.navigate(Routes.add(it)) },
                 )
             }
-            composable(Routes.BOOKNERD) {
+            screen(Routes.BOOKNERD) {
                 com.mcosta.mybooks.ui.booknerd.BookNerdScreen(
                     viewModel = bookNerd,
                     onBack = { nav.popBackStack() },
@@ -391,14 +392,14 @@ fun MyBooksNavHost(
                     onJoin = { nav.navigate(Routes.ACCOUNT) },
                 )
             }
-            composable(Routes.SUGGESTIONS) {
+            screen(Routes.SUGGESTIONS) {
                 SuggestionsScreen(
                     viewModel = viewModel { SuggestionsViewModel(container.suggestions, container.hiddenSuggestions) },
                     onBack = { nav.popBackStack() },
                     onOpen = openSuggestion,
                 )
             }
-            composable(Routes.READING_ACTIVITY) {
+            screen(Routes.READING_ACTIVITY) {
                 ReadingActivityScreen(
                     viewModel = viewModel { ReadingActivityViewModel(container.repository, container.challenges) },
                     onBack = { nav.popBackStack() },
@@ -407,7 +408,7 @@ fun MyBooksNavHost(
                     onOpenReview = { nav.navigate(Routes.yearReview(it)) },
                 )
             }
-            composable(Routes.YEAR_REVIEW, arguments = listOf(navArgument("year") { type = NavType.IntType })) { entry ->
+            screen(Routes.YEAR_REVIEW, arguments = listOf(navArgument("year") { type = NavType.IntType })) { entry ->
                 val year = entry.savedStateHandle.get<Int>("year")!!
                 YearReviewScreen(
                     viewModel = viewModel { YearReviewViewModel(container.repository, container.challenges, year) },
@@ -415,7 +416,7 @@ fun MyBooksNavHost(
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
-            composable(Routes.READ_YEAR, arguments = listOf(navArgument("year") { type = NavType.StringType })) { entry ->
+            screen(Routes.READ_YEAR, arguments = listOf(navArgument("year") { type = NavType.StringType })) { entry ->
                 val year = entry.savedStateHandle.get<String>("year")?.toIntOrNull()
                 ReadYearScreen(
                     viewModel = viewModel { ReadYearViewModel(container.repository, year) },
@@ -423,7 +424,7 @@ fun MyBooksNavHost(
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
-            composable(
+            screen(
                 Routes.ADD,
                 arguments = listOf(navArgument("isbn") { type = NavType.StringType; nullable = true; defaultValue = null }),
             ) { entry ->
@@ -438,7 +439,7 @@ fun MyBooksNavHost(
                     showReview = sharing.hasProfile,
                 )
             }
-            composable(Routes.BOOK, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+            screen(Routes.BOOK, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.savedStateHandle.get<Long>("id")!!
                 BookDetailScreen(
                     viewModel = viewModel { BookDetailViewModel(container.repository, id, container.writes, container.authors, container.quotes, container.ebooks) },
@@ -457,7 +458,7 @@ fun MyBooksNavHost(
                     onOpenCatalogBook = { nav.navigate("catalog/${container.catalogBooks.put(it)}") },
                 )
             }
-            composable(Routes.CATALOG_BOOK, arguments = listOf(navArgument("key") { type = NavType.StringType })) { entry ->
+            screen(Routes.CATALOG_BOOK, arguments = listOf(navArgument("key") { type = NavType.StringType })) { entry ->
                 val key = entry.savedStateHandle.get<String>("key").orEmpty()
                 CatalogBookScreen(
                     viewModel = viewModel { CatalogBookViewModel(container.repository, container.catalogBooks.get(key), container.authors) },
@@ -468,7 +469,7 @@ fun MyBooksNavHost(
                     },
                 )
             }
-            composable(Routes.RELEASES) {
+            screen(Routes.RELEASES) {
                 ReleasesScreen(
                     viewModel = viewModel { ReleasesViewModel(container.releases) },
                     onBack = null,
@@ -477,7 +478,7 @@ fun MyBooksNavHost(
                     onSearch = { nav.navigate(Routes.RELEASE_SEARCH) },
                 )
             }
-            composable(
+            screen(
                 Routes.RELEASE_GENRE,
                 arguments = listOf(navArgument("month") { type = NavType.StringType }, navArgument("genre") { type = NavType.StringType }),
             ) { entry ->
@@ -492,7 +493,7 @@ fun MyBooksNavHost(
                 )
             }
             for ((route, view) in listOf(Routes.RELEASE_AUTHOR to ReleaseView.AUTHOR, Routes.RELEASE_PUBLISHER to ReleaseView.PUBLISHER)) {
-                composable(
+                screen(
                     route,
                     arguments = listOf(navArgument("month") { type = NavType.StringType }, navArgument("name") { type = NavType.StringType }),
                 ) { entry ->
@@ -513,7 +514,7 @@ fun MyBooksNavHost(
                     )
                 }
             }
-            composable(Routes.RELEASE_SEARCH) {
+            screen(Routes.RELEASE_SEARCH) {
                 ReleasesSearchScreen(
                     viewModel = viewModel { ReleasesSearchViewModel(container.releases) },
                     onBack = { nav.popBackStack() },
@@ -524,7 +525,7 @@ fun MyBooksNavHost(
                     },
                 )
             }
-            composable(
+            screen(
                 Routes.RELEASE_BOOK,
                 arguments = listOf(navArgument("month") { type = NavType.StringType }, navArgument("id") { type = NavType.StringType }),
             ) { entry ->
@@ -536,7 +537,7 @@ fun MyBooksNavHost(
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
-            composable(Routes.SETTINGS) {
+            screen(Routes.SETTINGS) {
                 val session = social?.auth?.session?.collectAsStateWithLifecycle()?.value
                 SettingsScreen(
                     viewModel = viewModel { SettingsViewModel(container.repository, services.documents, covers = container.coverFinder, appearance = container.appearance, releaseAlerts = container.releaseAlerts, monthlyAlerts = services.monthlyAlerts) },
@@ -548,7 +549,7 @@ fun MyBooksNavHost(
                 )
             }
             if (social != null) {
-                composable(Routes.FRIENDS, arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 })) { entry ->
+                screen(Routes.FRIENDS, arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 })) { entry ->
                     FriendsScreen(
                         viewModel = viewModel { FriendsViewModel(social) },
                         onBack = { nav.popBackStack() },
@@ -557,7 +558,7 @@ fun MyBooksNavHost(
                         initialTab = entry.savedStateHandle.get<Int>("tab") ?: 0,
                     )
                 }
-                composable(Routes.ACTIVITY) {
+                screen(Routes.ACTIVITY) {
                     ActivityScreen(
                         viewModel = viewModel { ActivityViewModel(social, container.repository) },
                         onBack = null,
@@ -568,7 +569,7 @@ fun MyBooksNavHost(
                         onOpenPerson = { nav.navigate(Routes.profile(it)) },
                     )
                 }
-                composable(Routes.PROFILE, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                screen(Routes.PROFILE, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                     val userId = entry.savedStateHandle.get<String>("id")!!
                     ProfileScreen(
                         viewModel { ProfileViewModel(social, userId, container.repository) },
@@ -576,11 +577,11 @@ fun MyBooksNavHost(
                         onOpenPerson = { nav.navigate(Routes.profile(it)) },
                     )
                 }
-                composable(Routes.ACCOUNT) {
+                screen(Routes.ACCOUNT) {
                     AccountRoute(social, container.sharingStatus, onBack = { nav.popBackStack() }, sync = container.sync, sessions = container.sessions, libraries = container.libraries)
                 }
             }
-            composable(Routes.EDIT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+            screen(Routes.EDIT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.savedStateHandle.get<Long>("id")!!
                 EditBookScreen(
                     viewModel = viewModel { EditBookViewModel(container.repository, bookId = id, isbn = null) },
@@ -590,6 +591,7 @@ fun MyBooksNavHost(
                     showReview = sharing.hasProfile,
                 )
             }
+        }
         }
     }
 

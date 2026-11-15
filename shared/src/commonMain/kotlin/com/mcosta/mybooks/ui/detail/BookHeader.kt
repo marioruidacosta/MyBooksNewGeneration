@@ -61,6 +61,8 @@ fun BookHeader(
     onAddPhoto: (() -> Unit)? = null,
     /** Chooses a photo already on the device; with [onAddPhoto], "Add a cover photo" then offers both. */
     onChoosePhoto: (() -> Unit)? = null,
+    /** The key the list's cover used: the cover grows from there into this header. */
+    shareKey: String? = null,
 ) {
     val pages = rememberPagerState { 3 }
     // The author's biography is fetched only when their panel is first shown.
@@ -81,7 +83,7 @@ fun BookHeader(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     if (page == 0) {
                         Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 10.dp) {
-                            BookCover(coverUrl, Modifier.width(COVER_HEIGHT * 2 / 3).height(COVER_HEIGHT), title = title, authors = authors)
+                            BookCover(coverUrl, Modifier.width(COVER_HEIGHT * 2 / 3).height(COVER_HEIGHT), title = title, authors = authors, shareKey = shareKey)
                         }
                     } else {
                         if (page == 1) DetailsPanel(details) else AuthorPanelView(author, onOpenBook)

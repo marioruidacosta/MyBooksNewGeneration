@@ -279,7 +279,8 @@ private fun ReadingCard(book: Book, onClick: () -> Unit, onUpdate: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 4.dp, modifier = Modifier.width(112.dp).height(168.dp)) {
-            BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
+            // The Reading row is the one place on Home whose covers move into the book page (one per book).
+            BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors, shareKey = "book-${book.id}")
         }
         val progress = book.progressPercent
         if (progress != null) {
