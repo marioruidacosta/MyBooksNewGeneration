@@ -93,6 +93,11 @@ import com.mcosta.mybooks.ui.settings.SettingsViewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import com.mcosta.mybooks.ui.components.screenFadeMillis
+import com.mcosta.mybooks.ui.components.LocalReduceMotion
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 
 object Routes {
     /** The home screen: Reading, your reading activity and the shelves. */
@@ -246,7 +251,17 @@ fun MyBooksNavHost(
     ) { bars ->
         // A book's cover moves from the list into its page (and back).
         SharedCovers {
-        NavHost(nav, startDestination = Routes.LIBRARY, modifier = Modifier.padding(bars).consumeWindowInsets(bars)) {
+        // Screens fade in step with the moving cover (Navigation's default is 700 ms); not at all with reduced motion.
+        val fade = screenFadeMillis(LocalReduceMotion.current)
+        NavHost(
+            nav,
+            startDestination = Routes.LIBRARY,
+            modifier = Modifier.padding(bars).consumeWindowInsets(bars),
+            enterTransition = { fadeIn(tween(fade)) },
+            exitTransition = { fadeOut(tween(fade)) },
+            popEnterTransition = { fadeIn(tween(fade)) },
+            popExitTransition = { fadeOut(tween(fade)) },
+        ) {
             screen(Routes.LIBRARY) {
                 val suggestionsVm = viewModel { SuggestionsViewModel(container.suggestions, container.hiddenSuggestions) }
                 val suggestions by suggestionsVm.state.collectAsStateWithLifecycle()

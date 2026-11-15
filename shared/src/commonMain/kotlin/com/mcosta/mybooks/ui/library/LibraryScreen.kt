@@ -82,6 +82,7 @@ import com.mcosta.mybooks.ui.components.SyncRefreshBox
 import com.mcosta.mybooks.ui.components.RatingStars
 import kotlinx.coroutines.launch
 import com.mcosta.mybooks.ui.components.motionItem
+import com.mcosta.mybooks.ui.sharedCover
 
 fun ReadingStatus?.label() = when (this) {
     null -> "All"
@@ -398,8 +399,9 @@ private fun SwipeRow(book: Book, onSwipeRight: () -> Unit, onSwipeLeft: () -> Un
 @Composable
 private fun GridCell(book: Book, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Surface(shape = RoundedCornerShape(4.dp), shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
-            BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors, shareKey = "book-${book.id}")
+        // The whole card (cover and shadow) moves into the book page.
+        Surface(shape = RoundedCornerShape(4.dp), shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f).sharedCover("book-${book.id}")) {
+            BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
         }
         Text(book.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (book.rating != null) RatingStars(book.rating, onRate = null, size = 12.dp)

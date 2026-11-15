@@ -11,6 +11,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.performClick
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.unit.dp
 import okio.Path.Companion.toPath
@@ -173,5 +175,69 @@ class MotionTest {
         compose.onNodeWithTag("confetti").assertDoesNotExist()
         compose.mainClock.advanceTimeBy(200)
         compose.onNodeWithTag("confetti").assertDoesNotExist()
+    }
+
+    private fun starScales() = compose.onAllNodes(androidx.compose.ui.test.SemanticsMatcher.keyIsDefined(com.mcosta.mybooks.ui.components.StarScale), useUnmergedTree = true)
+        .fetchSemanticsNodes().map { it.config[com.mcosta.mybooks.ui.components.StarScale] }
+
+    /** The Edit screen fills in the book's score after it opens: that is not a tap, so nothing pops. */
+    @Test
+    fun aScoreThatArrivesDoesNotPop() {
+        compose.mainClock.autoAdvance = false
+        var rating by androidx.compose.runtime.mutableStateOf<Int?>(null)
+        compose.setContent { com.mcosta.mybooks.ui.components.RatingStars(rating, onRate = { rating = it }) }
+        compose.mainClock.advanceTimeByFrame()
+        rating = 4
+        Snapshot.sendApplyNotifications()
+        compose.mainClock.advanceTimeBy(80)
+        assertTrue("${starScales()}", starScales().all { it == 1f })
+    }
+
+    @Test
+    fun tappingAStarPops() {
+        compose.mainClock.autoAdvance = false
+        var rating by androidx.compose.runtime.mutableStateOf<Int?>(null)
+        compose.setContent { com.mcosta.mybooks.ui.components.RatingStars(rating, onRate = { rating = it }) }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithContentDescription("Rate 3").performClick()
+        Snapshot.sendApplyNotifications()
+        compose.mainClock.advanceTimeBy(80)
+        assertTrue("rating=$rating scales=${starScales()}", starScales().any { it > 1.05f })
+    }
+
+    private fun weightOf(status: String): Float =
+        compose.onNodeWithTag("status-$status", useUnmergedTree = true).fetchSemanticsNode().config[com.mcosta.mybooks.ui.components.SelectionWeight]
+
+    /** A status that arrives with the book (the Edit screen loading) shows at once; only a tap glides. */
+    @Test
+    fun aStatusThatArrivesDoesNotGlide() {
+        compose.mainClock.autoAdvance = false
+        var status by androidx.compose.runtime.mutableStateOf(com.mcosta.mybooks.domain.ReadingStatus.TO_READ)
+        compose.setContent { com.mcosta.mybooks.ui.components.StatusSelector(status, onChange = { status = it }) }
+        compose.mainClock.advanceTimeByFrame()
+        status = com.mcosta.mybooks.domain.ReadingStatus.READ
+        Snapshot.sendApplyNotifications()
+        compose.mainClock.advanceTimeBy(100)
+        assertEquals(1f, weightOf("READ"), 0.001f)
+    }
+
+    @Test
+    fun choosingAStatusGlides() {
+        compose.mainClock.autoAdvance = false
+        var status by androidx.compose.runtime.mutableStateOf(com.mcosta.mybooks.domain.ReadingStatus.TO_READ)
+        compose.setContent { com.mcosta.mybooks.ui.components.StatusSelector(status, onChange = { status = it }) }
+        compose.mainClock.advanceTimeByFrame()
+        compose.onNodeWithText("Read").performClick()
+        Snapshot.sendApplyNotifications()
+        compose.mainClock.advanceTimeBy(100)
+        val w = weightOf("READ")
+        assertTrue("mid-glide: $w", w > 0f && w < 1f)
+    }
+
+    /** Screens fade in step with the moving cover (not Navigation's 700 ms), and not at all with reduced motion. */
+    @Test
+    fun screensFadeAsFastAsTheCoverMoves() {
+        assertEquals(250, com.mcosta.mybooks.ui.components.screenFadeMillis(reduce = false))
+        assertEquals(0, com.mcosta.mybooks.ui.components.screenFadeMillis(reduce = true))
     }
 }

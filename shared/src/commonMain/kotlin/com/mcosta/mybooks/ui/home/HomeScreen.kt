@@ -81,6 +81,7 @@ import com.mcosta.mybooks.data.suggestions.Suggestion
 import com.mcosta.mybooks.ui.suggestions.SuggestedForYou
 import com.mcosta.mybooks.ui.suggestions.SuggestionsState
 import com.mcosta.mybooks.ui.components.animatedProgress
+import com.mcosta.mybooks.ui.sharedCover
 
 /** A shelf's name on the home screen. */
 fun ReadingStatus?.shelfLabel(): String = if (this == null) "All books" else label()
@@ -278,9 +279,9 @@ private fun ReadingCard(book: Book, onClick: () -> Unit, onUpdate: () -> Unit) {
         Modifier.width(112.dp).combinedClickable(onClick = onClick, onLongClick = onUpdate, onLongClickLabel = "Update progress"),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 4.dp, modifier = Modifier.width(112.dp).height(168.dp)) {
-            // The Reading row is the one place on Home whose covers move into the book page (one per book).
-            BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors, shareKey = "book-${book.id}")
+        // The Reading row is the one place on Home whose covers move into the book page (one per book): the whole card.
+        Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 4.dp, modifier = Modifier.width(112.dp).height(168.dp).sharedCover("book-${book.id}")) {
+            BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
         }
         val progress = book.progressPercent
         if (progress != null) {

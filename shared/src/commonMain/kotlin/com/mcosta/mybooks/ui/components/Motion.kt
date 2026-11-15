@@ -32,6 +32,7 @@ import androidx.compose.ui.platform.testTag
 import kotlin.random.Random
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.grid.LazyGridItemScope
+import androidx.compose.ui.semantics.SemanticsPropertyKey
 
 /** True when the phone's animations are off: every animation then shows its end state at once. */
 val LocalReduceMotion = staticCompositionLocalOf { false }
@@ -42,6 +43,15 @@ expect fun rememberReduceMotion(): Boolean
 
 /** Short transitions (a quarter of a second): nothing in the app waits on them. */
 internal const val MOTION_MS = 250
+
+/** How long screens fade into each other: in step with a moving cover; none with reduced motion. */
+fun screenFadeMillis(reduce: Boolean): Int = if (reduce) 0 else MOTION_MS
+
+/** For tests: a star's current scale (1 at rest, more while it pops). */
+val StarScale = SemanticsPropertyKey<Float>("StarScale")
+
+/** For tests: how selected a status segment looks, 0 to 1. */
+val SelectionWeight = SemanticsPropertyKey<Float>("SelectionWeight")
 
 /** [target] reached smoothly (a bar sliding to its new value), or at once with reduced motion. */
 @Composable
