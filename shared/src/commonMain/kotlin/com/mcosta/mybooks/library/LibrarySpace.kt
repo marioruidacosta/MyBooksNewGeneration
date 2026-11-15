@@ -134,11 +134,10 @@ class LibrarySpace(
     }
 
     /**
-     * Where pinned tags and "Not interested" are kept: an account library's own database; the no-account library keeps
-     * them in the device settings, as before libraries were separate.
+     * Where pinned tags and "Not interested" are kept: the library's own database (the no-account library's too, since
+     * [LibraryUpgrade] moved them out of the device settings).
      */
-    private val libraryPrefs: DbPreferences? =
-        if (id is LibraryId.Account) DbPreferences(database.syncStateDao(), spaceScope) else null
+    private val libraryPrefs = DbPreferences(database.syncStateDao(), spaceScope)
 
     private val sharing: Sharing? = sharingFor(
         id, device.social, database.shareStateDao(), spaceScope,
@@ -149,10 +148,10 @@ class LibrarySpace(
     val sharingStatus: SharingStatus? = sharing?.status
 
     /** Books marked "Not interested" in suggestions. */
-    val hiddenSuggestions = HiddenSuggestions(libraryPrefs ?: device.preferences, prefChanged, prefScope)
+    val hiddenSuggestions = HiddenSuggestions(libraryPrefs, prefChanged, prefScope)
 
     /** Tags shown as rows on the home screen. */
-    val pinnedTags = PinnedTags(libraryPrefs ?: device.preferences, prefChanged, prefScope)
+    val pinnedTags = PinnedTags(libraryPrefs, prefChanged, prefScope)
 
     /** Yearly reading challenges. */
     val challenges = ChallengeRepository(SyncingChallengeDao(database.challengeDao(), syncRecorder))
@@ -234,8 +233,7 @@ class LibrarySpace(
 
     /** Loads this library's preferences (its first database query); call once, off the main thread, before it's used. */
     override suspend fun open() {
-        val prefs = libraryPrefs ?: return
-        prefs.load()
+        libraryPrefs.load()
         pinnedTags.reload()
         hiddenSuggestions.reload()
     }
@@ -252,7 +250,7 @@ class LibrarySpace(
         prefJob.join()
         writesJob.join()
         job.cancelAndJoin()
-        libraryPrefs?.flush()
+        libraryPrefs.flush()
         database.close()
     }
 }

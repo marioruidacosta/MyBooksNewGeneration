@@ -63,10 +63,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.io.IOException
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.time.Clock
@@ -78,6 +82,19 @@ import kotlin.time.Clock
  */
 fun createSocialServices(config: SocialConfig, engine: HttpClientEngine, settings: Settings? = null): SocialServices =
     SupabaseSocial(supabaseClient(config, engine, persistSession = true, settings)).services
+
+/**
+ * The user of the sign-in session kept in [settings] (what [createSocialServices] restores, later and asynchronously),
+ * read at once; null if there is none or it can't be read.
+ */
+fun storedSessionUserId(settings: Settings?): String? {
+    val stored = settings?.getStringOrNull(SettingsSessionManager.SETTINGS_KEY) ?: return null
+    return try {
+        Json.parseToJsonElement(stored).jsonObject["user"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
+    } catch (_: Exception) {
+        null
+    }
+}
 
 /**
  * How long a Supabase call may take. Sending the sign-in email happens inside the request, and

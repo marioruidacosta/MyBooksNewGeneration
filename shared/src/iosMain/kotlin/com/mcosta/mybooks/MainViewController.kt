@@ -5,6 +5,7 @@ import platform.Foundation.NSUserDefaults
 import androidx.compose.ui.window.ComposeUIViewController
 import com.mcosta.mybooks.library.LibraryFiles
 import com.mcosta.mybooks.library.deleteLibraryDatabase
+import com.mcosta.mybooks.library.libraryDatabasePath
 import com.mcosta.mybooks.library.openLibraryDatabase
 import com.mcosta.mybooks.platform.IosNativeServices
 import com.mcosta.mybooks.platform.iosPlatformServices
@@ -37,6 +38,7 @@ private val container: AppContainer by lazy {
     AppContainer(
         openDatabase = { id -> openLibraryDatabase(documents, id) },
         deleteDatabase = { id -> deleteLibraryDatabase(documents, id) },
+        databaseFile = { id -> libraryDatabasePath(documents, id).toPath() },
         libraryFiles = LibraryFiles(FileSystem.SYSTEM, documents.toPath()),
         // Sending the sign-in email can take longer than the default wait.
         httpEngine = Darwin.create { configureSession { timeoutIntervalForRequest = 30.0 } },
@@ -47,7 +49,8 @@ private val container: AppContainer by lazy {
         socialConfig = SocialConfig(infoString("SupabaseUrl").trim(), infoString("SupabaseAnonKey").trim()),
         appSettings = NSUserDefaultsSettings(NSUserDefaults.standardUserDefaults),
     ).also {
-        // Everything after needs the library open. The no-account library opens without waiting.
+        // Everything after needs the library open. The first start of this version upgrades today's library first (on
+        // IO; the session is stored where it can't be read at once here, so of several owners the last recorded wins).
         runBlocking { it.start() }
     }
 }

@@ -27,6 +27,7 @@ import com.mcosta.mybooks.library.LibraryFiles
 import com.mcosta.mybooks.library.LibraryId
 import com.mcosta.mybooks.library.LibrarySessions
 import com.mcosta.mybooks.library.LibrarySpace
+import com.mcosta.mybooks.library.LibraryUpgrade
 import com.mcosta.mybooks.share.Publisher
 import com.mcosta.mybooks.share.ShareLock
 import com.mcosta.mybooks.share.ShareTracker
@@ -35,6 +36,7 @@ import com.mcosta.mybooks.social.SocialConfig
 import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.social.model.SessionState
 import com.mcosta.mybooks.social.supabase.createSocialServices
+import com.mcosta.mybooks.social.supabase.storedSessionUserId
 import com.mcosta.mybooks.sync.LibrarySync
 import com.mcosta.mybooks.sync.RemoteApplier
 import com.mcosta.mybooks.sync.SyncDatabase
@@ -66,6 +68,11 @@ class AppContainer(
     deleteDatabase: (LibraryId) -> Unit,
     /** Where each library keeps its cover photos and ebook files. */
     libraryFiles: LibraryFiles,
+    /**
+     * Where a library's database file is, for upgrading an install from before libraries were separate
+     * ([LibraryUpgrade]); null skips the upgrade.
+     */
+    databaseFile: ((LibraryId) -> Path)? = null,
     httpEngine: HttpClientEngine,
     googleBooksApiKey: String,
     userAgent: String,
@@ -120,6 +127,16 @@ class AppContainer(
     /** Book colours or the wallpaper's, remembered. */
     val appearance = Appearance(preferences)
 
+    /** Turns today's single library into its account's, once ([start]); null without a database path or settings. */
+    private val upgrade: LibraryUpgrade? = if (databaseFile != null && preferences != null) {
+        LibraryUpgrade(preferences, libraryFiles, databaseFile, openDatabase)
+    } else {
+        null
+    }
+
+    /** The stored session's user, read without waiting for the session to be restored. */
+    private val storedUser: () -> String? = { storedSessionUserId(socialSettings) }
+
     private val lookup = LookupChain(
         listOf(
             BnpClient(http),
@@ -169,11 +186,15 @@ class AppContainer(
     }
 
     /**
-     * Picks the library active at the last launch, at once (no database query: it may run on the main thread); call
-     * once, before anything else uses the container. Then, in the background, that library's preferences load, and
-     * only then does the session decide which library is shown and start its sync.
+     * Upgrades an install from before libraries were separate (the first start only: it copies files, off the main
+     * thread, and must finish before anything opens `mybooks.db`). Then picks the library active at the last launch, at
+     * once (no database query: it may run on the main thread); call once, before anything else uses the container.
+     * Then, in the background, that library's preferences load, and only then does the session decide which library is
+     * shown and start its sync.
      */
     suspend fun start() {
+        // Never throws: if it fails, the no-account library opens the originals and the next start tries again.
+        upgrade?.run(signedInUser = storedUser())
         libraries.start()
         applicationScope.launch {
             libraries.openActive()

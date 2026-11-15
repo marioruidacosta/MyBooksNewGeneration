@@ -15,4 +15,6 @@ class FakeSyncStateDao : SyncStateDao {
         rows.filterKeys { it.startsWith("pref:") }.map { SyncStateEntity(it.key, it.value) }
     override suspend fun clear() = rows.clear()
     override suspend fun anyMerged(): Boolean = rows.keys.any { it.startsWith("merged:") }
+    override suspend fun mergedOwners(): List<String> =
+        rows.keys.filter { it.startsWith("merged:") }.map { it.removePrefix("merged:") }
 }

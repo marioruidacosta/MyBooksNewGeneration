@@ -72,4 +72,8 @@ interface SyncStateDao {
     /** Whether an account's first sign-in merge was done on this device (a `merged:<owner>` key). */
     @Query("SELECT EXISTS(SELECT 1 FROM sync_state WHERE `key` LIKE 'merged:%')")
     suspend fun anyMerged(): Boolean
+
+    /** The accounts this library was merged into on this device (`merged:<owner>` keys), the one recorded last last. */
+    @Query("SELECT substr(`key`, 8) FROM sync_state WHERE `key` LIKE 'merged:%' ORDER BY rowid")
+    suspend fun mergedOwners(): List<String>
 }

@@ -84,6 +84,8 @@ class LibrarySpaceTest {
     fun tearDown() {
         scope.cancel()
         deleteLibraryDatabase(context, account)
+        val local = libraryDatabaseFile(context, LibraryId.Local)
+        for (suffix in listOf("", "-wal", "-shm", "-journal")) java.io.File(local.path + suffix).delete()
         FileSystem.SYSTEM.deleteRecursively(files.filesDir)
     }
 
@@ -104,15 +106,19 @@ class LibrarySpaceTest {
     }
 
     @Test
-    fun noAccountLibraryKeepsTodaysDevicePreferences() = runTest(timeout = 30.seconds) {
+    fun noAccountLibraryKeepsItsPreferencesInItsDatabase() = runTest(timeout = 30.seconds) {
+        // What the device settings held before libraries were separate is no longer read: the upgrade moved it.
         devicePrefs.values["home.pinnedTags"] = "Poetry"
-        val database = createDatabase(Room.inMemoryDatabaseBuilder<AppDatabase>(context), AndroidSQLiteDriver())
-        val space = open(LibraryId.Local, database)
+        val space = open(LibraryId.Local, openLibraryDatabase(context, LibraryId.Local))
 
-        assertEquals(listOf("Poetry"), space.pinnedTags.tags.value)
+        assertEquals(emptyList<String>(), space.pinnedTags.tags.value)
         space.pinnedTags.setPinned("Essays", true)
-        assertEquals("Poetry\nEssays", devicePrefs.values["home.pinnedTags"])
         space.close()
+
+        val again = open(LibraryId.Local, openLibraryDatabase(context, LibraryId.Local))
+        assertEquals(listOf("Essays"), again.pinnedTags.tags.value)
+        assertEquals("Poetry", devicePrefs.values["home.pinnedTags"])
+        again.close()
     }
 
     @Test

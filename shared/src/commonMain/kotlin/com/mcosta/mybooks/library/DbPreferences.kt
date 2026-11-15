@@ -18,6 +18,9 @@ val PER_LIBRARY_PREF_KEYS = setOf("home.pinnedTags", "suggestions.hidden")
 /** Distinct from the sync engine's `prefs/<key>` time rows, which [load] must not read. */
 private const val PREFIX = "pref:"
 
+/** Writes one preference straight into a library database not open as a library (the upgrade); throws if it fails. */
+suspend fun storeLibraryPreference(state: SyncStateDao, key: String, value: String) = state.set(PREFIX + key, value)
+
 /**
  * [Preferences] kept in a library database's `sync_state` table under `pref:<key>`.
  * Reads come from a cache filled by [load]; [set] updates it at once and writes in the background.
