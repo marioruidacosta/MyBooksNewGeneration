@@ -9,6 +9,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
@@ -64,6 +66,7 @@ import com.mcosta.mybooks.data.lookup.LookupResult
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.platform.CoverCamera
+import com.mcosta.mybooks.platform.CoverPhotoPicker
 import com.mcosta.mybooks.platform.DocumentPicker
 import com.mcosta.mybooks.platform.IsbnScanner
 import com.mcosta.mybooks.platform.PlatformServices
@@ -76,6 +79,8 @@ import com.mcosta.mybooks.ui.activity.YearReviewScreen
 import com.mcosta.mybooks.ui.activity.YearReviewViewModel
 import com.mcosta.mybooks.ui.detail.BookDetailScreen
 import com.mcosta.mybooks.ui.detail.BookDetailViewModel
+import com.mcosta.mybooks.ui.edit.EditBookViewModel
+import com.mcosta.mybooks.ui.edit.EditBookScreen
 import com.mcosta.mybooks.ui.home.HomeScreen
 import com.mcosta.mybooks.ui.home.HomeViewModel
 import com.mcosta.mybooks.ui.library.LibraryScreen
@@ -143,6 +148,7 @@ class ScreenshotTest {
             override suspend fun save(suggestedName: String, mime: String, bytes: ByteArray) = false
             override suspend fun open(mimeTypes: List<String>): ByteArray? = null
         },
+        photoPicker = object : CoverPhotoPicker { override suspend fun pickPhoto(): ByteArray? = null },
     )
 
     private fun day(text: String) = LocalDate.parse(text).atStartOfDayIn(TimeZone.currentSystemDefault()).toEpochMilliseconds()
@@ -223,6 +229,31 @@ class ScreenshotTest {
         val vm = BookDetailViewModel(repo, id, CoroutineScope(SupervisorJob() + Dispatchers.Default), quoteRepo = quotes, ebookRepo = ebooks)
         shoot("book", dark, ready = { vm.book.value != null && vm.quotes.value.size == 2 && vm.ebook.value != null }) {
             BookDetailScreen(vm, onBack = {}, onEdit = {}, onRead = {}, onAddEbookFile = {})
+        }
+    }
+
+    /** A book without a cover: "Add a cover photo" offers the camera or the phone's photos. */
+    private fun coverPhotoMenu(dark: Boolean) {
+        sampleLibrary()
+        val id = runBlocking { repo.findByTitleAndAuthors("Stoner", "John Williams")!!.id }
+        val vm = BookDetailViewModel(repo, id, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+        val open = {
+            compose.waitUntil(10_000) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50)); vm.book.value != null }
+            compose.onNodeWithText("Add a cover photo").performClick()
+            Unit
+        }
+        shoot("cover-photo-menu", dark, ready = { compose.onAllNodesWithText("Choose from photos").fetchSemanticsNodes().isNotEmpty() }, act = open) {
+            BookDetailScreen(vm, onBack = {}, onEdit = {}, onRead = {}, onAddEbookFile = {})
+        }
+    }
+
+    /** The edit form: the cover with "Take photo" and "Choose photo" under it. */
+    private fun editForm(dark: Boolean) {
+        sampleLibrary()
+        val id = runBlocking { repo.findByTitleAndAuthors("Stoner", "John Williams")!!.id }
+        val vm = EditBookViewModel(repo, id, null)
+        shoot("edit-form", dark, ready = { vm.state.value.form.title.isNotEmpty() }) {
+            EditBookScreen(vm, isNew = false, onBack = {}, onSaved = {})
         }
     }
 
@@ -590,6 +621,10 @@ class ScreenshotTest {
         compose.onNodeWithText("Ebook on another device").assertExists()
     }
 
+    @Test fun coverPhotoMenuLight() = coverPhotoMenu(dark = false)
+    @Test fun editFormLight() = editForm(dark = false)
+    @Test fun editFormDark() = editForm(dark = true)
+    @Test fun coverPhotoMenuDark() = coverPhotoMenu(dark = true)
     @Test fun accountSyncLight() = accountSync(dark = false)
     @Test fun accountCombiningDark() = accountCombining(dark = true)
     @Test fun signOutDialogLight() {

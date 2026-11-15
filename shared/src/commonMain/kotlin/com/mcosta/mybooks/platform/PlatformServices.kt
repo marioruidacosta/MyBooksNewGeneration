@@ -22,6 +22,11 @@ interface CoverCamera {
     suspend fun takePhoto(): ByteArray?
 }
 
+/** Lets the user choose a photo already on the device; null if they cancelled. Throws with a message if it can't be read. */
+interface CoverPhotoPicker {
+    suspend fun pickPhoto(): ByteArray?
+}
+
 /** Lets the user pick where to save a document, or which document to open; false/null if cancelled. */
 interface DocumentPicker {
     suspend fun save(suggestedName: String, mime: String, bytes: ByteArray): Boolean
@@ -83,4 +88,6 @@ class PlatformServices(
     val ebooks: EbookPlatform? = null,
     /** Shares text through the platform's share sheet (BookNerd's abstracts); null hides Share. */
     val shareText: (suspend (String) -> Unit)? = null,
+    /** Null where choosing an existing photo isn't available (iPhone for now): the option is then hidden. */
+    val photoPicker: CoverPhotoPicker? = null,
 )
