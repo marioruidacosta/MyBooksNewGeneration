@@ -17,9 +17,9 @@ import kotlinx.serialization.json.JsonElement
 // domain models and carry a random uuid and empty times, so each write reads the stored row and keeps its uuid.
 
 private fun BookEntity.fields(): Map<String, JsonElement> = toRow(null).fields
-private suspend fun QuoteEntity.fields(): Map<String, JsonElement> = toRow { it.toString() }!!.fields
-private suspend fun BookmarkEntity.fields(): Map<String, JsonElement> = toRow { it.toString() }!!.fields
-private suspend fun EbookEntity.fields(): Map<String, JsonElement> = toRow { it.toString() }!!.fields
+private fun QuoteEntity.fields(): Map<String, JsonElement> = toRow(bookId.toString())!!.fields
+private fun BookmarkEntity.fields(): Map<String, JsonElement> = toRow(bookId.toString())!!.fields
+private fun EbookEntity.fields(): Map<String, JsonElement> = toRow(bookId.toString())!!.fields
 private fun ChallengeEntity.fields(): Map<String, JsonElement> = toRow().fields
 
 private fun oldTimes(json: String?): Map<String, Long> = json?.let(::parseTimes).orEmpty()
@@ -31,13 +31,13 @@ private fun BookEntity.stampedFrom(old: BookEntity?, now: Long): BookEntity {
     return copy(fieldTimes = timesJson(times))
 }
 
-private suspend fun QuoteEntity.stampedFrom(old: QuoteEntity?, now: Long) =
+private fun QuoteEntity.stampedFrom(old: QuoteEntity?, now: Long) =
     copy(fieldTimes = timesJson(stamp(old?.fields(), fields(), oldTimes(old?.fieldTimes), now)))
 
-private suspend fun BookmarkEntity.stampedFrom(old: BookmarkEntity?, now: Long) =
+private fun BookmarkEntity.stampedFrom(old: BookmarkEntity?, now: Long) =
     copy(fieldTimes = timesJson(stamp(old?.fields(), fields(), oldTimes(old?.fieldTimes), now)))
 
-private suspend fun EbookEntity.stampedFrom(old: EbookEntity?, now: Long) =
+private fun EbookEntity.stampedFrom(old: EbookEntity?, now: Long) =
     copy(fieldTimes = timesJson(stamp(old?.fields(), fields(), oldTimes(old?.fieldTimes), now)))
 
 private fun ChallengeEntity.stampedFrom(old: ChallengeEntity?, now: Long) =

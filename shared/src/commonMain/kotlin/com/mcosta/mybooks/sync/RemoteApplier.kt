@@ -114,9 +114,9 @@ class RemoteApplier(
     /** The local row as it would be pushed, or null when it isn't on this device (any more). */
     suspend fun localRow(table: SyncTable, id: String): SyncRow? = when (table) {
         SyncTable.BOOKS -> db.books.getByUuid(id)?.toRow(coverStore)
-        SyncTable.QUOTES -> db.quotes.getByUuid(id)?.toRow(::bookUuid)
-        SyncTable.BOOKMARKS -> db.bookmarks.getByUuid(id)?.toRow(::bookUuid)
-        SyncTable.EBOOKS -> db.ebooks.getByUuid(id)?.toRow(::bookUuid)
+        SyncTable.QUOTES -> db.quotes.getByUuid(id)?.let { it.toRow(bookUuid(it.bookId)) }
+        SyncTable.BOOKMARKS -> db.bookmarks.getByUuid(id)?.let { it.toRow(bookUuid(it.bookId)) }
+        SyncTable.EBOOKS -> db.ebooks.getByUuid(id)?.let { it.toRow(bookUuid(it.bookId)) }
         SyncTable.CHALLENGES -> id.toIntOrNull()?.let { db.challenges.getByYearAny(it) }?.toRow()
         SyncTable.PREFS -> {
             val prefs = db.prefs
@@ -180,21 +180,21 @@ class RemoteApplier(
         SyncTable.BOOKS -> true
         SyncTable.QUOTES -> {
             val local = db.quotes.getByUuid(remote.id)
-            applyChild(local?.toRow(::bookUuid), remote, remove = { local?.let { db.quotes.delete(it.id) } }) { merged ->
+            applyChild(local?.let { it.toRow(bookUuid(it.bookId)) }, remote, remove = { local?.let { db.quotes.delete(it.id) } }) { merged ->
                 val entity = merged.toQuoteEntity(local, ::bookIdOf) ?: return@applyChild
                 if (local == null) db.quotes.insert(entity) else db.quotes.update(entity)
             }
         }
         SyncTable.BOOKMARKS -> {
             val local = db.bookmarks.getByUuid(remote.id)
-            applyChild(local?.toRow(::bookUuid), remote, remove = { local?.let { db.bookmarks.delete(it.id) } }) { merged ->
+            applyChild(local?.let { it.toRow(bookUuid(it.bookId)) }, remote, remove = { local?.let { db.bookmarks.delete(it.id) } }) { merged ->
                 val entity = merged.toBookmarkEntity(local, ::bookIdOf) ?: return@applyChild
                 if (local == null) db.bookmarks.insert(entity) else db.bookmarks.update(entity)
             }
         }
         SyncTable.EBOOKS -> {
             val local = db.ebooks.getByUuid(remote.id)
-            applyChild(local?.toRow(::bookUuid), remote, remove = { local?.let { db.ebooks.delete(it.bookId) } }) { merged ->
+            applyChild(local?.let { it.toRow(bookUuid(it.bookId)) }, remote, remove = { local?.let { db.ebooks.delete(it.bookId) } }) { merged ->
                 merged.toEbookEntity(local, ::bookIdOf)?.let { db.ebooks.upsert(it) }
             }
         }

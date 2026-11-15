@@ -83,9 +83,13 @@ fun SyncRow.toBookEntity(base: BookEntity?, coverStore: CoverStore?): BookEntity
 
 // ---- quotes ----
 
-/** Null when the quote's book has no uuid (gone). */
-suspend fun QuoteEntity.toRow(bookUuid: suspend (Long) -> String?): SyncRow? {
-    val book = bookUuid(bookId) ?: return null
+/**
+ * [bookUuid] is the uuid of the quote's book; null when it has none (gone). The child rows take it resolved, not as a
+ * suspend lookup: a suspend extension on an indexed @Entity crashes the Kotlin/Native compiler (its coroutine lowering
+ * reads the receiver class's annotations and fails on the nested Index(...) values).
+ */
+fun QuoteEntity.toRow(bookUuid: String?): SyncRow? {
+    val book = bookUuid ?: return null
     return row(
         SyncTable.QUOTES, uuid,
         mapOf("book_id" to s(book), "text" to s(text), "page" to n(page), "date_added" to n(dateAdded), "position" to s(position)),
@@ -105,8 +109,9 @@ suspend fun SyncRow.toQuoteEntity(base: QuoteEntity?, bookId: suspend (String) -
 
 // ---- bookmarks ----
 
-suspend fun BookmarkEntity.toRow(bookUuid: suspend (Long) -> String?): SyncRow? {
-    val book = bookUuid(bookId) ?: return null
+/** [bookUuid] is the uuid of the bookmark's book, as for quotes. */
+fun BookmarkEntity.toRow(bookUuid: String?): SyncRow? {
+    val book = bookUuid ?: return null
     return row(
         SyncTable.BOOKMARKS, uuid,
         mapOf("book_id" to s(book), "position" to s(position), "label" to s(label), "date_added" to n(dateAdded)),
@@ -125,8 +130,9 @@ suspend fun SyncRow.toBookmarkEntity(base: BookmarkEntity?, bookId: suspend (Str
 
 // ---- ebooks (the row id is its book's uuid) ----
 
-suspend fun EbookEntity.toRow(bookUuid: suspend (Long) -> String?): SyncRow? {
-    val book = bookUuid(bookId) ?: return null
+/** [bookUuid] is the uuid of the ebook's book (also the row id), as for quotes. */
+fun EbookEntity.toRow(bookUuid: String?): SyncRow? {
+    val book = bookUuid ?: return null
     return row(
         SyncTable.EBOOKS, book,
         mapOf(
