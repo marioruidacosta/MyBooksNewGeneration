@@ -75,8 +75,8 @@ class WidgetCoversTest {
         }.toByteArray()
         val shapes = listOf(photo(600, 600), photo(400, 900), photo(900, 500)).map {
             covers().bitmapFor(Book(title = "Stoner", coverUrl = store.save(it))).let { b -> b.width to b.height }
-        } + generatedCoverBitmap("Stoner", "John Williams").let { it.width to it.height }
-        assertEquals(listOf(200 to 300), shapes.distinct())
+        } + generatedCoverBitmap("Stoner", "John Williams").let { it.width to it.height }   // the default size
+        assertEquals(listOf(120 to 180), shapes.distinct())
     }
 
     /** A cover site that is down: every refresh would otherwise wait on it again for each card. */

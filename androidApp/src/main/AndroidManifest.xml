@@ -73,10 +73,5 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/reading_widget_info" />
         </receiver>
-        <!-- The widget's stack of cards: one per book being read. -->
-        <service
-            android:name=".widget.ReadingWidgetService"
-            android:exported="false"
-            android:permission="android.permission.BIND_REMOTEVIEWS" />
     </application>
 </manifest>

@@ -257,20 +257,21 @@ class ScreenshotTest {
         }
     }
 
-    /** One card of the home-screen widget's stack, with a generated cover (drawn as Android views, not Compose). */
-    private fun widgetCard(dark: Boolean) {
+    /** The home-screen widget at its default 4×3 size: five books being read (three covers and "+2") and the challenge. */
+    private fun widgetShelf(dark: Boolean) {
         if (dark) RuntimeEnvironment.setQualifiers("+night")
-        val book = Book(id = 1, title = "Princípio, meio, fim", authors = "Valeria Luiselli", status = ReadingStatus.READING, progressPercent = 26)
-        val card = com.mcosta.mybooks.widget.cardFor(context, book, com.mcosta.mybooks.widget.generatedCoverBitmap(book.title, book.authors))
+        val books = listOf("Princípio, meio, fim" to 26, "Jalan Jalan" to 15, "O Banqueiro Anarquista" to 11, "O Desaparecido" to 40, "Stoner" to 70)
+            .mapIndexed { i, (title, percent) -> Book(id = i + 1L, title = title, authors = "Autor", status = ReadingStatus.READING, progressPercent = percent) }
+        val widget = com.mcosta.mybooks.widget.ReadingWidget.views(context, com.mcosta.mybooks.domain.ReadingSummary(books, com.mcosta.mybooks.domain.ChallengeProgress(2026, 25, 21)))
             .apply(context, android.widget.FrameLayout(context))
         val density = context.resources.displayMetrics.density
-        val width = (300 * density).toInt()
-        val height = (124 * density).toInt()
-        card.measure(android.view.View.MeasureSpec.makeMeasureSpec(width, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(height, android.view.View.MeasureSpec.EXACTLY))
-        card.layout(0, 0, width, height)
+        val width = (340 * density).toInt()
+        val height = (230 * density).toInt()
+        widget.measure(android.view.View.MeasureSpec.makeMeasureSpec(width, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(height, android.view.View.MeasureSpec.EXACTLY))
+        widget.layout(0, 0, width, height)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        card.draw(android.graphics.Canvas(bitmap))
-        File(out, "widget-card-${if (dark) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        widget.draw(android.graphics.Canvas(bitmap))
+        File(out, "widget-shelf-${if (dark) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
     /** Free classics after a search: one downloaded (Read), one to download. */
@@ -638,8 +639,8 @@ class ScreenshotTest {
     }
 
     @Test fun coverPhotoMenuLight() = coverPhotoMenu(dark = false)
-    @Test fun widgetCardLight() = widgetCard(dark = false)
-    @Test fun widgetCardDark() = widgetCard(dark = true)
+    @Test fun widgetShelfLight() = widgetShelf(dark = false)
+    @Test fun widgetShelfDark() = widgetShelf(dark = true)
     @Test fun editFormLight() = editForm(dark = false)
     @Test fun editFormDark() = editForm(dark = true)
     @Test fun coverPhotoMenuDark() = coverPhotoMenu(dark = true)

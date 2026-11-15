@@ -21,7 +21,7 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * Cover pictures for the widget's cards: the book's photo, else its web cover (downloaded once, shrunk and kept in
+ * Cover pictures for the widget's shelf: the book's photo, else its web cover (downloaded once, shrunk and kept in
  * [cacheDir], so the widget works offline), else a generated cover. Blocking: call it from the widget's card factory
  * (a binder thread), never the main thread.
  */
@@ -100,8 +100,8 @@ class WidgetCovers(
     private companion object {
         const val DIR = "widget-covers"
         const val MAX_SIDE = 300
-        const val COVER_WIDTH = 200
-        const val COVER_HEIGHT = 300
+        const val COVER_WIDTH = WIDGET_COVER_WIDTH
+        const val COVER_HEIGHT = WIDGET_COVER_HEIGHT
         const val RETRY_AFTER_MS = 30 * 60_000L
     }
 }
@@ -124,7 +124,11 @@ internal fun downloadCover(url: String): ByteArray? = try {
 }
 
 /** The app's generated cover, drawn as a bitmap: its colour for the title, a darker spine, the title and the author. */
-fun generatedCoverBitmap(title: String, authors: String, width: Int = 200, height: Int = 300): Bitmap {
+/** The widget's cover size: small, so four covers fit comfortably in one widget update. */
+const val WIDGET_COVER_WIDTH = 120
+const val WIDGET_COVER_HEIGHT = 180
+
+fun generatedCoverBitmap(title: String, authors: String, width: Int = WIDGET_COVER_WIDTH, height: Int = WIDGET_COVER_HEIGHT): Bitmap {
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     canvas.drawColor(coverColorArgb(title))
