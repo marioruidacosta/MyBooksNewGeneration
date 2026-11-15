@@ -1,7 +1,10 @@
 package com.mcosta.mybooks.platform
 
 import android.content.ActivityNotFoundException
+import android.content.ContentResolver
+import android.net.Uri
 import androidx.activity.ComponentActivity
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
@@ -52,6 +55,29 @@ class AndroidCoverCamera(private val activity: ComponentActivity, private val re
     }
 }
 
+/** Opens the system photo picker (images only, no permission needed) and returns the chosen photo's bytes. */
+class AndroidCoverPhotoPicker(private val activity: ComponentActivity, private val results: ActivityResults) : CoverPhotoPicker {
+    override suspend fun pickPhoto(): ByteArray? {
+        val uri = results.launch(
+            ActivityResultContracts.PickVisualMedia(),
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+        ) ?: return null
+        return withContext(Dispatchers.IO) { readPickedPhoto(activity.contentResolver, uri) }
+    }
+}
+
+/** The bytes of a picked photo; throws with a message when it can't be opened (a cloud-only or deleted photo). */
+internal fun readPickedPhoto(resolver: ContentResolver, uri: Uri): ByteArray {
+    val stream = try {
+        resolver.openInputStream(uri)
+    } catch (_: FileNotFoundException) {
+        null
+    } catch (_: SecurityException) {
+        null
+    } ?: throw IllegalStateException("The photo couldn't be opened")
+    return stream.use { it.readBytes() }
+}
+
 /** Storage Access Framework pickers for backup export/import. */
 class AndroidDocumentPicker(private val activity: ComponentActivity, private val results: ActivityResults) : DocumentPicker {
     override suspend fun save(suggestedName: String, mime: String, bytes: ByteArray): Boolean {
@@ -93,5 +119,6 @@ fun androidPlatformServices(
         },
         monthlyAlerts = monthlyAlerts,
         ebooks = ebooks?.invoke(results),
+        photoPicker = AndroidCoverPhotoPicker(activity, results),
     )
 }
