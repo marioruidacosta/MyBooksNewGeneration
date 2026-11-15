@@ -105,6 +105,8 @@ fun BookDetailScreen(
     /** Opens the reader; null where there is no reader (the Read button and Ebook card are then hidden). */
     onRead: (() -> Unit)? = null,
     onAddEbookFile: (() -> Unit)? = null,
+    /** The library syncs: an ebook whose file isn't here shows as "Ebook on another device". */
+    ebookElsewhere: Boolean = false,
 ) {
     val community by (extras?.community ?: remember { MutableStateFlow<CommunityState>(CommunityState.Hidden) }).collectAsStateWithLifecycle()
     val moreBy by (extras?.moreBy ?: remember { MutableStateFlow<MoreByState?>(null) }).collectAsStateWithLifecycle()
@@ -194,7 +196,7 @@ fun BookDetailScreen(
                 SeriesSection(b, seriesBooks, onOpenBook, onOpenSeries)
                 TagsSection(b, allTags, onAdd = viewModel::addTag, onRemove = viewModel::removeTag, onOpen = onOpenTag)
                 if (b.status != ReadingStatus.WISHLIST || b.lentTo != null) LoanSection(b, onLend = viewModel::lend, onReturned = viewModel::returned)
-                if (onAddEbookFile != null) EbookCard(ebook, onAdd = onAddEbookFile, onRemove = viewModel::removeEbook)
+                if (onAddEbookFile != null) EbookCard(ebook, onAdd = onAddEbookFile, onRemove = viewModel::removeEbook, elsewhere = ebookElsewhere)
                 b.description?.takeIf { it.isNotBlank() }?.let { SectionCard("Description") { Description(it) } }
                 if (community != CommunityState.Hidden && extras != null) {
                     SectionCard("Community reviews") {

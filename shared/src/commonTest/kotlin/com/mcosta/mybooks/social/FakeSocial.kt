@@ -102,6 +102,11 @@ class FakeSocial {
         sessionFlow.value = SessionState.SignedIn(userId, null)
     }
 
+    /** The app has just started: the stored session isn't restored yet. */
+    fun loading() {
+        sessionFlow.value = SessionState.Loading
+    }
+
     private fun me(): String = (sessionFlow.value as? SessionState.SignedIn)?.userId
         ?: throw SocialException(SocialException.Kind.OTHER, "not signed in")
 
@@ -364,5 +369,8 @@ class FakeSocial {
         }
     }
 
-    val services = SocialServices(auth, profileService, friendsService, safetyService, activityService)
+    /** The cloud library the signed-in user syncs with. */
+    val sync = com.mcosta.mybooks.sync.FakeSyncServer()
+
+    val services = SocialServices(auth, profileService, friendsService, safetyService, activityService, sync)
 }

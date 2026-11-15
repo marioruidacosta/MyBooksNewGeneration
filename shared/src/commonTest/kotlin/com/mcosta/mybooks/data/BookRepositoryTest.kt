@@ -281,4 +281,41 @@ class BookRepositoryTest {
         assertEquals(1, repo.observeBooks(ReadingStatus.READ, "972-20-3650-5").first().size)
         assertEquals(0, repo.observeBooks(ReadingStatus.WISHLIST, "972-20-3650-5").first().size)
     }
+
+    @Test
+    fun saveWithBaseAppliesOnlyTheChangedFieldsToTheStoredBook() = runTest {
+        val id = saveOk(Book(title = "Dune", authors = "Frank Herbert", rating = 3, status = ReadingStatus.TO_READ))
+        val base = get(id)
+        // Meanwhile (another device): rating, notes and a tag.
+        repo.setRating(id, 5)
+        repo.setNotes(id, "x")
+        repo.setTags(id, listOf("sf"))
+        // The form was loaded before that; the user changed the title and the status only.
+        repo.save(base.copy(title = "Dune Messiah", status = ReadingStatus.READING), base = base)
+        val saved = get(id)
+        assertEquals("Dune Messiah", saved.title)
+        assertEquals(ReadingStatus.READING, saved.status)
+        assertEquals(5, saved.rating)
+        assertEquals("x", saved.notes)
+        assertEquals(listOf("sf"), saved.tags)
+        assertEquals("Frank Herbert", saved.authors)
+    }
+
+    @Test
+    fun saveWithBaseCanClearAField() = runTest {
+        val id = saveOk(Book(title = "Dune", rating = 3, notes = "old"))
+        val base = get(id)
+        repo.save(base.copy(rating = null), base = base)
+        assertNull(get(id).rating)
+        assertEquals("old", get(id).notes)
+    }
+
+    @Test
+    fun saveWithoutBaseStillWritesTheWholeBook() = runTest {
+        val id = saveOk(Book(title = "Dune", rating = 3))
+        val base = get(id)
+        repo.setRating(id, 5)
+        saveOk(base.copy(title = "Dune Messiah"))
+        assertEquals(3, get(id).rating)
+    }
 }

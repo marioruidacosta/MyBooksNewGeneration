@@ -1,17 +1,51 @@
 package com.mcosta.mybooks.ui.social
 
 import com.mcosta.mybooks.MainDispatcherTest
+import com.mcosta.mybooks.data.FakeBookDao
+import com.mcosta.mybooks.data.FakeBookmarkDao
+import com.mcosta.mybooks.data.FakeChallengeDao
+import com.mcosta.mybooks.data.FakeEbookDao
+import com.mcosta.mybooks.data.FakeQuoteDao
+import com.mcosta.mybooks.data.FakeSyncQueueDao
+import com.mcosta.mybooks.data.FakeSyncStateDao
+import com.mcosta.mybooks.data.db.BookEntity
 import com.mcosta.mybooks.data.covers.PhotoShrinker
+import com.mcosta.mybooks.library.FakeLibraries
+import com.mcosta.mybooks.library.LibraryId
 import com.mcosta.mybooks.social.FakeSocial
 import com.mcosta.mybooks.share.SharingStatus
 import com.mcosta.mybooks.social.model.SessionState
 import com.mcosta.mybooks.social.model.Visibility
+import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.sync.FakeSyncServer
+import com.mcosta.mybooks.sync.LibrarySync
+import com.mcosta.mybooks.sync.RemoteApplier
+import com.mcosta.mybooks.sync.SyncDatabase
+import com.mcosta.mybooks.sync.SyncRecorder
+import com.mcosta.mybooks.sync.SyncException
+import com.mcosta.mybooks.sync.SignOutCheck
+import com.mcosta.mybooks.sync.SyncStatus
+import com.mcosta.mybooks.data.covers.CoverStore
+import com.mcosta.mybooks.data.ebooks.EbookFiles
+import com.mcosta.mybooks.domain.EbookFormat
+import okio.Buffer
+import okio.Path.Companion.toPath
+import okio.fakefilesystem.FakeFileSystem
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class AccountViewModelTest : MainDispatcherTest() {
     private val fake = FakeSocial()
@@ -134,5 +168,343 @@ class AccountViewModelTest : MainDispatcherTest() {
         val vm = vm()
         vm.setShareActivity(true)
         assertTrue(vm.state.value.profile!!.shareActivity)
+    }
+
+    // ---- signing out while the library syncs ----
+
+    /**
+     * A synced library on this phone, with one book and one change waiting; [files]: with photo and ebook folders. Its
+     * cloud is [owner]'s, the account signed in (whose token the calls carry).
+     */
+    private class SyncedLibrary(scope: CoroutineScope, owner: String, files: Boolean = false) {
+        val books = FakeBookDao()
+        val queue = FakeSyncQueueDao()
+        val state = FakeSyncStateDao()
+        val fs = FakeFileSystem()
+        val covers = CoverStore(fs, "/covers".toPath())
+        val ebookFiles = EbookFiles(fs, "/ebooks".toPath(), kotlinx.coroutines.Dispatchers.Unconfined)
+        private val db = SyncDatabase(books, FakeQuoteDao(), FakeEbookDao(), FakeBookmarkDao(), FakeChallengeDao(), queue, state)
+        private val recorder = SyncRecorder(queue, { 0L }, { true }, { it() })
+        val server = FakeSyncServer(owner)
+        val sync = LibrarySync(
+            server, db, recorder, RemoteApplier(db, recorder, if (files) covers else null), { 0L }, scope,
+            coverStore = if (files) covers else null, ebookFiles = if (files) ebookFiles else null,
+        )
+
+        suspend fun fill() {
+            books.insert(
+                BookEntity(
+                    isbn = null, title = "Os Maias", authors = "Eça de Queirós", publisher = null, publishedYear = null,
+                    pageCount = null, coverUrl = null, description = null, status = ReadingStatus.READ, rating = null,
+                    notes = "", dateAdded = 0, dateRead = null, searchText = "os maias", uuid = "x",
+                ),
+            )
+            queue.enqueue("books", "x", 0)
+            state.set("seq", "7")
+        }
+    }
+
+    private val engineJob = SupervisorJob()
+
+    @AfterTest
+    fun stopEngines() = engineJob.cancel()
+
+    private suspend fun TestScope.syncedLibrary(): SyncedLibrary {
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
+        library.fill()
+        library.sync.start(ana)
+        return library
+    }
+
+    @Test
+    fun signOutWhileSyncingAsksWhetherToKeepTheLibrary() = runTest {
+        fake.signInAs(ana)
+        val library = syncedLibrary()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+        // A last sync runs first.
+        assertTrue(vm.state.value.preparingSignOut)
+        assertFalse(vm.state.value.askKeepLibrary)
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.preparingSignOut)
+        assertTrue(vm.state.value.askKeepLibrary)
+        assertEquals(SessionState.SignedIn(ana, null), fake.auth.session.value)
+        assertFalse(vm.state.value.signedOut)
+
+        vm.cancelSignOut()
+        assertFalse(vm.state.value.askKeepLibrary)
+        assertEquals(SessionState.SignedIn(ana, null), fake.auth.session.value)
+    }
+
+    @Test
+    fun signOutKeepLeavesLibraryAndItsSyncState() = runTest {
+        fake.signInAs(ana)
+        val library = syncedLibrary()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+        advanceUntilIdle()
+        vm.signOut(keepLibrary = true)
+
+        assertEquals(SessionState.SignedOut, fake.auth.session.value)
+        assertTrue(vm.state.value.signedOut)
+        assertFalse(vm.state.value.askKeepLibrary)
+        assertEquals(listOf("x"), library.books.rows.value.values.map { it.uuid })
+        // Kept for the next sign-in of this account (the phone shows its own library meanwhile).
+        assertTrue(library.state.rows.isNotEmpty())
+        assertEquals(SyncStatus.Off, library.sync.status.value)
+        // Sign-out is over: sync can start again (the next sign-in).
+        library.sync.start(ana)
+        assertEquals(SyncStatus.Syncing, library.sync.status.value)
+    }
+
+    @Test
+    fun signOutRemoveSignsOutAndStopsSync() = runTest {
+        fake.signInAs(ana)
+        val library = syncedLibrary()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+        advanceUntilIdle()
+        vm.signOut(keepLibrary = false)
+
+        assertEquals(SessionState.SignedOut, fake.auth.session.value)
+        assertTrue(vm.state.value.signedOut)
+        assertEquals(SyncStatus.Off, library.sync.status.value)
+    }
+
+    @Test
+    fun removeWarnsAboutUnsyncedChanges() = runTest {
+        fake.signInAs(ana)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
+        library.fill()
+        library.server.failNext = SyncException(SyncException.Kind.OFFLINE, "offline")
+        library.server.failTimes = 1_000
+        library.sync.start(ana)
+        runCurrent()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+        runCurrent()
+
+        // The last sync failed too: the change waiting is still only here.
+        assertTrue(library.server.calls.size >= 2)
+        assertTrue(vm.state.value.askKeepLibrary)
+        val check = vm.state.value.signOutCheck
+        assertEquals(1, check.waiting)
+        assertTrue(check.unconfirmed)
+        assertEquals(listOf("1 change hasn't reached your account yet. Removing now loses it."), check.warnings())
+        assertEquals("Remove anyway", check.removeLabel)
+        assertEquals(
+            listOf("3 changes haven't reached your account yet. Removing now loses them."),
+            check.copy(waiting = 3).warnings(),
+        )
+
+        // Still the user's choice.
+        vm.signOut(keepLibrary = false)
+        assertTrue(vm.state.value.signedOut)
+    }
+
+    @Test
+    fun removeAfterSuccessfulFinalSyncShowsNoWarning() = runTest {
+        fake.signInAs(ana)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
+        library.fill()
+        // Offline until now: the change is still queued when "Sign out" is tapped.
+        library.server.failNext = SyncException(SyncException.Kind.OFFLINE, "offline")
+        library.sync.start(ana)
+        runCurrent()
+        assertEquals(1, library.queue.rows.value.size)
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+        advanceUntilIdle()
+
+        // The last sync sent it.
+        assertTrue(library.queue.rows.value.isEmpty())
+        assertTrue(vm.state.value.askKeepLibrary)
+        val check = vm.state.value.signOutCheck
+        assertEquals(SignOutCheck(), check)
+        assertTrue(check.warnings().isEmpty())
+        assertEquals("Remove", check.removeLabel)
+        assertEquals(0L, testScheduler.currentTime)
+    }
+
+    @Test
+    fun removeWarnsAboutPhotosNotUploaded() = runTest {
+        fake.signInAs(ana)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana, files = true)
+        library.fill()
+        // Named after the book, as a photo is once synced.
+        val photo = library.covers.put("x.jpg", byteArrayOf(1, 2, 3))
+        library.books.update(library.books.rows.value.values.single().copy(coverUrl = photo))
+        // The cloud has no room: the photo can't go up.
+        library.server.uploadFail = SyncException(SyncException.Kind.STORAGE_FULL, "full")
+        library.sync.start(ana)
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+        advanceUntilIdle()
+
+        assertTrue(library.queue.rows.value.isEmpty())
+        val check = vm.state.value.signOutCheck
+        assertEquals(SignOutCheck(waiting = 1), check)
+        assertEquals("Remove anyway", check.removeLabel)
+    }
+
+    @Test
+    fun removeWarnsThatEbookFilesAreDeleted() = runTest {
+        fake.signInAs(ana)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana, files = true)
+        library.fill()
+        library.ebookFiles.store(1, EbookFormat.EPUB, Buffer().writeUtf8("epub"))
+        library.sync.start(ana)
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+        advanceUntilIdle()
+
+        val check = vm.state.value.signOutCheck
+        assertEquals(SignOutCheck(ebookFiles = true), check)
+        assertEquals(listOf("Ebook files are only on this phone and will be deleted."), check.warnings())
+        // Nothing is waiting: an ordinary "Remove".
+        assertEquals("Remove", check.removeLabel)
+    }
+
+    @Test
+    fun cancellingTheLastSyncLeavesTheQuestionUnasked() = runTest {
+        fake.signInAs(ana)
+        val library = syncedLibrary()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+        vm.cancelSignOut()
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.askKeepLibrary)
+        assertFalse(vm.state.value.preparingSignOut)
+        assertEquals(SessionState.SignedIn(ana, null), fake.auth.session.value)
+    }
+
+    @Test
+    fun signOutWithSyncOffSignsOutAtOnce() = runTest {
+        fake.signInAs(ana)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
+        library.fill()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        vm.signOut()
+
+        assertFalse(vm.state.value.askKeepLibrary)
+        assertTrue(vm.state.value.signedOut)
+        assertEquals(SessionState.SignedOut, fake.auth.session.value)
+        assertEquals(1, library.books.rows.value.size)
+        assertEquals(1, library.queue.rows.value.size)
+    }
+
+    // ---- the sync status line ----
+
+    @Test
+    fun withoutSyncThereIsNoStatus() = runTest {
+        fake.signInAs(ana)
+        assertNull(vm().state.value.sync)
+    }
+
+    @Test
+    fun syncStatusIsExposed() = runTest {
+        fake.signInAs(ana)
+        val library = syncedLibrary()
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+        assertEquals(SyncStatus.Syncing, vm.state.value.sync?.status)
+
+        advanceUntilIdle()
+
+        val info = vm.state.value.sync!!
+        assertEquals(SyncStatus.Synced(0), info.status)
+        assertNull(info.merging)
+        assertFalse(info.coversFull)
+        assertEquals(0, info.setAside)
+    }
+
+    @Test
+    fun setAsideChangesAreCounted() = runTest {
+        fake.signInAs(ana)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
+        library.fill()
+        // Past the first merge (which would refuse the book once more): one change, refused once.
+        library.state.set(com.mcosta.mybooks.sync.mergedKey(ana), "1")
+        library.server.refuse = { "too long" }
+        library.sync.start(ana)
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+
+        advanceUntilIdle()
+
+        assertEquals(1, vm.state.value.sync?.setAside)
+    }
+
+    @Test
+    fun retrySyncTriesAgainAtOnce() = runTest {
+        fake.signInAs(ana)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
+        library.fill()
+        library.server.failNext = SyncException(SyncException.Kind.OTHER, "500")
+        library.sync.start(ana)
+        val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
+        runCurrent()
+        assertEquals(SyncStatus.Failed(1), vm.state.value.sync?.status)
+
+        vm.retrySync()
+        runCurrent()
+
+        assertEquals(SyncStatus.Synced(0), vm.state.value.sync?.status)
+        assertEquals(0L, testScheduler.currentTime)
+    }
+
+    // ---- a library that can't be opened ----
+
+    @Test
+    fun openFailureShowsMessage() = runTest(timeout = 30.seconds) {
+        val app = FakeLibraries(this, fake, engineJob)
+        app.start()
+        advanceUntilIdle()
+        app.active.addBook("Mensagem")
+        app.failing = LibraryId.Account(ana)
+        val vm = AccountViewModel(fake.services, shrinker, sessions = app.sessions, libraries = app.libraries, workDispatcher = mainDispatcher)
+        assertNull(vm.state.value.openFailure)
+
+        app.signIn(ana)
+        advanceUntilIdle()
+
+        // The phone's own library is shown, with the reason; nothing is deleted.
+        assertEquals(LibraryId.Local, app.active.id)
+        assertEquals("Couldn't open your library. Try signing in again.", vm.state.value.openFailure)
+        assertTrue(app.deleted.isEmpty())
+        assertEquals(setOf("Mensagem"), app.stores.getValue(LibraryId.Local).live().mapTo(mutableSetOf()) { it.title })
+    }
+
+    @Test
+    fun openFailureGoesAtSignOutAndAtTheNextGoodSignIn() = runTest(timeout = 30.seconds) {
+        val app = FakeLibraries(this, fake, engineJob)
+        app.start()
+        advanceUntilIdle()
+        app.failing = LibraryId.Account(ana)
+        val vm = AccountViewModel(fake.services, shrinker, sessions = app.sessions, libraries = app.libraries, workDispatcher = mainDispatcher)
+        app.signIn(ana)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.openFailure != null)
+
+        // Signing out clears it.
+        app.signOut(keep = true)
+        advanceUntilIdle()
+        assertNull(vm.state.value.openFailure)
+
+        // A good sign-in doesn't bring it back.
+        app.failing = null
+        app.signIn(ana)
+        advanceUntilIdle()
+        assertEquals(LibraryId.Account(ana), app.active.id)
+        assertNull(vm.state.value.openFailure)
     }
 }

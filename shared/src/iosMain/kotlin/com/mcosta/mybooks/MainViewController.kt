@@ -3,17 +3,18 @@ package com.mcosta.mybooks
 import com.russhwolf.settings.NSUserDefaultsSettings
 import platform.Foundation.NSUserDefaults
 import androidx.compose.ui.window.ComposeUIViewController
-import androidx.room.Room
-import androidx.sqlite.driver.bundled.BundledSQLiteDriver
-import com.mcosta.mybooks.data.covers.CoverStore
-import com.mcosta.mybooks.data.db.AppDatabase
-import com.mcosta.mybooks.data.db.createDatabase
+import com.mcosta.mybooks.library.LibraryFiles
+import com.mcosta.mybooks.library.deleteLibraryDatabase
+import com.mcosta.mybooks.library.libraryDatabasePath
+import com.mcosta.mybooks.library.openDatabaseFile
+import com.mcosta.mybooks.library.openLibraryDatabase
 import com.mcosta.mybooks.platform.IosNativeServices
 import com.mcosta.mybooks.platform.iosPlatformServices
 import com.mcosta.mybooks.social.SocialConfig
 import com.mcosta.mybooks.ui.App
 import io.ktor.client.engine.darwin.Darwin
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.runBlocking
 import okio.FileSystem
 import okio.Path.Companion.toPath
 import platform.Foundation.NSBundle
@@ -32,21 +33,28 @@ private fun documentsPath(): String =
 private fun infoString(key: String): String =
     (NSBundle.mainBundle.objectForInfoDictionaryKey(key) as? String).orEmpty()
 
-/** Created once for the app's lifetime. */
+/** Created once for the app's lifetime, started. */
 private val container: AppContainer by lazy {
     val documents = documentsPath()
     AppContainer(
-        database = createDatabase(Room.databaseBuilder<AppDatabase>(name = "$documents/mybooks.db"), BundledSQLiteDriver()),
+        openDatabase = { id -> openLibraryDatabase(documents, id) },
+        deleteDatabase = { id -> deleteLibraryDatabase(documents, id) },
+        databaseFile = { id -> libraryDatabasePath(documents, id).toPath() },
+        openDatabaseFile = { path -> openDatabaseFile(path.toString()) },
+        libraryFiles = LibraryFiles(FileSystem.SYSTEM, documents.toPath()),
         // Sending the sign-in email can take longer than the default wait.
         httpEngine = Darwin.create { configureSession { timeoutIntervalForRequest = 30.0 } },
-        coverStore = CoverStore(FileSystem.SYSTEM, "$documents/covers".toPath()),
         releasesFileSystem = FileSystem.SYSTEM,
         releasesDir = "$documents/releases".toPath(),
         googleBooksApiKey = infoString("GoogleBooksApiKey").trim(),
         userAgent = "MyBooks/${infoString("CFBundleShortVersionString")} (iOS; personal library app)",
         socialConfig = SocialConfig(infoString("SupabaseUrl").trim(), infoString("SupabaseAnonKey").trim()),
         appSettings = NSUserDefaultsSettings(NSUserDefaults.standardUserDefaults),
-    )
+    ).also {
+        // Everything after needs the library open. The first start of this version upgrades today's library first (on
+        // IO; the session is stored where it can't be read at once here, so of several owners the last recorded wins).
+        runBlocking { it.start() }
+    }
 }
 
 /** Entry point used by the Swift app: the whole shared UI in a UIViewController. */

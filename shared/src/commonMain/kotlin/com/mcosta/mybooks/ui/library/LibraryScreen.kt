@@ -78,6 +78,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.ui.components.BookCover
+import com.mcosta.mybooks.ui.components.SyncRefreshBox
 import com.mcosta.mybooks.ui.components.RatingStars
 import kotlinx.coroutines.launch
 
@@ -105,6 +106,8 @@ fun LibraryScreen(
     onOpenRelease: (month: String, id: String) -> Unit = { _, _ -> },
     onOpenCatalogBook: (AuthorBook) -> Unit = {},
     onAddYourself: (isbn: String?) -> Unit = {},
+    /** Pull-to-refresh: syncs the library now; null while sync is off (no pull-to-refresh). */
+    onRefresh: (suspend () -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf(state.query) }
@@ -240,26 +243,28 @@ fun LibraryScreen(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(if (query.isBlank()) "No books here yet" else "No books match", style = MaterialTheme.typography.bodyLarge)
                 }
-            } else if (state.grid) {
-                LazyVerticalGrid(
-                    GridCells.Fixed(3),
-                    state = gridState,
-                    contentPadding = PaddingValues(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    items(state.books, key = { it.id }) { book -> GridCell(book, onClick = { onOpenBook(book.id) }) }
-                }
-            } else {
-                LazyColumn(Modifier.fillMaxSize(), state = listState) {
-                    items(state.books, key = { it.id }) { book ->
-                        SwipeRow(book, onSwipeRight = { onSwipeRight(book) }, onSwipeLeft = { onSwipeLeft(book) }) {
-                            BookRow(book, onClick = { onOpenBook(book.id) }, showSeriesNumber = state.filter is BookFilter.Series)
-                        }
-                        HorizontalDivider()
+            } else SyncRefreshBox(onRefresh, Modifier.fillMaxSize()) {
+                if (state.grid) {
+                    LazyVerticalGrid(
+                        GridCells.Fixed(3),
+                        state = gridState,
+                        contentPadding = PaddingValues(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        items(state.books, key = { it.id }) { book -> GridCell(book, onClick = { onOpenBook(book.id) }) }
                     }
-                    item { Spacer(Modifier.height(88.dp)) }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+                        items(state.books, key = { it.id }) { book ->
+                            SwipeRow(book, onSwipeRight = { onSwipeRight(book) }, onSwipeLeft = { onSwipeLeft(book) }) {
+                                BookRow(book, onClick = { onOpenBook(book.id) }, showSeriesNumber = state.filter is BookFilter.Series)
+                            }
+                            HorizontalDivider()
+                        }
+                        item { Spacer(Modifier.height(88.dp)) }
+                    }
                 }
             }
         }

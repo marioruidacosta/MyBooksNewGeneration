@@ -8,4 +8,6 @@
     <include domain="database" path="mybooks.db-shm" />
     <include domain="sharedpref" path="mybooks.xml" />
     <include domain="file" path="covers" />
+    <include domain="database" path="libraries" />
+    <include domain="file" path="libraries" />
 </full-backup-content>

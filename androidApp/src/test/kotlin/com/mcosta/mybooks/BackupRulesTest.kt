@@ -15,11 +15,11 @@ class BackupRulesTest {
 
     private val expected = setOf(
         "database:mybooks.db", "database:mybooks.db-wal", "database:mybooks.db-shm",
-        "sharedpref:mybooks.xml", "file:covers",
+        "sharedpref:mybooks.xml", "file:covers", "database:libraries", "file:libraries",
     )
 
     @Test
-    fun theLibraryItsSettingsAndCoverPhotosAreBackedUp() {
+    fun theLibraryItsSettingsCoverPhotosAndAccountLibrariesAreBackedUp() {
         assertEquals(expected, includes("backup_rules.xml"))
         assertEquals(expected, includes("data_extraction_rules.xml", "cloud-backup"))
         assertEquals(expected, includes("data_extraction_rules.xml", "device-transfer"))

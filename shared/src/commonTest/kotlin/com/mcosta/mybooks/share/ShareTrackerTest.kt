@@ -62,6 +62,43 @@ class ShareTrackerTest {
     }
 
     @Test
+    fun syncedFromElsewhereRecordsBeforeWithoutPublishing() = runTest {
+        val id = oldBook(Book(title = "Dune", status = ReadingStatus.READING))
+        repo.setRating(id, 4)
+        shares.upsert(shares.get(id)!!.copy(pending = false, hasBefore = false))
+        val calls = pendingCalls
+
+        tracker.syncedFromElsewhere(Book(id = id, title = "Dune", status = ReadingStatus.READ, rating = 5))
+
+        val row = shares.get(id)!!
+        assertFalse(row.pending)
+        assertTrue(row.hasBefore)
+        assertEquals(ReadingStatus.READ, row.beforeStatus)
+        assertEquals(5, row.beforeRating)
+        assertEquals(calls, pendingCalls)
+    }
+
+    @Test
+    fun syncedFromElsewhereKeepsAWaitingChangesBefore() = runTest {
+        val id = oldBook(Book(title = "Dune", status = ReadingStatus.READING))
+        repo.setRating(id, 4)
+
+        tracker.syncedFromElsewhere(Book(id = id, title = "Dune", status = ReadingStatus.READ, rating = 4))
+
+        val row = shares.get(id)!!
+        assertTrue(row.pending)
+        assertEquals(ReadingStatus.READING, row.beforeStatus)
+        assertNull(row.beforeRating)
+    }
+
+    @Test
+    fun syncedFromElsewhereLeavesUnsharedBooksAlone() = runTest {
+        val id = oldBook(Book(title = "Dune"))
+        tracker.syncedFromElsewhere(Book(id = id, title = "Dune", rating = 5))
+        assertNull(shares.get(id))
+    }
+
+    @Test
     fun newBookHasNoBefore() = runTest {
         val id = (repo.save(Book(title = "Emma", status = ReadingStatus.WISHLIST)) as SaveResult.Saved).id
         val row = shares.get(id)!!

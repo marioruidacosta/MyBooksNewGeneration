@@ -81,6 +81,17 @@ import com.mcosta.mybooks.ui.home.HomeViewModel
 import com.mcosta.mybooks.ui.library.LibraryScreen
 import com.mcosta.mybooks.ui.library.LibraryViewModel
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
+import com.mcosta.mybooks.ui.social.AddPhoneBooksCard
+import com.mcosta.mybooks.ui.social.MovingBooksCard
+import com.mcosta.mybooks.ui.social.KeepLibraryCard
+import com.mcosta.mybooks.sync.SignOutCheck
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import com.mcosta.mybooks.ui.social.SyncInfo
+import com.mcosta.mybooks.ui.social.SyncStatusSection
+import com.mcosta.mybooks.sync.SyncStatus
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -475,6 +486,124 @@ class ScreenshotTest {
             assertTrue(text, compose.onAllNodes(androidx.compose.ui.test.hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty())
         }
     }
+    /** Settings → Account's sync line: synced; offline with changes waiting, covers full and changes set aside; failed. */
+    private fun accountSync(dark: Boolean) {
+        val now = 1_000_000_000L
+        shoot("account-sync", dark, ready = { true }) {
+            androidx.compose.material3.Surface {
+                androidx.compose.foundation.layout.Column(
+                    androidx.compose.ui.Modifier.padding(16.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(24.dp),
+                ) {
+                    SyncStatusSection(SyncInfo(SyncStatus.Synced(now - 10_000)), now, onRetry = {})
+                    SyncStatusSection(SyncInfo(SyncStatus.Offline(3), coversFull = true, setAside = 2), now, onRetry = {})
+                    SyncStatusSection(SyncInfo(SyncStatus.Failed(3)), now, onRetry = {})
+                }
+            }
+        }
+        for (text in listOf("Synced just now", "Offline · 3 changes waiting", "Cover photos not syncing: storage full", "2 changes couldn't be synced", "Retry")) {
+            compose.onNodeWithText(text).assertExists()
+        }
+    }
+
+    /** The first sign-in on a phone that already has books. */
+    private fun accountCombining(dark: Boolean) {
+        shoot("account-combining", dark, ready = { true }) {
+            androidx.compose.material3.Surface {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.padding(16.dp)) {
+                    SyncStatusSection(SyncInfo(SyncStatus.Syncing, merging = 120 to 340), 0L, onRetry = {})
+                }
+            }
+        }
+        compose.onNodeWithText("Combining your libraries… 120 of 340").assertExists()
+    }
+
+    /** Signing out while the library syncs; [check]: what "Remove" would lose. */
+    private fun signOutDialog(dark: Boolean, check: SignOutCheck = SignOutCheck(), name: String = "sign-out-dialog") {
+        // Over a dimmed screen, as the dialog shows (Robolectric can't draw the dialog's own window).
+        shoot(name, dark, ready = { true }) {
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)).padding(40.dp),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                KeepLibraryCard(check, onKeep = {}, onRemove = {})
+            }
+        }
+        for (text in listOf("Keep a copy of your library on this device?", "Keep")) compose.onNodeWithText(text).assertExists()
+    }
+
+    /** An account's first sign-in on a phone with books of its own: add them to the account? */
+    private fun addPhoneBooks(dark: Boolean) {
+        // Over a dimmed screen, as the dialog shows (Robolectric can't draw the dialog's own window).
+        shoot("add-phone-books", dark, ready = { true }) {
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)).padding(40.dp),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                AddPhoneBooksCard(3, onAdd = {}, onNotNow = {})
+            }
+        }
+        for (text in listOf(
+            "Add this phone's 3 books to your account?",
+            "They'll move into your account's library and sync to your other devices.",
+            "Add them",
+            "Not now",
+        )) compose.onNodeWithText(text).assertExists()
+    }
+
+    /** After "Add them": the phone's books moving into the account. */
+    private fun movingBooks(dark: Boolean) {
+        shoot("moving-books", dark, ready = { true }) {
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)).padding(40.dp),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                MovingBooksCard()
+            }
+        }
+        compose.onNodeWithText("Moving your books…").assertExists()
+    }
+
+    /** Signing out with changes the last sync couldn't send: "Remove" says what it loses. */
+    private fun signOutDialogPending(dark: Boolean) {
+        signOutDialog(dark, SignOutCheck(waiting = 3, unconfirmed = true), "sign-out-dialog-pending")
+        compose.onNodeWithText("3 changes haven't reached your account yet. Removing now loses them.").assertExists()
+        compose.onNodeWithText("Remove anyway").assertExists()
+    }
+
+    /** Signing out with ebook files on the phone (they never sync). */
+    private fun signOutDialogEbooks(dark: Boolean) {
+        signOutDialog(dark, SignOutCheck(ebookFiles = true), "sign-out-dialog-ebooks")
+        compose.onNodeWithText("Ebook files are only on this phone and will be deleted.").assertExists()
+        compose.onNodeWithText("Remove").assertExists()
+    }
+
+    /** A book whose ebook was added on another device: its record synced, its file didn't. */
+    private fun ebookElsewhere(dark: Boolean) {
+        val id = sampleLibrary()
+        runBlocking { db.ebookDao().upsert(com.mcosta.mybooks.data.db.EbookEntity(id, EbookFormat.EPUB, "memorial-do-convento.epub", 1_234_567, day("2026-10-02"))) }
+        val ebooks = EbookRepository(db.ebookDao(), db.bookmarkDao(), EbookFiles(FileSystem.SYSTEM, context.filesDir.toOkioPath() / "ebooks"), repo)
+        val vm = BookDetailViewModel(repo, id, CoroutineScope(SupervisorJob() + Dispatchers.Default), ebookRepo = ebooks)
+        shoot("ebook-elsewhere", dark, ready = { vm.book.value != null && vm.ebook.value != null }) {
+            BookDetailScreen(vm, onBack = {}, onEdit = {}, onRead = {}, onAddEbookFile = {}, ebookElsewhere = true)
+        }
+        compose.onNodeWithText("Ebook on another device").assertExists()
+    }
+
+    @Test fun accountSyncLight() = accountSync(dark = false)
+    @Test fun accountCombiningDark() = accountCombining(dark = true)
+    @Test fun signOutDialogLight() {
+        signOutDialog(dark = false)
+        compose.onNodeWithText("Remove").assertExists()
+    }
+    @Test fun signOutDialogPendingLight() = signOutDialogPending(dark = false)
+    @Test fun signOutDialogPendingDark() = signOutDialogPending(dark = true)
+    @Test fun signOutDialogEbooksLight() = signOutDialogEbooks(dark = false)
+    @Test fun addPhoneBooksLight() = addPhoneBooks(dark = false)
+    @Test fun addPhoneBooksDark() = addPhoneBooks(dark = true)
+    @Test fun movingBooksLight() = movingBooks(dark = false)
+    @Config(qualifiers = TALL) @Test fun ebookElsewhereLight() = ebookElsewhere(dark = false)
+
     @Config(qualifiers = TALL) @Test fun homeLight() = home(dark = false)
     @Config(qualifiers = TALL) @Test fun homeDark() = home(dark = true)
     @Test fun shelfLight() = shelf(dark = false)

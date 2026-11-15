@@ -40,11 +40,14 @@ import io.github.jan.supabase.auth.providers.builtin.OTP
 import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.exceptions.HttpRequestException
+import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.exception.PostgrestRestException
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.storage.Storage
+import io.github.jan.supabase.storage.resumable.MemoryResumableCache
+import io.github.jan.supabase.realtime.Realtime
 import io.github.jan.supabase.storage.storage
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.network.sockets.ConnectTimeoutException
@@ -60,10 +63,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.io.IOException
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.time.Clock
@@ -75,6 +82,19 @@ import kotlin.time.Clock
  */
 fun createSocialServices(config: SocialConfig, engine: HttpClientEngine, settings: Settings? = null): SocialServices =
     SupabaseSocial(supabaseClient(config, engine, persistSession = true, settings)).services
+
+/**
+ * The user of the sign-in session kept in [settings] (what [createSocialServices] restores, later and asynchronously),
+ * read at once; null if there is none or it can't be read.
+ */
+fun storedSessionUserId(settings: Settings?): String? {
+    val stored = settings?.getStringOrNull(SettingsSessionManager.SETTINGS_KEY) ?: return null
+    return try {
+        Json.parseToJsonElement(stored).jsonObject["user"]?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
+    } catch (_: Exception) {
+        null
+    }
+}
 
 /**
  * How long a Supabase call may take. Sending the sign-in email happens inside the request, and
@@ -111,7 +131,9 @@ internal fun supabaseClient(
             }
         }
         install(Postgrest)
-        install(Storage)
+        // Only plain uploads are used; the default resumable-upload cache would need platform Settings.
+        install(Storage) { resumable { cache = MemoryResumableCache() } }
+        install(Realtime)
     }
 
 /** Maps any failure to the [SocialException] kinds the screens explain. */
@@ -128,6 +150,9 @@ internal fun mapSocialError(e: Throwable): SocialException = when {
     e is PostgrestRestException && e.code == "22023" -> SocialException(SocialException.Kind.REJECTED, "rejected", e)
     else -> SocialException(SocialException.Kind.OTHER, e.message ?: "error", e)
 }
+
+/** Cover photos listed, and removed, per Storage call when deleting the account. */
+private const val COVERS_PAGE = 100
 
 internal class SupabaseSocial(
     private val client: SupabaseClient,
@@ -156,6 +181,26 @@ internal class SupabaseSocial(
     }
 
     private suspend fun myFriendships(): List<FriendshipRow> = client.from("friendships").select().decodeList()
+
+    /** Every object in `covers/<owner>/`: listed a page at a time, then removed [COVERS_PAGE] at a time. */
+    private suspend fun removeCoverPhotos(owner: String) {
+        val bucket = client.storage.from("covers")
+        val names = mutableListOf<String>()
+        while (true) {
+            val page = try {
+                bucket.list(owner) {
+                    limit = COVERS_PAGE
+                    offset = names.size
+                }
+            } catch (e: RestException) {
+                // No covers bucket (library sync's migration not applied yet): nothing to remove.
+                if ("not found" in "${e.message} ${e.description}".lowercase()) emptyList() else throw e
+            }
+            names += page.map { "$owner/${it.name}" }
+            if (page.size < COVERS_PAGE) break
+        }
+        names.chunked(COVERS_PAGE).forEach { bucket.delete(it) }
+    }
 
     private val auth = object : AuthService {
         override val session: StateFlow<SessionState> = client.auth.sessionStatus.map { status ->
@@ -227,8 +272,11 @@ internal class SupabaseSocial(
         }
 
         override suspend fun deleteAccount() = call {
-            val avatar = client.from("profiles").select { filter { eq("id", me()) } }.decodeSingleOrNull<ProfileRow>()?.avatarPath
+            val me = me()
+            val avatar = client.from("profiles").select { filter { eq("id", me) } }.decodeSingleOrNull<ProfileRow>()?.avatarPath
             if (avatar != null) runCatching { client.storage.from("avatars").delete(avatar) }
+            // The library's cover photos go first: they'd outlive the account (or keep it from being deleted).
+            removeCoverPhotos(me)
             client.postgrest.rpc("delete_my_account")
             // The account is gone server-side; only the local session is left to clear.
             client.auth.clearSession()
@@ -426,5 +474,5 @@ internal class SupabaseSocial(
         }
     }
 
-    val services = SocialServices(auth, profiles, friends, safety, activity)
+    val services = SocialServices(auth, profiles, friends, safety, activity, SupabaseSync(client))
 }

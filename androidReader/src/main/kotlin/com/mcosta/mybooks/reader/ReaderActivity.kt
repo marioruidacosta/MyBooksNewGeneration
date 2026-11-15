@@ -14,17 +14,25 @@ import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentContainerView
 import androidx.fragment.app.commitNow
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.withStarted
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.mcosta.mybooks.AppContainer
 import com.mcosta.mybooks.ContainerOwner
 import com.mcosta.mybooks.domain.EbookFormat
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.library.Libraries
+import com.mcosta.mybooks.library.LibraryHandle
+import com.mcosta.mybooks.library.LibrarySpace
 import com.mcosta.mybooks.reader.ui.ReaderActions
 import com.mcosta.mybooks.reader.ui.ReaderBars
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -84,31 +92,37 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
     /** Readium links by the target given to [TocEntry], to go back from the contents. */
     private val links = mutableMapOf<String, Link>()
 
+    /** The library the book was opened from: kept, and held open, for as long as the reader shows it. */
+    private val library: ReaderLibrary<LibrarySpace> by viewModels {
+        viewModelFactory { initializer { ReaderLibrary(container.libraries, container.applicationScope) } }
+    }
+
     private val viewModel: ReaderViewModel by viewModels {
         viewModelFactory {
             initializer {
+                val space = library.space
                 ReaderViewModel(
                     load = {
-                        val state = container.ebooks.observe(bookId).first()
+                        val state = space.ebooks.observe(bookId).first()
                         if (state == null || !state.fileOnPhone) null
                         else {
-                            container.ebooks.opened(bookId)
+                            space.ebooks.opened(bookId)
                             ReaderFile(
-                                state.ebook.format, container.ebooks.fileOf(state.ebook).toString(), state.ebook.position,
-                                askFinished = container.ebooks.finishPromptOnOpen(bookId),
+                                state.ebook.format, space.ebooks.fileOf(state.ebook).toString(), state.ebook.position,
+                                askFinished = space.ebooks.finishPromptOnOpen(bookId),
                             )
                         }
                     },
-                    save = { position, progression -> container.ebooks.savePosition(bookId, position, progression) },
-                    markRead = { container.repository.setStatus(bookId, ReadingStatus.READ) },
-                    scope = container.applicationScope,
-                    bookmarks = container.ebooks.observeBookmarks(bookId),
-                    addBookmark = { position, label -> container.ebooks.addBookmark(bookId, position, label) },
-                    deleteBookmark = { container.ebooks.deleteBookmark(it) },
-                    quotes = container.quotes.observe(bookId),
-                    addHighlight = { text, position -> container.quotes.addHighlight(bookId, text, position) },
-                    deleteQuote = { container.quotes.delete(it) },
-                    forgetFinish = { container.ebooks.forgetFinishPrompt(bookId) },
+                    save = { position, progression -> space.ebooks.savePosition(bookId, position, progression) },
+                    markRead = { space.repository.setStatus(bookId, ReadingStatus.READ) },
+                    scope = library.writes,
+                    bookmarks = space.ebooks.observeBookmarks(bookId),
+                    addBookmark = { position, label -> space.ebooks.addBookmark(bookId, position, label) },
+                    deleteBookmark = { space.ebooks.deleteBookmark(it) },
+                    quotes = space.quotes.observe(bookId),
+                    addHighlight = { text, position -> space.quotes.addHighlight(bookId, text, position) },
+                    deleteQuote = { space.quotes.delete(it) },
+                    forgetFinish = { space.ebooks.forgetFinishPrompt(bookId) },
                 )
             }
         }
@@ -117,6 +131,12 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
     override fun onCreate(savedInstanceState: Bundle?) {
         // Fragments are not restored: the book is opened again, at its saved place.
         super.onCreate(null)
+        // Another library is shown now (signed in or out): this book belongs to the one left behind.
+        if (library.gone) return finish()
+        lifecycleScope.launch {
+            library.untilLeft()
+            finish()
+        }
         enableEdgeToEdge()
         val frame = FragmentContainerView(this).apply { id = View.generateViewId() }
         val bars = ComposeView(this).apply {
@@ -327,7 +347,7 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
 
     override fun onStop() {
         stopReadAloud()
-        viewModel.leave()
+        if (!library.gone) viewModel.leave()
         super.onStop()
     }
 
@@ -346,4 +366,40 @@ class ReaderActivity : FragmentActivity(), ReaderActions {
             context.startActivity(Intent(context, ReaderActivity::class.java).putExtra(EXTRA_BOOK, bookId))
         }
     }
+}
+
+/**
+ * The library a reader opened its book from, held open ([Libraries.hold]) until the reader is gone and its last saves
+ * (run in [writes]) are written: a switch closes it only then.
+ */
+internal class ReaderLibrary<S : LibraryHandle>(
+    private val libraries: Libraries<S>,
+    private val appScope: CoroutineScope,
+) : ViewModel() {
+    val space: S = libraries.active.value
+    private val hold = libraries.hold(space)
+
+    /** The library was switched away from before the reader opened: it closes at once. */
+    val gone: Boolean get() = hold == null
+
+    private val writesJob = SupervisorJob(appScope.coroutineContext[Job])
+
+    /** Where the reader's saves run: they finish after it closes, and the library is let go after them. */
+    val writes = CoroutineScope(appScope.coroutineContext + writesJob)
+
+    /** Returns once another library is the active one: the reader then closes. */
+    suspend fun untilLeft() {
+        libraries.active.first { it !== space }
+    }
+
+    /** The reader is gone: its saves finish, then the library is let go. */
+    fun release() {
+        appScope.launch {
+            writesJob.complete()
+            writesJob.join()
+            hold?.release()
+        }
+    }
+
+    override fun onCleared() = release()
 }

@@ -102,6 +102,49 @@ values ('2026110900', 'suggested_readers', array[]::text[]);
 
 Until it's applied, BookNerd says it couldn't reach the community when asked for friends; books and abstracts work.
 
+### 3e. Library sync
+
+`supabase/migrations/2026111000_library_sync.sql` adds the private library tables (books, quotes, challenges, ebooks,
+bookmarks, preferences), the functions the phone's cloud sync calls (`sync_push`, `sync_pull`, and `merge_library` for
+a device's first sign-in), the private `covers` Storage bucket for the cover photos you take (2 MB JPEGs, each user's own
+folder only), and the Realtime ping that tells your other devices to pull. Apply it like 3d:
+`npx supabase db push --remote` from MyBooksNewGeneration, or, on a network that resets database connections, paste the
+file into the SQL Editor, run it, then record it:
+
+```sql
+insert into supabase_migrations.schema_migrations (version, name, statements)
+values ('2026111000', 'library_sync', array[]::text[]);
+```
+
+Apply it before installing a build with library sync: until it's applied, every signed-in user sees "Couldn't sync" in
+Settings → Account (the library itself stays on the phone and keeps working).
+
+Then check the rollout:
+
+1. Realtime's `send` function exists (the pings use it; without it devices only catch up when the app comes to the
+   foreground or on pull-to-refresh):
+
+   ```sql
+   select proname from pg_proc where proname = 'send' and pronamespace = 'realtime'::regnamespace;
+   ```
+
+   One row means it's there.
+2. With the app open and signed in to the same account on two devices, change a book on device A (a rating, say):
+   device B shows the change within a few seconds, without being touched.
+
+### 3f. One library per account on each phone
+
+Each account has its own library on each phone, apart from the phone's own books (the library you see when nobody is
+signed in):
+
+- Signing in switches to that account's library; signing out shows the phone's own library.
+- At sign-out, Keep and Remove act only on that account's library on this phone. Other accounts' libraries, and the
+  phone's own, are never touched.
+- The first time an account signs in on a phone, the app asks whether to add the phone's own books to it. "Not now"
+  leaves them where they are; "Add this phone's books" in Settings → Account asks again.
+- If an account's library can't be opened, the phone's own library is shown, with "Couldn't open your library. Try
+  signing in again." in Settings → Account. Nothing is deleted.
+
 ## 4. Give the apps the URL and key
 
 - **Android** (your PC): add to `local.properties`, then rebuild:

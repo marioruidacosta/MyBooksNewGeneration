@@ -1,25 +1,16 @@
 package com.mcosta.mybooks
 
-import androidx.room.immediateTransaction
-import androidx.room.useWriterConnection
 import com.mcosta.mybooks.data.Appearance
-import com.mcosta.mybooks.data.BookRepository
-import com.mcosta.mybooks.data.ChallengeRepository
-import com.mcosta.mybooks.data.CoverFinder
 import com.mcosta.mybooks.data.Preferences
 import com.mcosta.mybooks.data.ReadingEvents
+import com.mcosta.mybooks.data.SettingsPreferences
 import com.mcosta.mybooks.data.authors.CatalogBooks
-import com.mcosta.mybooks.data.suggestions.HiddenSuggestions
-import com.mcosta.mybooks.data.suggestions.SubjectSearch
-import com.mcosta.mybooks.data.suggestions.SuggestionEngine
-import com.mcosta.mybooks.social.model.SessionState
-import kotlinx.coroutines.flow.first
 import com.mcosta.mybooks.data.authors.GoogleBooksAuthorSearch
 import com.mcosta.mybooks.data.authors.WikipediaAuthors
-import com.mcosta.mybooks.data.SettingsPreferences
 import com.mcosta.mybooks.data.covers.CoverStore
 import com.mcosta.mybooks.data.db.AppDatabase
 import com.mcosta.mybooks.data.db.ShareStateDao
+import com.mcosta.mybooks.data.ebooks.EbookFiles
 import com.mcosta.mybooks.data.lookup.BnpClient
 import com.mcosta.mybooks.data.lookup.GoogleBooksClient
 import com.mcosta.mybooks.data.lookup.LookupChain
@@ -27,29 +18,65 @@ import com.mcosta.mybooks.data.lookup.OpenLibraryClient
 import com.mcosta.mybooks.data.lookup.lookupHttpClient
 import com.mcosta.mybooks.data.releases.ReleasesClient
 import com.mcosta.mybooks.data.releases.ReleasesRepository
+import com.mcosta.mybooks.data.suggestions.SubjectSearch
 import com.mcosta.mybooks.domain.Book
+import com.mcosta.mybooks.domain.ReadingSummary
+import com.mcosta.mybooks.library.DeviceServices
+import com.mcosta.mybooks.library.Libraries
+import com.mcosta.mybooks.library.LibraryFiles
+import com.mcosta.mybooks.library.LibraryId
+import com.mcosta.mybooks.library.LibrarySessions
+import com.mcosta.mybooks.library.LibrarySpace
+import com.mcosta.mybooks.library.LibraryUpgrade
+import com.mcosta.mybooks.library.UpgradeResult
 import com.mcosta.mybooks.share.Publisher
 import com.mcosta.mybooks.share.ShareLock
 import com.mcosta.mybooks.share.ShareTracker
 import com.mcosta.mybooks.share.SharingStatus
 import com.mcosta.mybooks.social.SocialConfig
 import com.mcosta.mybooks.social.SocialServices
+import com.mcosta.mybooks.social.model.SessionState
 import com.mcosta.mybooks.social.supabase.createSocialServices
+import com.mcosta.mybooks.social.supabase.storedSessionUserId
+import com.mcosta.mybooks.sync.LibrarySync
+import com.mcosta.mybooks.sync.RemoteApplier
+import com.mcosta.mybooks.sync.SyncDatabase
+import com.mcosta.mybooks.sync.SyncRecorder
+import com.mcosta.mybooks.sync.SyncStatus
 import com.russhwolf.settings.Settings
 import io.ktor.client.engine.HttpClientEngine
+import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import okio.FileSystem
-import com.mcosta.mybooks.data.ebooks.EbookFiles
-import com.mcosta.mybooks.data.ebooks.EbookRepository
 import okio.Path
 
-/** Hand-wired app dependencies, created once per app from the platform's pieces. */
+/**
+ * Hand-wired app dependencies, created once per app from the platform's pieces. Device-wide services live here; the
+ * library's (books, quotes, ebooks, sync…) belong to the active [LibrarySpace] in [libraries], and the members below
+ * that read it follow whichever library is active. Call [start] once before using it.
+ */
 class AppContainer(
-    database: AppDatabase,
+    /** Opens a library's database: the no-account library's is today's `mybooks.db`. */
+    openDatabase: (LibraryId) -> AppDatabase,
+    /** Deletes an account library's database files. */
+    deleteDatabase: (LibraryId) -> Unit,
+    /** Where each library keeps its cover photos and ebook files. */
+    libraryFiles: LibraryFiles,
+    /**
+     * Where a library's database file is, for upgrading an install from before libraries were separate
+     * ([LibraryUpgrade]); null skips the upgrade.
+     */
+    databaseFile: ((LibraryId) -> Path)? = null,
+    /** Opens a database file by its path, for the upgrade's copy before it is put in place; null skips the upgrade. */
+    openDatabaseFile: ((Path) -> AppDatabase)? = null,
     httpEngine: HttpClientEngine,
-    val coverStore: CoverStore,
     googleBooksApiKey: String,
     userAgent: String,
     socialConfig: SocialConfig = SocialConfig("", ""),
@@ -59,16 +86,16 @@ class AppContainer(
     /** Where New in Portugal's downloaded lists are saved. */
     releasesFileSystem: FileSystem,
     releasesDir: Path,
-    /** Where ebook files are kept: `files/ebooks` on Android (next to the releases folder). */
-    ebooksDir: Path = releasesDir.parent?.div("ebooks") ?: releasesDir / "ebooks",
+    /** The community services to use instead of building them from [socialConfig] (tests). */
+    socialServices: SocialServices? = null,
 ) {
-    private val ebookFiles = EbookFiles(releasesFileSystem, ebooksDir)
-
     /** The phone's file system (where ebooks and incoming files live). */
     val fileSystem: FileSystem = releasesFileSystem
 
     /** Outlives screens; used for writes that must finish after a screen closes. */
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    private val clock: () -> Long = { Clock.System.now().toEpochMilliseconds() }
 
     private val http = lookupHttpClient(httpEngine, userAgent)
 
@@ -76,14 +103,9 @@ class AppContainer(
     val releases = ReleasesRepository(ReleasesClient(http), releasesFileSystem, releasesDir)
 
     /** The community features, or null when Supabase isn't configured (then they're hidden). */
-    val social: SocialServices? = socialFor(socialConfig, httpEngine) { config, engine ->
+    val social: SocialServices? = socialServices ?: socialFor(socialConfig, httpEngine) { config, engine ->
         createSocialServices(config, engine, socialSettings)
     }
-
-    private val sharing: Sharing? = sharingFor(social, database.shareStateDao(), applicationScope) { id -> repository.getBook(id) }
-
-    /** Whether the signed-in user shares their reading activity; null without the community. */
-    val sharingStatus: SharingStatus? = sharing?.status
 
     /** Author biographies (Wikipedia) for the book page. */
     val authors = WikipediaAuthors(http)
@@ -105,40 +127,25 @@ class AppContainer(
 
     val preferences: Preferences? = appSettings?.let(::SettingsPreferences)
 
-    /** Books marked "Not interested" in suggestions. */
-    val hiddenSuggestions = HiddenSuggestions(preferences)
+    /** Book colours or the wallpaper's, remembered. */
+    val appearance = Appearance(preferences)
 
-    /** Tags shown as rows on the home screen. */
-    val pinnedTags = com.mcosta.mybooks.data.PinnedTags(preferences)
+    /** Turns today's single library into its account's, once ([start]); null without a database path or settings. */
+    private val upgrade: LibraryUpgrade? = if (databaseFile != null && openDatabaseFile != null && preferences != null) {
+        LibraryUpgrade(preferences, libraryFiles, databaseFile, openDatabaseFile)
+    } else {
+        null
+    }
 
-    /** The monthly notification of New in Portugal books by your authors and publishers. */
-    val releaseAlerts = com.mcosta.mybooks.data.releases.ReleaseAlerts(releases, { repository.observeBooks(null, "").first() }, preferences)
+    /** The stored session's user, read without waiting for the session to be restored. */
+    private val storedUser: () -> String? = { storedSessionUserId(socialSettings) }
 
-    /** Yearly reading challenges. */
-    val challenges = ChallengeRepository(database.challengeDao())
-
-    /** Quotes saved from books. */
-    val quotes = com.mcosta.mybooks.data.QuoteRepository(database.quoteDao())
-
-    val repository = BookRepository(
-        dao = database.bookDao(),
-        lookupService = LookupChain(
-            listOf(
-                BnpClient(http),
-                GoogleBooksClient(http, apiKey = googleBooksApiKey),
-                OpenLibraryClient(http),
-            )
-        ),
-        transactionRunner = { block -> database.useWriterConnection { it.immediateTransaction { block() } } },
-        coverStore = coverStore,
-        shareTracker = sharing?.tracker,
-        challenges = challenges,
-        events = events,
-        hiddenSuggestions = hiddenSuggestions,
-        quotes = database.quoteDao(),
-        ebooks = database.ebookDao(),
-        bookmarks = database.bookmarkDao(),
-        ebookFiles = ebookFiles,
+    private val lookup = LookupChain(
+        listOf(
+            BnpClient(http),
+            GoogleBooksClient(http, apiKey = googleBooksApiKey),
+            OpenLibraryClient(http),
+        )
     )
 
     /** Public catalogues searched from Search when the library has no match (Google Books, Open Library; ISBNs through the lookup chain). */
@@ -147,35 +154,116 @@ class AppContainer(
             com.mcosta.mybooks.data.lookup.GoogleBooksTextSearch(http, apiKey = googleBooksApiKey),
             com.mcosta.mybooks.data.lookup.OpenLibraryTextSearch(http),
         ),
-        repository::lookup,
+        lookup::lookup,
     )
 
-    /** Book suggestions from the library (worked out once per session, or on refresh). */
-    val suggestions = SuggestionEngine(
-        library = { repository.observeBooks(null, "").first() },
+    private val device = DeviceServices(
+        lookup = lookup,
         authorBooks = authorBooks,
         subjects = SubjectSearch(http, apiKey = googleBooksApiKey),
-        community = social?.let { s ->
-            { liked: List<String> -> if (s.auth.session.value is SessionState.SignedIn) s.activity.communitySuggestions(liked) else emptyList() }
-        },
-        releases = { releases.allMonths().months },
+        social = social,
+        releases = releases,
+        events = events,
+        preferences = preferences,
+        clock = clock,
     )
 
+    /** The libraries on this phone; one is open at a time. */
+    val libraries: Libraries<LibrarySpace> = Libraries(
+        // Built only: Room opens the file at the first query, and the library's preferences load in open().
+        factory = { id -> LibrarySpace(id, openDatabase(id), libraryFiles, device, applicationScope) },
+        deviceSettings = preferences,
+        scope = applicationScope,
+        delete = { id ->
+            deleteDatabase(id)
+            libraryFiles.deleteAll(id)
+        },
+    )
 
-    /** Book colours or the wallpaper's, remembered. */
-    val appearance = Appearance(preferences)
+    /**
+     * Switches libraries with the session (each account its own library), asking at an account's first sign-in here
+     * whether to add the phone's books to it; null without the community.
+     */
+    val sessions: LibrarySessions<LibrarySpace>? = social?.let {
+        LibrarySessions(libraries, it.auth.session, applicationScope) { space -> libraries.offerPhoneBooks(space) }
+    }
+
+    /**
+     * Upgrades an install from before libraries were separate (the first start only: it copies files, off the main
+     * thread, and must finish before anything opens `mybooks.db`). Then picks the library active at the last launch, at
+     * once (no database query: it may run on the main thread); call once, before anything else uses the container.
+     * Then, in the background, that library's preferences load, and only then does the session decide which library is
+     * shown and start its sync.
+     */
+    suspend fun start() {
+        // Never throws: if it fails, the no-account library opens the originals and the next start tries again.
+        val upgraded = upgrade?.run(signedInUser = storedUser())
+        // Until then the original's accounts get no library of their own (the retry would find it in its way).
+        if (upgraded is UpgradeResult.Failed) libraries.awaitUpgrade(upgraded.pending)
+        libraries.start()
+        applicationScope.launch {
+            libraries.openActive()
+            // A deleted account's books that couldn't move into this phone's library last time.
+            libraries.retryMovesToPhone()
+            sessions?.follow()
+        }
+    }
+
+    private val space: LibrarySpace get() = libraries.active.value
+
+    /** The active library's cover photos. */
+    val coverStore: CoverStore get() = space.coverStore
+
+    /** Stamps every local change and, while [sync] runs for a signed-in user, queues it for upload. */
+    val syncRecorder: SyncRecorder get() = space.syncRecorder
+
+    /** Whether the signed-in user shares their reading activity; null without the community. */
+    val sharingStatus: SharingStatus? get() = space.sharingStatus
+
+    /** Books marked "Not interested" in suggestions. */
+    val hiddenSuggestions get() = space.hiddenSuggestions
+
+    /** Tags shown as rows on the home screen. */
+    val pinnedTags get() = space.pinnedTags
+
+    /** The monthly notification of New in Portugal books by your authors and publishers. */
+    val releaseAlerts get() = space.releaseAlerts
+
+    /** Yearly reading challenges. */
+    val challenges get() = space.challenges
+
+    /** Quotes saved from books. */
+    val quotes get() = space.quotes
+
+    val repository get() = space.repository
+
+    /** Book suggestions from the library (worked out once per session, or on refresh). */
+    val suggestions get() = space.suggestions
 
     /** Looks up missing covers (e.g. after a Goodreads import) in the background. */
-    val coverFinder = CoverFinder(repository, applicationScope)
+    val coverFinder get() = space.coverFinder
+
+    /** Where screens run writes to the active library that must outlive them; see [LibrarySpace.writes]. */
+    val writes: CoroutineScope get() = space.writes
 
     /** Books' ebook files, reading positions and bookmarks. */
-    val ebooks = EbookRepository(database.ebookDao(), database.bookmarkDao(), ebookFiles, repository)
+    val ebooks get() = space.ebooks
 
-    /** What the home-screen widget shows, today, following the library. */
-    val readingSummaries: kotlinx.coroutines.flow.Flow<com.mcosta.mybooks.domain.ReadingSummary> =
-        kotlinx.coroutines.flow.combine(repository.observeBooks(null, ""), challenges.observe()) { books, goals ->
-            com.mcosta.mybooks.domain.readingSummary(books, goals, com.mcosta.mybooks.ui.today(), kotlinx.datetime.TimeZone.currentSystemDefault())
-        }
+    /** What the home-screen widget shows, today, following the active library. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val readingSummaries: Flow<ReadingSummary>
+        get() = libraries.active.flatMapLatest { it.readingSummaries }
+
+    /** The active library's sync: null for the no-account library, and without the community. See [LibrarySpace.sync]. */
+    val sync: LibrarySync? get() = space.sync
+
+    /**
+     * Pushes and pulls now, and returns when that's done (the app back in the foreground, pull-to-refresh). A signed-in
+     * user whose sync stopped (the session had expired, or signing out failed) gets it started again.
+     */
+    suspend fun syncNow() {
+        sessions?.syncNow()
+    }
 }
 
 /** The social services when [config] is complete, else null (nothing is created or contacted). */
@@ -188,19 +276,59 @@ internal fun socialFor(
 /** The pieces that share reading activity, wired to each other. */
 internal class Sharing(val tracker: ShareTracker, val status: SharingStatus, val publisher: Publisher)
 
-/** Activity sharing for [social], or null without the community. [loadBook] reads a book from the library. */
+/**
+ * Activity sharing for an account's library [id], or null for the no-account library (it never publishes) and without
+ * the community. It follows [id]'s own session only: another account signed in counts as signed out. [loadBook] reads a
+ * book from the library; [uuidOf] gives a book's uuid, also its public id.
+ */
 internal fun sharingFor(
+    id: LibraryId,
     social: SocialServices?,
     dao: ShareStateDao,
     scope: CoroutineScope,
+    uuidOf: suspend (Long) -> String? = { null },
     loadBook: suspend (Long) -> Book?,
 ): Sharing? {
-    if (social == null) return null
+    if (social == null || id !is LibraryId.Account) return null
+    val ownSession = social.auth.session.map { session ->
+        if (session is SessionState.SignedIn && session.userId != id.userId) SessionState.SignedOut else session
+    }
     lateinit var status: SharingStatus
     val activeOwner = { status.state.value.activeOwner }
     val lock = ShareLock()
     val publisher = Publisher(dao, loadBook, social.activity, activeOwner, scope, lock = lock)
-    val tracker = ShareTracker(dao, activeOwner, onPending = publisher::requestSync, lock = lock)
-    status = SharingStatus(social, scope, onActivated = publisher::requestSync, onDisabled = tracker::forgetOwner)
+    val tracker = ShareTracker(dao, activeOwner, onPending = publisher::requestSync, lock = lock, uuidOf = uuidOf)
+    status = SharingStatus(social, scope, onActivated = publisher::requestSync, onDisabled = tracker::forgetOwner, session = ownSession)
     return Sharing(tracker, status, publisher)
 }
+
+/**
+ * Library sync for an account's library [id], or null for the no-account library (it never syncs) and without the
+ * community (or where it has no sync endpoint). [LibrarySessions] starts and stops it with the session. [db] must hold
+ * the RAW DAOs (see [LibrarySpace.sync]).
+ */
+internal fun syncFor(
+    id: LibraryId,
+    social: SocialServices?,
+    db: SyncDatabase,
+    recorder: SyncRecorder,
+    scope: CoroutineScope,
+    clock: () -> Long,
+    shares: ShareTracker?,
+    coverStore: CoverStore?,
+    ebookFiles: EbookFiles?,
+): LibrarySync? {
+    if (id !is LibraryId.Account) return null
+    val api = social?.sync ?: return null
+    val applier = RemoteApplier(db, recorder, coverStore, shares, ebookFiles)
+    return LibrarySync(api, db, recorder, applier, clock, scope, shares = shares, coverStore = coverStore, ebookFiles = ebookFiles)
+}
+
+/**
+ * Whether an account library's local changes are queued for upload: while [sync] runs for its account, while it waits
+ * for the account to sign in again (an expired session: its changes go then), and whenever the library has joined its
+ * account's cloud library (at start, before the stored session is restored). Never without sync: the no-account
+ * library never queues.
+ */
+internal suspend fun syncRecording(sync: LibrarySync?): Boolean =
+    sync != null && (sync.status.value != SyncStatus.Off || sync.belongsToAnAccount())

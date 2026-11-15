@@ -36,4 +36,12 @@ class EbookFiles(
     }
 
     fun delete(bookId: Long, format: EbookFormat) = fs.delete(path(bookId, format), mustExist = false)
+
+    /**
+     * Whether the folder holds any ebook file (what signing out with "Remove" would delete). Folders in it don't count:
+     * the no-account library's folder holds the accounts' ebook folders.
+     */
+    suspend fun any(): Boolean = withContext(io) {
+        fs.listOrNull(dir)?.any { fs.metadataOrNull(it)?.isRegularFile == true } == true
+    }
 }

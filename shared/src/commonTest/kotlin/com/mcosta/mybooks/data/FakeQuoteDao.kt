@@ -14,10 +14,12 @@ class FakeQuoteDao : QuoteDao {
     private val order = compareBy<QuoteEntity> { it.page == null }.thenBy { it.page ?: 0 }.thenBy { it.dateAdded }.thenBy { it.id }
 
     override fun observeForBook(bookId: Long): Flow<List<QuoteEntity>> =
-        rows.map { m -> m.values.filter { it.bookId == bookId }.sortedWith(order) }
+        rows.map { m -> m.values.filter { !it.deleted && it.bookId == bookId }.sortedWith(order) }
 
-    override suspend fun forBook(bookId: Long) = rows.value.values.filter { it.bookId == bookId }.sortedWith(order)
-    override suspend fun getAll() = rows.value.values.sortedWith(compareBy<QuoteEntity> { it.bookId }.then(order))
+    override suspend fun forBook(bookId: Long) = rows.value.values.filter { !it.deleted && it.bookId == bookId }.sortedWith(order)
+    override suspend fun getAll() = rows.value.values.filter { !it.deleted }.sortedWith(compareBy<QuoteEntity> { it.bookId }.then(order))
+    override suspend fun getAllAny() = rows.value.values.sortedBy { it.id }
+    override suspend fun getByUuid(uuid: String) = rows.value.values.firstOrNull { it.uuid == uuid }
 
     override suspend fun insert(quote: QuoteEntity): Long {
         val id = nextId++

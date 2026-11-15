@@ -71,6 +71,7 @@ import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.ui.activity.countText
 import com.mcosta.mybooks.ui.activity.text
 import com.mcosta.mybooks.ui.components.BookCover
+import com.mcosta.mybooks.ui.components.SyncRefreshBox
 import com.mcosta.mybooks.ui.components.ProgressField
 import com.mcosta.mybooks.ui.components.CoverFan
 import com.mcosta.mybooks.ui.components.CoverRef
@@ -110,6 +111,12 @@ fun HomeScreen(
     /** Pick an EPUB or PDF from the phone, and Free classics; null where there is no reader. */
     onAddEbook: (() -> Unit)? = null,
     onClassics: (() -> Unit)? = null,
+    /** Pull-to-refresh: syncs the library now; null while sync is off (no pull-to-refresh). */
+    onRefresh: (suspend () -> Unit)? = null,
+    /** Why the phone's library is shown instead of the account's ("Couldn't open your library…"); null when it isn't. */
+    openFailure: String? = null,
+    /** Settings → Account, from [openFailure]'s banner; null where there is none. */
+    onOpenAccount: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var addMenuOpen by remember { mutableStateOf(false) }
@@ -164,49 +171,54 @@ fun HomeScreen(
             Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             return@Scaffold
         }
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
-            item {
-                if (state.reading.isEmpty()) {
-                    SectionTitle("Reading")
-                } else {
-                    SectionTitle("Reading · ${state.reading.size}", onClick = { onOpenShelf(ReadingStatus.READING) })
+        SyncRefreshBox(onRefresh, Modifier.padding(padding).fillMaxSize()) {
+            LazyColumn(Modifier.fillMaxSize()) {
+                if (openFailure != null) {
+                    item(key = "openFailure") { OpenFailureBanner(openFailure, onOpenAccount) }
                 }
-            }
-            item {
-                if (state.reading.isEmpty()) {
-                    OutlinedCard(
-                        onClick = { onOpenShelf(ReadingStatus.TO_READ) },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    ) {
-                        Text(
-                            "Nothing on the go. Pick your next book from To read.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(16.dp),
-                        )
-                    }
-                } else {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        items(state.reading, key = { it.id }) { book -> ReadingCard(book, onClick = { onOpenBook(book.id) }, onUpdate = { updating = book }) }
+                item {
+                    if (state.reading.isEmpty()) {
+                        SectionTitle("Reading")
+                    } else {
+                        SectionTitle("Reading · ${state.reading.size}", onClick = { onOpenShelf(ReadingStatus.READING) })
                     }
                 }
+                item {
+                    if (state.reading.isEmpty()) {
+                        OutlinedCard(
+                            onClick = { onOpenShelf(ReadingStatus.TO_READ) },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        ) {
+                            Text(
+                                "Nothing on the go. Pick your next book from To read.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(16.dp),
+                            )
+                        }
+                    } else {
+                        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            items(state.reading, key = { it.id }) { book -> ReadingCard(book, onClick = { onOpenBook(book.id) }, onUpdate = { updating = book }) }
+                        }
+                    }
+                }
+                item {
+                    ChallengeCard(state, onClick = onOpenReadingActivity, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp))
+                }
+                item { SuggestedForYou(suggestions, onOpenSuggestion, onNotInterested, onSeeAllSuggestions) }
+                item { SectionTitle("Shelves") }
+                items(state.shelves, key = { it.status?.name ?: "ALL" }) { shelf ->
+                    ShelfRow(shelf, onClick = { onOpenShelf(shelf.status) })
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                }
+                items(state.tags, key = { "tag:" + it.name.lowercase() }) { tag ->
+                    ShelfRow(tag.name, tag.count, tag.covers, onClick = { onOpenTag(tag.name) })
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                }
+                state.lent?.let { lent ->
+                    item(key = "lent") { ShelfRow(lent.name, lent.count, lent.covers, onClick = onOpenLent) }
+                }
+                item { Spacer(Modifier.height(88.dp)) }
             }
-            item {
-                ChallengeCard(state, onClick = onOpenReadingActivity, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp))
-            }
-            item { SuggestedForYou(suggestions, onOpenSuggestion, onNotInterested, onSeeAllSuggestions) }
-            item { SectionTitle("Shelves") }
-            items(state.shelves, key = { it.status?.name ?: "ALL" }) { shelf ->
-                ShelfRow(shelf, onClick = { onOpenShelf(shelf.status) })
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-            }
-            items(state.tags, key = { "tag:" + it.name.lowercase() }) { tag ->
-                ShelfRow(tag.name, tag.count, tag.covers, onClick = { onOpenTag(tag.name) })
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-            }
-            state.lent?.let { lent ->
-                item(key = "lent") { ShelfRow(lent.name, lent.count, lent.covers, onClick = onOpenLent) }
-            }
-            item { Spacer(Modifier.height(88.dp)) }
         }
     }
 
@@ -227,6 +239,21 @@ fun HomeScreen(
             dismissButton = { TextButton(onClick = viewModel::dismissFinish) { Text("Not yet") } },
         )
     }
+}
+
+/** [text] above the library while the account's library can't be opened; tapping it opens [onClick] (Account). */
+@Composable
+private fun OpenFailureBanner(text: String, onClick: (() -> Unit)?) {
+    val modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp)
+    val content: @Composable () -> Unit = {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(16.dp),
+        )
+    }
+    if (onClick != null) OutlinedCard(onClick = onClick, modifier = modifier) { content() } else OutlinedCard(modifier) { content() }
 }
 
 /** A section heading; with [onClick] it opens the section's full list. */

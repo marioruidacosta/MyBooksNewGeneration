@@ -43,6 +43,9 @@ class CoverStore(private val fs: FileSystem, val dir: Path) {
         return PREFIX + name
     }
 
+    /** Whether the photo [ref] points at is stored. */
+    fun exists(ref: String?): Boolean = fileFor(ref)?.let { fs.exists(it) } == true
+
     fun delete(ref: String?) {
         fileFor(ref)?.let { fs.delete(it, mustExist = false) }
     }
