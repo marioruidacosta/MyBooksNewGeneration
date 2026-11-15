@@ -18,6 +18,7 @@ import com.mcosta.mybooks.ui.components.CountUp
 import com.mcosta.mybooks.ui.components.LocalReduceMotion
 import com.mcosta.mybooks.ui.components.animatedProgress
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -95,5 +96,57 @@ class MotionTest {
     fun theLoadingCoverShimmers() {
         compose.setContent { com.mcosta.mybooks.ui.components.CoverLoading(androidx.compose.ui.Modifier.size(80.dp, 120.dp)) }
         compose.onNodeWithTag("cover-shimmer").assertExists()
+    }
+
+    /** The status highlight glides: its weight moves from 0 to 1 over a quarter second, not at once. */
+    @Test
+    fun theSelectionHighlightGlides() {
+        compose.mainClock.autoAdvance = false
+        var selected by androidx.compose.runtime.mutableStateOf(false)
+        var shown = -1f
+        compose.setContent { shown = com.mcosta.mybooks.ui.components.selectionProgress(selected) }
+        compose.mainClock.advanceTimeByFrame()
+        selected = true
+        Snapshot.sendApplyNotifications()
+        compose.mainClock.advanceTimeBy(100)
+        assertTrue("mid-way: $shown", shown > 0f && shown < 1f)
+        compose.mainClock.advanceTimeBy(300)
+        assertEquals(1f, shown, 0.001f)
+    }
+
+    /** Tapping a star pops it: bigger for a moment, then back to its size. */
+    @Test
+    fun aStarPopsThenSettles() {
+        compose.mainClock.autoAdvance = false
+        var rating by androidx.compose.runtime.mutableStateOf<Int?>(null)
+        var scale = -1f
+        compose.setContent { scale = com.mcosta.mybooks.ui.components.rememberPop(rating) }
+        compose.mainClock.advanceTimeByFrame()
+        rating = 3
+        Snapshot.sendApplyNotifications()
+        compose.mainClock.advanceTimeBy(80)
+        assertTrue("popped: $scale", scale > 1.05f)
+        compose.mainClock.advanceTimeBy(500)
+        assertEquals(1f, scale, 0.001f)
+    }
+
+    @Test
+    fun noGlideOrPopWithReducedMotion() {
+        compose.mainClock.autoAdvance = false
+        var on by androidx.compose.runtime.mutableStateOf(false)
+        var shown = -1f
+        var scale = -1f
+        compose.setContent {
+            CompositionLocalProvider(LocalReduceMotion provides true) {
+                shown = com.mcosta.mybooks.ui.components.selectionProgress(on)
+                scale = com.mcosta.mybooks.ui.components.rememberPop(if (on) 3 else null)
+            }
+        }
+        compose.mainClock.advanceTimeByFrame()
+        on = true
+        Snapshot.sendApplyNotifications()
+        compose.mainClock.advanceTimeByFrame()
+        assertEquals(1f, shown, 0.001f)
+        assertEquals(1f, scale, 0.001f)
     }
 }

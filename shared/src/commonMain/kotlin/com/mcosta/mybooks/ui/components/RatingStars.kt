@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.graphicsLayer
 
 /**
  * 1–5 star rating. With [onRate] the stars are tappable: tapping star n rates n, tapping the
@@ -22,12 +23,15 @@ fun RatingStars(rating: Int?, onRate: ((Int?) -> Unit)?, modifier: Modifier = Mo
     Row(modifier) {
         for (n in 1..5) {
             val filled = rating != null && n <= rating
+            // A new score pops the stars up to it, one after another.
+            val pop = rememberPop(rating, delayMs = (n - 1) * 40)
+            val scale = if (filled) pop else 1f
             val icon = @Composable {
                 Icon(
                     if (filled) Icons.Filled.Star else Icons.Outlined.StarOutline,
                     contentDescription = if (onRate != null) "Rate $n" else null,
                     tint = if (filled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.size(size),
+                    modifier = Modifier.size(size).graphicsLayer { scaleX = scale; scaleY = scale },
                 )
             }
             if (onRate != null) {

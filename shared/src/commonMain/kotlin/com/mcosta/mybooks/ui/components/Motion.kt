@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -51,6 +52,37 @@ fun CountUp(value: Int, style: TextStyle, modifier: Modifier = Modifier, format:
         if (reduce) shown.snapTo(value.toFloat()) else shown.animateTo(value.toFloat(), tween(800, easing = LinearEasing))
     }
     Text(format(shown.value.toInt()), style = style, modifier = modifier, maxLines = 1)
+}
+
+/** How selected something looks, 0 to 1: glides when the choice changes (the status highlight), at once if reduced. */
+@Composable
+fun selectionProgress(selected: Boolean): Float {
+    val target = if (selected) 1f else 0f
+    if (LocalReduceMotion.current) return target
+    val shown by animateFloatAsState(target, tween(MOTION_MS), label = "selection")
+    return shown
+}
+
+/**
+ * A quick "pop" each time [trigger] changes (a star when tapped): the scale rises to 1.25 and settles back to 1,
+ * after [delayMs]. Always 1 on first show and with reduced motion.
+ */
+@Composable
+fun rememberPop(trigger: Any?, delayMs: Int = 0): Float {
+    val reduce = LocalReduceMotion.current
+    val scale = remember { Animatable(1f) }
+    val first = remember { mutableStateOf(true) }
+    LaunchedEffect(trigger) {
+        if (first.value) {
+            first.value = false
+            return@LaunchedEffect
+        }
+        if (reduce) return@LaunchedEffect
+        scale.snapTo(1f)
+        scale.animateTo(1.25f, tween(90, delayMillis = delayMs))
+        scale.animateTo(1f, tween(180))
+    }
+    return scale.value
 }
 
 /** A soft highlight sweeping across a placeholder while an image loads; a plain placeholder with reduced motion. */
