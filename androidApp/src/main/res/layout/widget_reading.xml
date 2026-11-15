@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The home-screen widget: the book being read (tap: its page), then this year's challenge (tap: reading activity). -->
+<!-- The home-screen widget: "Reading · N books", a shelf row of covers (tap: the book's page), then this year's
+     challenge (tap: reading activity). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
@@ -8,74 +9,112 @@
     android:orientation="vertical"
     android:padding="16dp">
 
-    <LinearLayout
-        android:id="@+id/widget_book"
-        android:layout_width="match_parent"
+    <TextView
+        android:id="@+id/widget_label"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:text="Reading"
+        android:textColor="@color/widget_accent"
+        android:textSize="12sp"
+        android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/widget_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Reading"
-            android:textColor="@color/widget_accent"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+    <!-- The shelf row: up to four covers with their progress (tap: the book's page); "+N" when more are being read
+         (tap: the Reading shelf). Hidden, and the empty card shown instead, when nothing is being read. -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1">
 
-        <TextView
-            android:id="@+id/widget_title"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:fontFamily="serif"
-            android:maxLines="2"
-            android:text="Nothing on the go"
-            android:textColor="@color/widget_text"
-            android:textSize="18sp" />
-
-        <TextView
-            android:id="@+id/widget_author"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@color/widget_text_secondary"
-            android:textSize="13sp" />
+    <LinearLayout
+        android:id="@+id/shelf_row"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal">
 
         <LinearLayout
-            android:id="@+id/widget_progress_row"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:id="@+id/shelf_spot_0"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-            <ProgressBar
-                android:id="@+id/widget_progress"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="0dp"
-                android:layout_height="6dp"
-                android:layout_weight="1"
-                android:max="100"
-                android:progressBackgroundTint="@color/widget_track"
-                android:progressTint="@color/widget_accent" />
-
-            <TextView
-                android:id="@+id/widget_percent"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:textColor="@color/widget_text_secondary"
-                android:textSize="12sp" />
+            <!-- The cover with its progress bar under it, drawn as one picture so the bar is as wide as the cover. -->
+            <ImageView
+                android:id="@+id/shelf_cover_0"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Cover"
+                android:scaleType="fitCenter" />
         </LinearLayout>
+        <LinearLayout
+            android:id="@+id/shelf_spot_1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <!-- The cover with its progress bar under it, drawn as one picture so the bar is as wide as the cover. -->
+            <ImageView
+                android:id="@+id/shelf_cover_1"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Cover"
+                android:scaleType="fitCenter" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/shelf_spot_2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <!-- The cover with its progress bar under it, drawn as one picture so the bar is as wide as the cover. -->
+            <ImageView
+                android:id="@+id/shelf_cover_2"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Cover"
+                android:scaleType="fitCenter" />
+        </LinearLayout>
+        <LinearLayout
+            android:id="@+id/shelf_spot_3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <!-- The cover with its progress bar under it, drawn as one picture so the bar is as wide as the cover. -->
+            <ImageView
+                android:id="@+id/shelf_cover_3"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Cover"
+                android:scaleType="fitCenter" />
+        </LinearLayout>
+        <TextView
+            android:id="@+id/shelf_more"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textColor="@color/widget_accent"
+            android:textSize="20sp"
+            android:textStyle="bold" />
     </LinearLayout>
+
+        <include layout="@layout/widget_empty" />
+    </FrameLayout>
 
     <LinearLayout
         android:id="@+id/widget_challenge"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginTop="10dp"
         android:orientation="vertical">
 
         <TextView

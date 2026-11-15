@@ -1,5 +1,6 @@
 package com.mcosta.mybooks.ui.components
 
+import androidx.compose.ui.graphics.toArgb
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -19,5 +20,11 @@ class GeneratedCoverTest {
         val indexes = titles.map(::coverColorIndex)
         assertTrue(indexes.all { it in COVER_COLORS.indices })
         assertTrue(indexes.toSet().size >= 6)
+    }
+
+    /** The widget draws its own generated covers: they must be the app's colour for the title. */
+    @Test
+    fun coverColourMatchesTheGeneratedCover() {
+        assertEquals(COVER_COLORS[coverColorIndex("Stoner")].toArgb(), coverColorArgb("Stoner"))
     }
 }

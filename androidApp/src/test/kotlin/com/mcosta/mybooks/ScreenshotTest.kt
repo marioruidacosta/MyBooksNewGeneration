@@ -257,6 +257,23 @@ class ScreenshotTest {
         }
     }
 
+    /** The home-screen widget at its default 4×3 size: five books being read (three covers and "+2") and the challenge. */
+    private fun widgetShelf(dark: Boolean, widthDp: Int = 340, heightDp: Int = 230, name: String = "widget-shelf") {
+        if (dark) RuntimeEnvironment.setQualifiers("+night")
+        val books = listOf("Princípio, meio, fim" to 26, "Jalan Jalan" to 15, "O Banqueiro Anarquista" to 11, "O Desaparecido" to 40, "Stoner" to 70)
+            .mapIndexed { i, (title, percent) -> Book(id = i + 1L, title = title, authors = "Autor", status = ReadingStatus.READING, progressPercent = percent) }
+        val widget = com.mcosta.mybooks.widget.ReadingWidget.views(context, com.mcosta.mybooks.domain.ReadingSummary(books, com.mcosta.mybooks.domain.ChallengeProgress(2026, 25, 21)))
+            .apply(context, android.widget.FrameLayout(context))
+        val density = context.resources.displayMetrics.density
+        val width = (widthDp * density).toInt()
+        val height = (heightDp * density).toInt()
+        widget.measure(android.view.View.MeasureSpec.makeMeasureSpec(width, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(height, android.view.View.MeasureSpec.EXACTLY))
+        widget.layout(0, 0, width, height)
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        widget.draw(android.graphics.Canvas(bitmap))
+        File(out, "$name-${if (dark) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
     /** Free classics after a search: one downloaded (Read), one to download. */
     private fun classics(dark: Boolean) {
         sampleLibrary()
@@ -622,6 +639,10 @@ class ScreenshotTest {
     }
 
     @Test fun coverPhotoMenuLight() = coverPhotoMenu(dark = false)
+    @Test fun widgetShelfLight() = widgetShelf(dark = false)
+    @Test fun widgetShelfDark() = widgetShelf(dark = true)
+    /** A wide home screen (4 cells on a big phone): the covers are narrower than their spots. */
+    @Test fun widgetShelfWideLight() = widgetShelf(dark = false, widthDp = 400, heightDp = 200, name = "widget-shelf-wide")
     @Test fun editFormLight() = editForm(dark = false)
     @Test fun editFormDark() = editForm(dark = true)
     @Test fun coverPhotoMenuDark() = coverPhotoMenu(dark = true)

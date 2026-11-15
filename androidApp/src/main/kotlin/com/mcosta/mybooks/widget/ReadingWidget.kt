@@ -6,12 +6,15 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.view.View
 import android.widget.RemoteViews
 import com.mcosta.mybooks.AppContainer
 import com.mcosta.mybooks.MainActivity
 import com.mcosta.mybooks.MyBooksApp
 import com.mcosta.mybooks.R
+import com.mcosta.mybooks.domain.Book
+import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.ReadingSummary
 import com.mcosta.mybooks.ui.Routes
 import kotlinx.coroutines.CoroutineScope
@@ -19,15 +22,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-/** The home-screen widget: the book being read with its progress, and this year's challenge. */
+/** The home-screen widget: a shelf row with the covers of the books being read, and this year's challenge. */
 class ReadingWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         val pending = goAsync()
         val container = (context.applicationContext as MyBooksApp).container
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                show(context, summary(container))
+                show(context, container, summary(container))
             } finally {
                 pending.finish()
             }
@@ -35,6 +39,11 @@ class ReadingWidget : AppWidgetProvider() {
     }
 
     companion object {
+        /** Covers shown side by side; with more books, the last spot becomes "+N". */
+        private const val SPOTS = 4
+        private val COVERS = listOf(R.id.shelf_cover_0, R.id.shelf_cover_1, R.id.shelf_cover_2, R.id.shelf_cover_3)
+        private val SPOT_VIEWS = listOf(R.id.shelf_spot_0, R.id.shelf_spot_1, R.id.shelf_spot_2, R.id.shelf_spot_3)
+
         private suspend fun summary(container: AppContainer): ReadingSummary = container.readingSummaries.first()
 
         /** Keeps the widgets up to date while the app runs: the library changes only in the app. */
@@ -42,39 +51,59 @@ class ReadingWidget : AppWidgetProvider() {
             container.applicationScope.launch {
                 container.readingSummaries
                     .distinctUntilChanged()
-                    .collect { show(context, it) }
+                    .collect { show(context, container, it) }
             }
         }
 
-        private fun show(context: Context, summary: ReadingSummary) {
+        private suspend fun show(context: Context, container: AppContainer, summary: ReadingSummary) {
             val manager = AppWidgetManager.getInstance(context)
             val ids = manager.getAppWidgetIds(ComponentName(context, ReadingWidget::class.java))
             if (ids.isEmpty()) return
-            manager.updateAppWidget(ids, views(context, summary))
+            // Covers may be downloaded (once, then kept): off the main thread.
+            val covers = WidgetCovers(context.cacheDir, { container.coverStore })
+            val views = withContext(Dispatchers.IO) { views(context, summary, covers::bitmapFor) }
+            manager.updateAppWidget(ids, views)
         }
 
-        fun views(context: Context, summary: ReadingSummary): RemoteViews {
+        /** The widget for [summary]; [cover] draws a book's cover (blocking: may download it). */
+        fun views(
+            context: Context,
+            summary: ReadingSummary,
+            cover: (Book) -> Bitmap = { generatedCoverBitmap(it.title, it.authors) },
+        ): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_reading)
-            val book = summary.current
-            if (book == null) {
-                views.setTextViewText(R.id.widget_label, "Reading")
-                views.setTextViewText(R.id.widget_title, "Nothing on the go")
-                views.setTextViewText(R.id.widget_author, "Pick your next book from To read")
-                views.setViewVisibility(R.id.widget_progress_row, View.GONE)
-                views.setOnClickPendingIntent(R.id.widget_book, open(context, Routes.shelf(com.mcosta.mybooks.domain.ReadingStatus.TO_READ), 1))
+            val books = summary.reading
+            views.setTextViewText(R.id.widget_label, if (books.size > 1) "Reading · ${books.size} books" else "Reading")
+            if (books.isEmpty()) {
+                views.setViewVisibility(R.id.shelf_row, View.GONE)
+                views.setViewVisibility(R.id.widget_empty, View.VISIBLE)
+                views.setOnClickPendingIntent(R.id.widget_empty, open(context, Routes.shelf(ReadingStatus.TO_READ), 1))
             } else {
-                views.setTextViewText(R.id.widget_label, if (summary.alsoReading > 0) "Reading · and ${summary.alsoReading} more" else "Reading")
-                views.setTextViewText(R.id.widget_title, book.title)
-                views.setTextViewText(R.id.widget_author, book.authors)
-                val percent = book.progressPercent
-                if (percent != null) {
-                    views.setViewVisibility(R.id.widget_progress_row, View.VISIBLE)
-                    views.setProgressBar(R.id.widget_progress, 100, percent, false)
-                    views.setTextViewText(R.id.widget_percent, "$percent%")
-                } else {
-                    views.setViewVisibility(R.id.widget_progress_row, View.GONE)
+                views.setViewVisibility(R.id.shelf_row, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_empty, View.GONE)
+                // Four fit; with more, three covers and "+N" for the rest.
+                val shown = if (books.size > SPOTS) books.take(SPOTS - 1) else books
+                val track = context.getColor(R.color.widget_track)
+                val accent = context.getColor(R.color.widget_accent)
+                for (i in 0 until SPOTS) {
+                    val book = shown.getOrNull(i)
+                    if (book == null) {
+                        views.setViewVisibility(SPOT_VIEWS[i], View.GONE)
+                        continue
+                    }
+                    views.setViewVisibility(SPOT_VIEWS[i], View.VISIBLE)
+                    val percent = book.progressPercent
+                    views.setImageViewBitmap(COVERS[i], shelfSpotBitmap(cover(book), percent, track, accent))
+                    views.setContentDescription(COVERS[i], if (percent != null) "${book.title}, $percent% read" else book.title)
+                    views.setOnClickPendingIntent(SPOT_VIEWS[i], open(context, Routes.book(book.id), 10 + i))
                 }
-                views.setOnClickPendingIntent(R.id.widget_book, open(context, Routes.book(book.id), 1))
+                if (books.size > SPOTS) {
+                    views.setViewVisibility(R.id.shelf_more, View.VISIBLE)
+                    views.setTextViewText(R.id.shelf_more, "+${books.size - shown.size}")
+                    views.setOnClickPendingIntent(R.id.shelf_more, open(context, Routes.shelf(ReadingStatus.READING), 3))
+                } else {
+                    views.setViewVisibility(R.id.shelf_more, View.GONE)
+                }
             }
             val challenge = summary.challenge
             if (challenge == null) {

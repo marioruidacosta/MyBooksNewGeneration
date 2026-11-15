@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -29,6 +30,9 @@ internal val COVER_COLORS = listOf(
  * The colour of a title's generated cover: the same on every device and in every version (a fixed hash of the
  * title ignoring case and accents, as String.hashCode isn't promised to match across platforms).
  */
+/** The generated cover's colour for [title] as ARGB, for covers drawn outside Compose (the home-screen widget). */
+fun coverColorArgb(title: String): Int = COVER_COLORS[coverColorIndex(title)].toArgb()
+
 fun coverColorIndex(title: String): Int {
     var hash = 0
     for (c in searchKey(title)) hash = (hash * 31 + c.code) and 0x7fffffff
