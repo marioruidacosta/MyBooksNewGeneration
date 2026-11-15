@@ -177,6 +177,8 @@ class AppContainer(
         libraries.start()
         applicationScope.launch {
             libraries.openActive()
+            // A deleted account's books that couldn't move into this phone's library last time.
+            libraries.retryMovesToPhone()
             sessions?.follow()
         }
     }

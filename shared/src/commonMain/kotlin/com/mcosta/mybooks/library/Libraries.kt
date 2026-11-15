@@ -231,20 +231,33 @@ class Libraries<S : LibraryHandle>(
         }
     }
 
+    private val _moving = MutableStateFlow(false)
+
+    /** True while the phone's books are moving into an account's library ([addPhoneBooks]): "Moving your books…". */
+    val moving: StateFlow<Boolean> = _moving.asStateFlow()
+
     /**
-     * "Add them": moves the no-account library's books into the active account's library (see [LibraryTransfer]), and
-     * answers the question if one is open. Also Settings → Account → "Add this phone's books". Returns once they're
-     * moved; if moving fails, the exception is thrown, the question stays open and nothing is lost (it can be repeated).
+     * "Add them": moves the no-account library's books into [account]'s library (see [LibraryTransfer]), and answers
+     * [account]'s question if it's open. Also Settings → Account → "Add this phone's books". Nothing happens unless
+     * [account]'s library is the active one, and the open question (if any) is [account]'s: a tap meant for another
+     * account never moves anything. Returns once they're moved; if moving fails, the exception is thrown, the question
+     * stays open and nothing is lost (it can be repeated).
      */
-    suspend fun addPhoneBooks() {
+    suspend fun addPhoneBooks(account: LibraryId.Account) {
         val asked = asking.value
         val added = switching {
             val target = active.value
             val to = target.contents
-            // The question belonged to a library no longer shown: nothing moves into another one.
-            if (target.id !is LibraryId.Account || to == null || (asked != null && asked.space !== target)) return@switching false
-            withLibrary(LibraryId.Local) { phone -> phone.contents?.let { transfer.move(it, to) } }
-            to.db.state.set(ASKED_LOCAL_BOOKS_KEY, ADDED)
+            if (target.id != account || to == null) return@switching false
+            // The open question is another library's: this tap is stale.
+            if (asked != null && (asked.offer.account != account || asked.space !== target)) return@switching false
+            _moving.value = true
+            try {
+                withLibrary(LibraryId.Local) { phone -> phone.contents?.let { transfer.move(it, to) } }
+                to.db.state.set(ASKED_LOCAL_BOOKS_KEY, ADDED)
+            } finally {
+                _moving.value = false
+            }
             true
         }
         if (added && asked != null) {
@@ -275,16 +288,55 @@ class Libraries<S : LibraryHandle>(
     }
 
     /**
-     * Deleting the account [id], once the no-account library is active: [id]'s library (closed first) moves its books
-     * into the no-account library, then is removed. If the move fails, [id]'s library stays as it is, so nothing is
-     * lost, and the exception is thrown.
+     * Deleting the account [id] (not the active library): [id]'s library (closed first) moves its books into the
+     * no-account library, then is removed. The move is noted in the device settings first, and the note goes once [id]
+     * is removed: if the move fails, [id]'s library stays as it is (nothing is lost), the exception is thrown, and
+     * [retryMovesToPhone] tries again at the next start.
      */
     suspend fun moveToPhoneAndRemove(id: LibraryId.Account) = switching {
-        val phone = active.value
-        require(phone.id == LibraryId.Local) { "Books move into the no-account library only" }
-        val to = checkNotNull(phone.contents) { "The no-account library has no tables" }
-        withLibrary(id) { account -> transfer.move(checkNotNull(account.contents) { "The account library has no tables" }, to) }
+        require(id != active.value.id) { "The active library can't be removed" }
+        setPendingMoves(pendingMoves() + id)
+        movingToPhone(id)
+    }
+
+    /**
+     * At start, off the main thread (after [openActive]): the moves of deleted accounts' books that failed
+     * ([moveToPhoneAndRemove]) are tried again. One that fails again is tried at the next start.
+     */
+    suspend fun retryMovesToPhone() {
+        for (id in pendingMoves()) {
+            try {
+                switching { if (id != active.value.id) movingToPhone(id) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Still noted: the next start tries again.
+            }
+        }
+    }
+
+    /** Under [lock]: [id]'s books into the no-account library (open or not), then [id] removed and its note cleared. */
+    private suspend fun movingToPhone(id: LibraryId.Account) {
+        withLibrary(LibraryId.Local) { phone ->
+            val to = checkNotNull(phone.contents) { "The no-account library has no tables" }
+            withLibrary(id) { account -> transfer.move(checkNotNull(account.contents) { "The account library has no tables" }, to) }
+        }
         delete(id)
+        setPendingMoves(pendingMoves() - id)
+    }
+
+    /** The accounts whose books still have to move into the no-account library (device settings, [PENDING_MOVES]). */
+    private fun pendingMoves(): List<LibraryId.Account> =
+        deviceSettings?.get(PENDING_MOVES).orEmpty().split(',').filter { it.isNotBlank() }.mapNotNull { key ->
+            try {
+                libraryIdOf(key) as? LibraryId.Account
+            } catch (_: IllegalArgumentException) {
+                null
+            }
+        }.distinct()
+
+    private fun setPendingMoves(ids: List<LibraryId.Account>) {
+        deviceSettings?.set(PENDING_MOVES, ids.distinct().joinToString(",") { it.key })
     }
 
     /**
@@ -310,6 +362,9 @@ class Libraries<S : LibraryHandle>(
 
     private companion object {
         const val KEY = "library.active"
+
+        /** Deleted accounts whose library still has to move into the no-account library (comma-separated ids). */
+        const val PENDING_MOVES = "library.pendingMove"
 
         /** The stored answers ([ASKED_LOCAL_BOOKS_KEY]). */
         const val ADDED = "added"

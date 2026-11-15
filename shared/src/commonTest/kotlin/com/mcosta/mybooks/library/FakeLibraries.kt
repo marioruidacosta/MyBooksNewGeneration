@@ -129,12 +129,18 @@ class FakeLibrarySpace(
  * The app's libraries over fake tables and a fake file system, following [social]'s session as the app does: what
  * [com.mcosta.mybooks.AppContainer] wires, with fakes. Engines run in [engines], on the test's scheduler.
  */
-class FakeLibraries(private val test: TestScope, val social: FakeSocial, engines: Job) {
-    val fs = FakeFileSystem()
+class FakeLibraries(
+    private val test: TestScope,
+    val social: FakeSocial,
+    engines: Job,
+    /** The same phone before a restart: its files, databases and settings carry over (stop it first). */
+    previous: FakeLibraries? = null,
+) {
+    val fs: FakeFileSystem = previous?.fs ?: FakeFileSystem()
     val files = LibraryFiles(fs, "/files".toPath())
-    val stores = mutableMapOf<LibraryId, FakeLibraryStore>()
-    val settings = MemoryPreferences()
-    val deleted = mutableListOf<LibraryId>()
+    val stores: MutableMap<LibraryId, FakeLibraryStore> = previous?.stores ?: mutableMapOf()
+    val settings: MemoryPreferences = previous?.settings ?: MemoryPreferences()
+    val deleted: MutableList<LibraryId> = previous?.deleted ?: mutableListOf()
     val log = mutableListOf<String>()
 
     /** A library that can't be opened. */
@@ -143,7 +149,12 @@ class FakeLibraries(private val test: TestScope, val social: FakeSocial, engines
     /** Holds the next opening of a library until completed. */
     var openGate: CompletableDeferred<Unit>? = null
 
-    val scope = CoroutineScope(StandardTestDispatcher(test.testScheduler) + engines)
+    private val job = SupervisorJob(engines)
+    private val dispatcher = StandardTestDispatcher(test.testScheduler)
+    val scope = CoroutineScope(dispatcher + job)
+
+    /** The app is killed: nothing of it runs any more. */
+    fun stop() = job.cancel()
 
     val libraries: Libraries<FakeLibrarySpace> = Libraries(
         factory = { id ->
@@ -158,6 +169,8 @@ class FakeLibraries(private val test: TestScope, val social: FakeSocial, engines
             files.deleteAll(id)
             deleted += id
         },
+        // Files are copied on the test's scheduler too, so waiting for it waits for a whole move.
+        transfer = LibraryTransfer(io = dispatcher),
     )
 
     /**
@@ -180,6 +193,7 @@ class FakeLibraries(private val test: TestScope, val social: FakeSocial, engines
         libraries.start()
         scope.launch {
             libraries.openActive()
+            libraries.retryMovesToPhone()
             sessions.follow()
         }
     }

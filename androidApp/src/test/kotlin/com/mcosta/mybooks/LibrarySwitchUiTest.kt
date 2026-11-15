@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.mcosta.mybooks.data.covers.PhotoShrinker
 import com.mcosta.mybooks.data.db.createAndroidDatabase
@@ -160,5 +162,23 @@ class LibrarySwitchUiTest {
 
         // The rebuilt app goes on with signing in: a new account chooses its username.
         waitFor { shown("Choose how other readers will see you.") }
+    }
+
+    @Test
+    fun thePhoneBooksQuestionShowsOverAnyScreen() {
+        val container = container(social)
+        runBlocking { container.repository.save(Book(title = "Mensagem", authors = "Fernando Pessoa", status = ReadingStatus.READING)) }
+        // Home, not the Account screen (a restart with the question open, or Back before it showed).
+        compose.setContent { App(container, services) }
+        waitFor { shown("Mensagem") }
+
+        session.value = SessionState.SignedIn(newReader.userId, null)
+        waitFor { container.libraries.active.value.id == newReader }
+
+        waitFor { shown("Add this phone's 1 book to your account?") }
+        compose.onNodeWithText("Add them").performClick()
+
+        waitFor { container.libraries.offer.value == null && !container.libraries.moving.value && shown("Mensagem") }
+        assertTrue(compose.onAllNodesWithText("Add this phone's", substring = true).fetchSemanticsNodes().isEmpty())
     }
 }

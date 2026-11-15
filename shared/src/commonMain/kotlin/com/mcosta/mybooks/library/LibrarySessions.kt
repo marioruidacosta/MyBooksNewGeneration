@@ -129,8 +129,8 @@ class LibrarySessions<S : LibraryHandle>(
      * Signing out, as the user asked: the account's sync stops, with its queue and sync state kept in its library;
      * [signOutOfServer] ends the session; the no-account library is shown; then the account's library is kept, deleted
      * (database and folders, nothing else), or, for a deleted account, has its books moved into the no-account library
-     * and is deleted ([after]). A move that fails keeps the account's library (nothing is lost) and doesn't fail the
-     * sign-out. If [signOutOfServer] fails, the account stays signed in and its library active (its sync starts again
+     * and is deleted ([after]). A move that fails keeps the account's library (nothing is lost; the move is retried at
+     * the next start, [Libraries.retryMovesToPhone]) and doesn't fail the sign-out. If [signOutOfServer] fails, the account stays signed in and its library active (its sync starts again
      * with [syncNow]).
      */
     suspend fun signOut(after: OnSignOut, signOutOfServer: suspend () -> Unit) {
@@ -155,7 +155,7 @@ class LibrarySessions<S : LibraryHandle>(
                     } catch (e: CancellationException) {
                         throw e
                     } catch (_: Exception) {
-                        // Its library stays on the phone, books and all; the account is gone all the same.
+                        // Its library stays on the phone, books and all, and the move is tried again at the next start.
                     }
                 }
             }

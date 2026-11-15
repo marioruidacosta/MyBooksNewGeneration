@@ -24,6 +24,7 @@ import com.mcosta.mybooks.library.LibraryHold
 import com.mcosta.mybooks.library.LibraryId
 import com.mcosta.mybooks.library.LibrarySpace
 import com.mcosta.mybooks.platform.PlatformServices
+import com.mcosta.mybooks.ui.social.PhoneBooksPrompts
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
 
 val LocalCoverStore = staticCompositionLocalOf<CoverStore> { error("No CoverStore provided") }
@@ -66,6 +67,8 @@ fun App(
                         onOpened = { if (openRoute != null) onOpened() else reopen = null },
                         onRouteShown = { lastRoute.value = it },
                     )
+                    // Over whatever screen is open: the first sign-in's question, and the move it starts.
+                    PhoneBooksPrompts(container.libraries)
                 }
             }
         }

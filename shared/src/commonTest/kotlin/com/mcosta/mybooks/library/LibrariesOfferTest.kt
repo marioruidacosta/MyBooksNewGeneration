@@ -15,6 +15,7 @@ import com.mcosta.mybooks.sync.SyncStatus
 import com.mcosta.mybooks.sync.SyncTable
 import com.mcosta.mybooks.sync.toRow
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -111,7 +112,7 @@ class LibrariesOfferTest {
         assertEquals(SyncStatus.Off, app.active.sync!!.status.value)
         assertTrue(social.sync.calls.isEmpty())
 
-        app.libraries.addPhoneBooks()
+        app.libraries.addPhoneBooks(accountB)
         advanceUntilIdle()
 
         assertNull(app.libraries.offer.value)
@@ -206,7 +207,7 @@ class LibrariesOfferTest {
         assertEquals(SyncStatus.Off, app.active.sync!!.status.value)
         assertTrue(social.sync.calls.isEmpty())
 
-        app.libraries.addPhoneBooks()
+        app.libraries.addPhoneBooks(accountB)
         runCurrent()
 
         assertEquals(setOf("Mensagem"), app.active.store.titles())
@@ -235,7 +236,7 @@ class LibrariesOfferTest {
 
         // Settings → Account → "Add this phone's books", while the network is down.
         offline()
-        app.libraries.addPhoneBooks()
+        app.libraries.addPhoneBooks(accountB)
         runCurrent()
 
         val account = app.active.store
@@ -303,7 +304,7 @@ class LibrariesOfferTest {
         assertEquals(AddBooksOffer(accountA, 1), app.libraries.offer.value)
         assertEquals(accountA, app.active.id)
         assertEquals(SyncStatus.Off, held.sync!!.status.value)
-        app.libraries.addPhoneBooks()
+        app.libraries.addPhoneBooks(accountA)
         advanceUntilIdle()
         assertEquals(setOf("Mensagem"), app.active.store.titles())
         assertEquals(emptySet(), app.stores.getValue(accountB).titles())
@@ -356,5 +357,91 @@ class LibrariesOfferTest {
         assertEquals(LibraryId.Local, app.active.id)
         assertTrue(app.deleted.isEmpty())
         assertEquals(setOf("Os Maias"), app.stores.getValue(accountA).titles())
+    }
+
+    // ---- fix round 1 ----
+
+    @Test
+    fun aStaleAddForAnotherAccountDoesNothing() = runTest(timeout = 30.seconds) {
+        val app = app()
+        app.active.addBook("Mensagem")
+        app.signIn(b)
+        advanceUntilIdle()
+
+        // A tap meant for A's question, arriving while B's is open.
+        app.libraries.addPhoneBooks(accountA)
+        advanceUntilIdle()
+
+        assertEquals(AddBooksOffer(accountB, 1), app.libraries.offer.value)
+        assertEquals(setOf("Mensagem"), app.stores.getValue(LibraryId.Local).titles())
+        assertEquals(emptySet(), app.active.store.titles())
+
+        // Nor from Settings, once B's library syncs.
+        app.libraries.notNow()
+        advanceUntilIdle()
+        app.libraries.addPhoneBooks(accountA)
+        advanceUntilIdle()
+
+        assertEquals(setOf("Mensagem"), app.stores.getValue(LibraryId.Local).titles())
+        assertEquals(emptySet(), app.active.store.titles())
+        assertNull(app.stores[accountA])
+    }
+
+    @Test
+    fun movingShowsUntilItsDone() = runTest(timeout = 30.seconds) {
+        val app = app()
+        app.active.addBook("Mensagem")
+        app.signIn(b)
+        advanceUntilIdle()
+        assertFalse(app.libraries.moving.value)
+        // The phone's library takes a while to open.
+        val opening = kotlinx.coroutines.CompletableDeferred<Unit>()
+        app.openGate = opening
+
+        val adding = launch { app.libraries.addPhoneBooks(accountB) }
+        runCurrent()
+
+        assertTrue(app.libraries.moving.value)
+        opening.complete(Unit)
+        adding.join()
+        assertFalse(app.libraries.moving.value)
+        assertEquals(setOf("Mensagem"), app.active.store.titles())
+    }
+
+    @Test
+    fun aFailedMoveIsRetriedAtTheNextStart() = runTest(timeout = 30.seconds) {
+        val app = app(offers = false)
+        app.active.addBook("Mensagem", isbn = "9789720049100")
+        app.signIn(a)
+        advanceUntilIdle()
+        app.active.addBook("Mensagem", isbn = "9789720049100", notes = "Relido em 2026.")
+        val maias = app.active.addBook("Os Maias", isbn = "9789720049575")
+        app.active.addBook("A Relíquia", isbn = "9789720049600")
+        app.stores.getValue(accountA).ebooks.upsert(EbookEntity(maias.id, EbookFormat.EPUB, "os-maias.epub", 4, 1))
+        advanceUntilIdle()
+        // The phone's library can't take the ebook record: the move stops partway, at "Os Maias".
+        app.stores.getValue(LibraryId.Local).ebooks.failUpsert = true
+
+        app.sessions.signOut(OnSignOut.MOVE_TO_PHONE) { social.auth.signOut() }
+        advanceUntilIdle()
+        assertTrue(app.deleted.isEmpty())
+
+        // The app is restarted, and the phone's library works again.
+        app.stop()
+        app.stores.getValue(LibraryId.Local).ebooks.failUpsert = false
+        val again = FakeLibraries(this, social, engines, previous = app).also { it.start() }
+        advanceUntilIdle()
+
+        val phone = again.stores.getValue(LibraryId.Local)
+        assertEquals(listOf("A Relíquia", "Mensagem", "Os Maias"), phone.live().map { it.title }.sorted())
+        assertEquals(phone.live().single { it.title == "Os Maias" }.id, phone.ebooks.rows.value.values.single().bookId)
+        assertEquals(listOf<LibraryId>(accountA), again.deleted)
+        assertNull(again.stores[accountA])
+
+        // Done: a later start has nothing more to do.
+        again.stop()
+        FakeLibraries(this, social, engines, previous = again).also { it.start() }
+        advanceUntilIdle()
+        assertEquals(listOf<LibraryId>(accountA), again.deleted)
     }
 }

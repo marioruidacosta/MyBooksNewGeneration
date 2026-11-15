@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.mcosta.mybooks.data.covers.PhotoShrinker
 import com.mcosta.mybooks.library.AddBooksOffer
 import com.mcosta.mybooks.library.Libraries
+import com.mcosta.mybooks.library.LibraryId
 import com.mcosta.mybooks.library.LibrarySessions
 import com.mcosta.mybooks.library.OnSignOut
 import com.mcosta.mybooks.share.SharingStatus
@@ -45,7 +46,10 @@ data class AccountState(
     val signOutCheck: SignOutCheck = SignOutCheck(),
     /** Where library sync stands; null where sync isn't set up. */
     val sync: SyncInfo? = null,
-    /** The first sign-in's "Add this phone's N books to your account?", while it waits for an answer. */
+    /**
+     * The first sign-in's "Add this phone's N books to your account?", while it waits for an answer. The app asks it
+     * over any screen; here it only hides "Add this phone's books".
+     */
     val offer: AddBooksOffer? = null,
     /** Live books in the phone's own (no-account) library: "Add this phone's books" shows while there are any. */
     val phoneBooks: Int = 0,
@@ -54,14 +58,9 @@ data class AccountState(
     /** The phone's books are moving into the account's library. */
     val addingPhoneBooks: Boolean = false,
 ) {
-    /** The "Add this phone's N books" question to show (N), or null. */
+    /** "Add this phone's books" asked from here: the question to show (N), or null. */
     val addPhoneBooksQuestion: Int?
-        get() = when {
-            addingPhoneBooks -> null
-            offer != null -> offer.count
-            askAddPhoneBooks && phoneBooks > 0 -> phoneBooks
-            else -> null
-        }
+        get() = phoneBooks.takeIf { askAddPhoneBooks && it > 0 && offer == null && !addingPhoneBooks }
 
     /** Settings → Account's "Add this phone's books": the phone has books of its own, and no question is open. */
     val canAddPhoneBooks: Boolean get() = phoneBooks > 0 && offer == null && !addingPhoneBooks
@@ -122,6 +121,9 @@ class AccountViewModel(
         refresh()
     }
 
+    /** The account whose library this screen shows: the phone's books only ever move into it. */
+    private val account: LibraryId.Account? = libraries?.active?.value?.id as? LibraryId.Account
+
     private fun countPhoneBooks() {
         val libraries = libraries ?: return
         viewModelScope.launch {
@@ -146,7 +148,7 @@ class AccountViewModel(
         _state.update { it.copy(askAddPhoneBooks = false, addingPhoneBooks = true, message = null) }
         viewModelScope.launch {
             try {
-                libraries.addPhoneBooks()
+                libraries.addPhoneBooks(account ?: return@launch)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -159,11 +161,8 @@ class AccountViewModel(
         }
     }
 
-    /** "Not now": the phone's books stay where they are (they can still be added from here later). */
-    fun notNow() {
-        _state.update { it.copy(askAddPhoneBooks = false) }
-        if (_state.value.offer != null) libraries?.notNow()
-    }
+    /** "Not now" to the question asked from here: the phone's books stay where they are. */
+    fun notNow() = _state.update { it.copy(askAddPhoneBooks = false) }
 
     fun refresh() = launchAction {
         val profile = services.profiles.myProfile()

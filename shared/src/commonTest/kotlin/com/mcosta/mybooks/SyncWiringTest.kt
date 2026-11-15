@@ -134,10 +134,11 @@ class SyncWiringTest : MainDispatcherTest() {
         )
         advanceUntilIdle()
 
-        // The first sign-in's question, on the account screen.
-        assertEquals(1, vm.state.value.addPhoneBooksQuestion)
+        // The first sign-in's question is the app's (it shows over any screen), not this screen's.
+        assertNotNull(app.libraries.offer.value)
+        assertNull(vm.state.value.addPhoneBooksQuestion)
         assertFalse(vm.state.value.canAddPhoneBooks)
-        vm.notNow()
+        app.libraries.notNow()
         advanceUntilIdle()
         assertNull(vm.state.value.addPhoneBooksQuestion)
         assertTrue(vm.state.value.canAddPhoneBooks)

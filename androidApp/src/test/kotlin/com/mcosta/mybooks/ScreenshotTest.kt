@@ -82,6 +82,7 @@ import com.mcosta.mybooks.ui.library.LibraryScreen
 import com.mcosta.mybooks.ui.library.LibraryViewModel
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
 import com.mcosta.mybooks.ui.social.AddPhoneBooksCard
+import com.mcosta.mybooks.ui.social.MovingBooksCard
 import com.mcosta.mybooks.ui.social.KeepLibraryCard
 import com.mcosta.mybooks.sync.SignOutCheck
 import androidx.compose.foundation.background
@@ -550,6 +551,19 @@ class ScreenshotTest {
         )) compose.onNodeWithText(text).assertExists()
     }
 
+    /** After "Add them": the phone's books moving into the account. */
+    private fun movingBooks(dark: Boolean) {
+        shoot("moving-books", dark, ready = { true }) {
+            androidx.compose.foundation.layout.Box(
+                androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)).padding(40.dp),
+                contentAlignment = androidx.compose.ui.Alignment.Center,
+            ) {
+                MovingBooksCard()
+            }
+        }
+        compose.onNodeWithText("Moving your books…").assertExists()
+    }
+
     /** Signing out with changes the last sync couldn't send: "Remove" says what it loses. */
     private fun signOutDialogPending(dark: Boolean) {
         signOutDialog(dark, SignOutCheck(waiting = 3, unconfirmed = true), "sign-out-dialog-pending")
@@ -587,6 +601,7 @@ class ScreenshotTest {
     @Test fun signOutDialogEbooksLight() = signOutDialogEbooks(dark = false)
     @Test fun addPhoneBooksLight() = addPhoneBooks(dark = false)
     @Test fun addPhoneBooksDark() = addPhoneBooks(dark = true)
+    @Test fun movingBooksLight() = movingBooks(dark = false)
     @Config(qualifiers = TALL) @Test fun ebookElsewhereLight() = ebookElsewhere(dark = false)
 
     @Config(qualifiers = TALL) @Test fun homeLight() = home(dark = false)
