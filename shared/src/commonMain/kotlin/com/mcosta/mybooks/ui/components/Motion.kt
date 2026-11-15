@@ -44,13 +44,13 @@ fun animatedProgress(target: Float): Float {
 
 /** A number counting up from 0 to [value] when first shown (year in review), or [value] at once with reduced motion. */
 @Composable
-fun CountUp(value: Int, style: TextStyle, modifier: Modifier = Modifier) {
+fun CountUp(value: Int, style: TextStyle, modifier: Modifier = Modifier, format: (Int) -> String = { it.toString() }) {
     val reduce = LocalReduceMotion.current
     val shown = remember(value) { Animatable(if (reduce) value.toFloat() else 0f) }
     LaunchedEffect(value, reduce) {
         if (reduce) shown.snapTo(value.toFloat()) else shown.animateTo(value.toFloat(), tween(800, easing = LinearEasing))
     }
-    Text(shown.value.toInt().toString(), style = style, modifier = modifier, maxLines = 1)
+    Text(format(shown.value.toInt()), style = style, modifier = modifier, maxLines = 1)
 }
 
 /** A soft highlight sweeping across a placeholder while an image loads; a plain placeholder with reduced motion. */

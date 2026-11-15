@@ -8,7 +8,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
+import okio.Path.Companion.toPath
 import com.mcosta.mybooks.ui.components.CountUp
 import com.mcosta.mybooks.ui.components.LocalReduceMotion
 import com.mcosta.mybooks.ui.components.animatedProgress
@@ -64,5 +69,31 @@ class MotionTest {
         compose.mainClock.advanceTimeByFrame()
         assertEquals(0.9f, shown, 0.001f)
         compose.onNodeWithText("37").assertExists()
+    }
+
+    /** A cover that can't be loaded: the shimmer gives way to the generated cover (it never shimmers forever). */
+    @Test
+    fun aFailedCoverEndsTheShimmer() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        compose.setContent {
+            CompositionLocalProvider(
+                com.mcosta.mybooks.ui.LocalCoverStore provides com.mcosta.mybooks.data.covers.CoverStore(okio.FileSystem.SYSTEM, okio.Path.Companion.run { context.filesDir.absolutePath.toPath() / "covers" }),
+            ) {
+                com.mcosta.mybooks.ui.components.BookCover(
+                    "file:///does/not/exist.jpg",
+                    androidx.compose.ui.Modifier.size(80.dp, 120.dp),
+                    title = "Stoner",
+                )
+            }
+        }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Stoner").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("cover-shimmer").assertDoesNotExist()
+    }
+
+    /** While a cover loads, its place shimmers. */
+    @Test
+    fun theLoadingCoverShimmers() {
+        compose.setContent { com.mcosta.mybooks.ui.components.CoverLoading(androidx.compose.ui.Modifier.size(80.dp, 120.dp)) }
+        compose.onNodeWithTag("cover-shimmer").assertExists()
     }
 }

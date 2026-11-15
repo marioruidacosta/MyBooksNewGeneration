@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.mcosta.mybooks.ui.components.BookCover
 import com.mcosta.mybooks.ui.components.RatingStars
+import com.mcosta.mybooks.ui.components.animatedProgress
 
 /** "Finished!": the book's cover popping in, what it means for the year, and its score. */
 @Composable
@@ -50,7 +51,7 @@ fun CelebrationDialog(celebration: Celebration, onRate: (Int) -> Unit, onSetGoal
                 }
                 Text(book.title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                 Text(celebration.line(), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
-                celebration.challenge?.let { LinearProgressIndicator(progress = { it.percent / 100f }, modifier = Modifier.fillMaxWidth()) }
+                celebration.challenge?.let { val shown = animatedProgress(it.percent / 100f); LinearProgressIndicator(progress = { shown }, modifier = Modifier.fillMaxWidth()) }
                 Text("Your score", style = MaterialTheme.typography.labelLarge)
                 RatingStars(book.rating, onRate = { it?.let(onRate) }, size = 32.dp)
             }
