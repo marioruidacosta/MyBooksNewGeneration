@@ -41,6 +41,7 @@ import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Instant
+import com.mcosta.mybooks.ui.components.animatedProgress
 
 /** Start date and progress for a book being read. */
 @Composable
@@ -68,7 +69,7 @@ fun ReadingSection(book: Book, viewModel: BookDetailViewModel) {
 
         Text("Progress", style = MaterialTheme.typography.labelLarge)
         Text(progressText(book) ?: "No progress yet", style = MaterialTheme.typography.bodyMedium)
-        book.progressPercent?.let { LinearProgressIndicator(progress = { it / 100f }, modifier = Modifier.fillMaxWidth()) }
+        book.progressPercent?.let { val shown = animatedProgress(it / 100f); LinearProgressIndicator(progress = { shown }, modifier = Modifier.fillMaxWidth()) }
 
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ProgressField(input, { input = it }, hint = if (byPages) "Page" else "%", isError = error != null, onDone = { submit() })

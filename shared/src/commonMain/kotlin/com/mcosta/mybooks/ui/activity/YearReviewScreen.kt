@@ -56,6 +56,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Month
 import kotlin.math.roundToInt
+import com.mcosta.mybooks.ui.components.CountUp
 
 /** How many covers the review's mosaic shows. */
 private const val MOSAIC = 24
@@ -134,8 +135,8 @@ internal fun ReviewCard(r: YearReview, onOpenBook: (Long) -> Unit) {
         if (r.books.isEmpty()) return@Column
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            BigNumber(r.stats.books.toString(), if (r.stats.books == 1) "book" else "books", Modifier.weight(1f))
-            BigNumber(groupedNumber(r.stats.pages), "pages", Modifier.weight(1f))
+            BigNumber(r.stats.books.toString(), if (r.stats.books == 1) "book" else "books", Modifier.weight(1f), count = r.stats.books)
+            BigNumber(groupedNumber(r.stats.pages), "pages", Modifier.weight(1f), count = r.stats.pages, format = ::groupedNumber)
             r.stats.averageScore?.let { BigNumber("${(it * 10).roundToInt() / 10.0} ★", "average", Modifier.weight(1f)) }
         }
 
@@ -199,9 +200,11 @@ internal fun ReviewCard(r: YearReview, onOpenBook: (Long) -> Unit) {
 }
 
 @Composable
-private fun BigNumber(value: String, label: String, modifier: Modifier) {
+private fun BigNumber(value: String, label: String, modifier: Modifier, count: Int? = null, format: (Int) -> String = { it.toString() }) {
     Column(modifier) {
-        Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        val style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
+        // Counts up when the review opens; text (the average score) stays as it is.
+        if (count != null) CountUp(count, style, format = format) else Text(value, style = style, maxLines = 1)
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

@@ -169,7 +169,7 @@ fun BookDetailScreen(
                 .verticalScroll(rememberScrollState()),
         ) {
             val author by viewModel.author.collectAsStateWithLifecycle()
-            BookHeader(b.coverUrl, b.title, b.authors, bookDetails(b), author, onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook, onAddPhoto = takePhoto, onChoosePhoto = choosePhoto)
+            BookHeader(b.coverUrl, b.title, b.authors, bookDetails(b), author, onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook, onAddPhoto = takePhoto, onChoosePhoto = choosePhoto, shareKey = "book-${b.id}")
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatusSelector(b.status, viewModel::setStatus, Modifier.fillMaxWidth())
                 if (ebook?.fileOnPhone == true && onRead != null) ReadButton(onRead)

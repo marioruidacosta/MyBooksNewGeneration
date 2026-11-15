@@ -274,6 +274,23 @@ class ScreenshotTest {
         File(out, "$name-${if (dark) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
+    /** "Finished!" with its confetti mid-burst. */
+    private fun celebration(dark: Boolean) {
+        val book = Book(id = 1, title = "Memorial do Convento", authors = "José Saramago", status = ReadingStatus.READ, rating = 5)
+        val celebration = com.mcosta.mybooks.ui.celebrate.Celebration(book, 2026, readThisYear = 22, challenge = null, pace = null)
+        compose.mainClock.autoAdvance = false
+        if (dark) RuntimeEnvironment.setQualifiers("+night")
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalCoverStore provides CoverStore(FileSystem.SYSTEM, context.filesDir.toOkioPath() / "covers"),
+                LocalPlatformServices provides services,
+            ) { MyBooksTheme { com.mcosta.mybooks.ui.celebrate.CelebrationDialog(celebration, onRate = {}, onSetGoal = {}, onDismiss = {}) } }
+        }
+        compose.mainClock.advanceTimeBy(400)
+        val bitmap = compose.onNode(androidx.compose.ui.test.isDialog()).captureToImage().asAndroidBitmap()
+        File(out, "celebration-confetti-${if (dark) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
     /** Free classics after a search: one downloaded (Read), one to download. */
     private fun classics(dark: Boolean) {
         sampleLibrary()
@@ -640,6 +657,7 @@ class ScreenshotTest {
 
     @Test fun coverPhotoMenuLight() = coverPhotoMenu(dark = false)
     @Test fun widgetShelfLight() = widgetShelf(dark = false)
+    @Test fun celebrationConfettiLight() = celebration(dark = false)
     @Test fun widgetShelfDark() = widgetShelf(dark = true)
     /** A wide home screen (4 cells on a big phone): the covers are narrower than their spots. */
     @Test fun widgetShelfWideLight() = widgetShelf(dark = false, widthDp = 400, heightDp = 200, name = "widget-shelf-wide")

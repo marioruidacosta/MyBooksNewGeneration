@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.ui.components.BookCover
+import com.mcosta.mybooks.ui.components.animatedProgress
 
 /** Covers per row in the book grids. */
 private const val GRID_COLUMNS = 4
@@ -184,7 +185,8 @@ private fun CurrentChallenge(state: ReadingActivityState, onSet: () -> Unit, mod
                 Button(onClick = onSet) { Text("Set ${state.year} goal") }
             } else {
                 Text(current.progress.countText(), style = MaterialTheme.typography.headlineSmall)
-                LinearProgressIndicator(progress = { current.progress.percent / 100f }, modifier = Modifier.fillMaxWidth().height(8.dp))
+                val shown = animatedProgress(current.progress.percent / 100f)
+                LinearProgressIndicator(progress = { shown }, modifier = Modifier.fillMaxWidth().height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(current.pace.text(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Text("${current.progress.percent}%", style = MaterialTheme.typography.bodyMedium)

@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mcosta.mybooks.ui.components.BookCover
+import com.mcosta.mybooks.ui.sharedCover
 
 /**
  * A large cover over a softly blurred copy of it, fading into the page (Android blurs from version 12; earlier
@@ -61,6 +62,8 @@ fun BookHeader(
     onAddPhoto: (() -> Unit)? = null,
     /** Chooses a photo already on the device; with [onAddPhoto], "Add a cover photo" then offers both. */
     onChoosePhoto: (() -> Unit)? = null,
+    /** The key the list's cover used: the cover grows from there into this header. */
+    shareKey: String? = null,
 ) {
     val pages = rememberPagerState { 3 }
     // The author's biography is fetched only when their panel is first shown.
@@ -80,7 +83,7 @@ fun BookHeader(
             HorizontalPager(pages, modifier = Modifier.fillMaxWidth().height(COVER_HEIGHT)) { page ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     if (page == 0) {
-                        Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 10.dp) {
+                        Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 10.dp, modifier = Modifier.sharedCover(shareKey)) {
                             BookCover(coverUrl, Modifier.width(COVER_HEIGHT * 2 / 3).height(COVER_HEIGHT), title = title, authors = authors)
                         }
                     } else {

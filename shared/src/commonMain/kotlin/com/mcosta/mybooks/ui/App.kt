@@ -2,6 +2,8 @@ package com.mcosta.mybooks.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import com.mcosta.mybooks.ui.components.LocalReduceMotion
+import com.mcosta.mybooks.ui.components.rememberReduceMotion
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.collectAsState
@@ -60,6 +62,7 @@ fun App(
                     LocalViewModelStoreOwner provides spaceOwner,
                     LocalCoverStore provides space.coverStore,
                     LocalPlatformServices provides services,
+                    LocalReduceMotion provides rememberReduceMotion(),
                 ) {
                     MyBooksNavHost(
                         container,

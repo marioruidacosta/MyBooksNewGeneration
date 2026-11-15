@@ -78,7 +78,7 @@ fun ReleaseBookScreen(
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
             BookHeader(
                 state.coverUrl, book.title, book.authors.joinToString(", "), releaseDetails(book), author,
-                onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook,
+                onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook, shareKey = "release-${book.id}",
             )
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 state.description?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }

@@ -81,6 +81,8 @@ import com.mcosta.mybooks.ui.components.BookCover
 import com.mcosta.mybooks.ui.components.SyncRefreshBox
 import com.mcosta.mybooks.ui.components.RatingStars
 import kotlinx.coroutines.launch
+import com.mcosta.mybooks.ui.components.motionItem
+import com.mcosta.mybooks.ui.sharedCover
 
 fun ReadingStatus?.label() = when (this) {
     null -> "All"
@@ -253,12 +255,12 @@ fun LibraryScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        items(state.books, key = { it.id }) { book -> GridCell(book, onClick = { onOpenBook(book.id) }) }
+                        items(state.books, key = { it.id }) { book -> GridCell(book, onClick = { onOpenBook(book.id) }, modifier = motionItem()) }
                     }
                 } else {
                     LazyColumn(Modifier.fillMaxSize(), state = listState) {
                         items(state.books, key = { it.id }) { book ->
-                            SwipeRow(book, onSwipeRight = { onSwipeRight(book) }, onSwipeLeft = { onSwipeLeft(book) }) {
+                            SwipeRow(book, modifier = motionItem(), onSwipeRight = { onSwipeRight(book) }, onSwipeLeft = { onSwipeLeft(book) }) {
                                 BookRow(book, onClick = { onOpenBook(book.id) }, showSeriesNumber = state.filter is BookFilter.Series)
                             }
                             HorizontalDivider()
@@ -277,7 +279,7 @@ private fun BookRow(book: Book, onClick: () -> Unit, showSeriesNumber: Boolean =
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BookCover(book.coverUrl, Modifier.width(48.dp).height(72.dp), title = book.title, authors = book.authors)
+        BookCover(book.coverUrl, Modifier.width(48.dp).height(72.dp), title = book.title, authors = book.authors, shareKey = "book-${book.id}")
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             if (showSeriesNumber && book.seriesNumber != null) {
@@ -347,11 +349,12 @@ private fun TagChips(tags: List<String>, chosen: String?, onChoose: (String?) ->
 
 /** A list row that swipes: right for [onSwipeRight] (Read, or To read), left for [onSwipeLeft] (delete). */
 @Composable
-private fun SwipeRow(book: Book, onSwipeRight: () -> Unit, onSwipeLeft: () -> Unit, content: @Composable () -> Unit) {
+private fun SwipeRow(book: Book, onSwipeRight: () -> Unit, onSwipeLeft: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val swipe = rememberSwipeToDismissBoxState()
     val scope = rememberCoroutineScope()
     SwipeToDismissBox(
         state = swipe,
+        modifier = modifier,
         backgroundContent = {
             val right = swipe.dismissDirection == SwipeToDismissBoxValue.StartToEnd
             val left = swipe.dismissDirection == SwipeToDismissBoxValue.EndToStart
@@ -394,9 +397,10 @@ private fun SwipeRow(book: Book, onSwipeRight: () -> Unit, onSwipeLeft: () -> Un
 
 /** A cover in the grid, with its title below. */
 @Composable
-private fun GridCell(book: Book, onClick: () -> Unit) {
-    Column(Modifier.clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Surface(shape = RoundedCornerShape(4.dp), shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f)) {
+private fun GridCell(book: Book, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier.clickable(onClick = onClick), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // The whole card (cover and shadow) moves into the book page.
+        Surface(shape = RoundedCornerShape(4.dp), shadowElevation = 3.dp, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f).sharedCover("book-${book.id}")) {
             BookCover(book.coverUrl, Modifier.fillMaxSize(), title = book.title, authors = book.authors)
         }
         Text(book.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)

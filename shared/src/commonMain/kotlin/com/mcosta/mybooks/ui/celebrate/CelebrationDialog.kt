@@ -31,6 +31,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.mcosta.mybooks.ui.components.BookCover
 import com.mcosta.mybooks.ui.components.RatingStars
+import com.mcosta.mybooks.ui.components.animatedProgress
+import androidx.compose.foundation.layout.Box
+import com.mcosta.mybooks.ui.components.Confetti
 
 /** "Finished!": the book's cover popping in, what it means for the year, and its score. */
 @Composable
@@ -44,15 +47,19 @@ fun CelebrationDialog(celebration: Celebration, onRate: (Int) -> Unit, onSetGoal
         icon = { Icon(Icons.Filled.Celebration, null, tint = MaterialTheme.colorScheme.primary) },
         title = { Text("Finished!") },
         text = {
+            Box {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Surface(shape = RoundedCornerShape(6.dp), shadowElevation = 8.dp, modifier = Modifier.scale(scale)) {
                     BookCover(book.coverUrl, Modifier.width(96.dp).height(144.dp), title = book.title, authors = book.authors)
                 }
                 Text(book.title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                 Text(celebration.line(), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
-                celebration.challenge?.let { LinearProgressIndicator(progress = { it.percent / 100f }, modifier = Modifier.fillMaxWidth()) }
+                celebration.challenge?.let { val shown = animatedProgress(it.percent / 100f); LinearProgressIndicator(progress = { shown }, modifier = Modifier.fillMaxWidth()) }
                 Text("Your score", style = MaterialTheme.typography.labelLarge)
                 RatingStars(book.rating, onRate = { it?.let(onRate) }, size = 32.dp)
+            }
+            // A burst over the cover and the news; it goes away by itself (none with reduced motion).
+            Confetti(Modifier.matchParentSize())
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },

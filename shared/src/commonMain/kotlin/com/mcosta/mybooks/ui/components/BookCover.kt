@@ -17,13 +17,21 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.SubcomposeAsyncImage
 import com.mcosta.mybooks.ui.LocalCoverStore
+import androidx.compose.ui.platform.testTag
+import com.mcosta.mybooks.ui.sharedCover
+
+/** The cover's place while its image loads: a soft shimmer (plain with reduced motion). */
+@Composable
+fun CoverLoading(modifier: Modifier = Modifier) {
+    Box(modifier.shimmer().testTag("cover-shimmer"))
+}
 
 /**
- * Book cover image (web URL or a `cover:` photo). Without one, or while it loads or when it fails, a cover drawn
- * from [title] and [authors] (a book icon when the title isn't known).
+ * Book cover image (web URL or a `cover:` photo). While it loads, a shimmer; without one or when it fails,
+ * a cover drawn from [title] and [authors] (a book icon when the title isn't known).
  */
 @Composable
-fun BookCover(url: String?, modifier: Modifier = Modifier, title: String? = null, authors: String = "") {
+fun BookCover(url: String?, modifier: Modifier = Modifier, title: String? = null, authors: String = "", shareKey: String? = null) {
     val placeholder: @Composable () -> Unit = if (title != null) {
         { GeneratedCover(title, authors, Modifier.fillMaxSize()) }
     } else {
@@ -41,7 +49,7 @@ fun BookCover(url: String?, modifier: Modifier = Modifier, title: String? = null
             }
         }
     }
-    Box(modifier.clip(RoundedCornerShape(4.dp))) {
+    Box(modifier.sharedCover(shareKey).clip(RoundedCornerShape(4.dp))) {
         if (url.isNullOrBlank()) {
             placeholder()
         } else {
@@ -49,7 +57,7 @@ fun BookCover(url: String?, modifier: Modifier = Modifier, title: String? = null
                 model = LocalCoverStore.current.imageModel(url),
                 contentDescription = "Cover",
                 contentScale = ContentScale.Crop,
-                loading = { placeholder() },
+                loading = { CoverLoading(Modifier.fillMaxSize()) },
                 error = { placeholder() },
                 modifier = Modifier.fillMaxSize(),
             )
