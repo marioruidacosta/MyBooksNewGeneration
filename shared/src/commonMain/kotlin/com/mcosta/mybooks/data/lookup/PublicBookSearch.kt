@@ -6,6 +6,7 @@ import com.mcosta.mybooks.data.releases.OUTSIDE_SEARCH_LIMIT
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.IsbnQuery
 import com.mcosta.mybooks.domain.isbnQuery
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -63,7 +64,7 @@ class PublicBookSearch(
      * an author, a title alone says nothing ("Poemas"), so only the ISBN counts.
      */
     private fun keys(book: AuthorBook): List<String> {
-        val author = searchKey(book.authors.substringBefore(',').trim())
+        val author = authorKey(book.authors.substringBefore(',').trim())
         return listOfNotNull(
             book.isbn?.let { "isbn:$it" },
             author.takeIf { it.isNotEmpty() }?.let { "title:" + catalogTitleKey(book.title) + "|" + it },

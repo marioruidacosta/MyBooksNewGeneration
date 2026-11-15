@@ -7,6 +7,7 @@ import com.mcosta.mybooks.data.db.BookmarkEntity
 import com.mcosta.mybooks.data.db.EbookEntity
 import com.mcosta.mybooks.data.db.QuoteEntity
 import com.mcosta.mybooks.data.ebooks.EbookFiles
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 import com.mcosta.mybooks.sync.SyncDatabase
 import com.mcosta.mybooks.sync.SyncRecorder
@@ -271,7 +272,7 @@ private class TitleIndex(books: List<BookEntity>) {
         books.forEach(::add)
     }
 
-    private fun key(book: BookEntity) = catalogTitleKey(book.title) + "|" + searchKey(book.authors.substringBefore(',').trim())
+    private fun key(book: BookEntity) = catalogTitleKey(book.title) + "|" + authorKey(book.authors.substringBefore(',').trim())
 
     fun add(book: BookEntity) {
         byKey.getOrPut(key(book)) { mutableListOf() } += book

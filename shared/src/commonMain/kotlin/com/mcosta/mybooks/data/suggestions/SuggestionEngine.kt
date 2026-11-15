@@ -8,6 +8,7 @@ import com.mcosta.mybooks.data.releases.NOT_STATED
 import com.mcosta.mybooks.data.releases.ReleaseBook
 import com.mcosta.mybooks.data.releases.publisherKey
 import com.mcosta.mybooks.domain.Book
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 import com.mcosta.mybooks.social.model.CommunitySuggestion
 import kotlinx.coroutines.CoroutineDispatcher
@@ -163,14 +164,14 @@ class SuggestionEngine(
 
     private suspend fun fromNewInPortugal(taste: TasteProfile, books: List<Book>, owned: LibraryIndex): List<Suggestion> {
         val months = releases?.invoke() ?: return emptyList()
-        val byAuthor = books.groupBy { searchKey(firstAuthor(it)) }.filterKeys { it.isNotEmpty() }
+        val byAuthor = books.groupBy { authorKey(firstAuthor(it)) }.filterKeys { it.isNotEmpty() }
         val publishers = taste.publishers.associateBy { searchKey(it.name) }
         fun ReleaseBook.firstAuthor() = authors.firstOrNull().orEmpty().trim()
         fun ReleaseBook.inLibrary() = owned.contains(isbn.takeIf { it.isNotBlank() }, title, authors.joinToString(", "))
         // Cheap author and publisher matches first; only those are checked against the library.
         val matches = months.flatMap { month -> month.books.map { month.month to it } }
             .mapNotNull { (month, b) ->
-                val theirs = byAuthor[searchKey(b.firstAuthor())]
+                val theirs = byAuthor[authorKey(b.firstAuthor())]
                 val publisher = b.publisherKey().takeIf { it != NOT_STATED }?.let { publishers[searchKey(it)] }
                 val reason = when {
                     theirs != null -> "New from ${b.firstAuthor()} · you have ${count(theirs.size)} of their books"

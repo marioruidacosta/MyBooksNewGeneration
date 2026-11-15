@@ -4,6 +4,7 @@ import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.authors.AuthorInfoSource
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,9 +29,9 @@ internal class AuthorPanelLoader(private val repo: BookRepository, private val a
             _panel.value = AuthorPanel(name = "", loading = false)
             return
         }
-        val key = searchKey(name)
+        val key = authorKey(name)
         val theirs = repo.observeBooks(null, "").first()
-            .filter { !isThisBook(it) && searchKey(it.authors.substringBefore(',').trim()) == key }
+            .filter { !isThisBook(it) && authorKey(it.authors.substringBefore(',').trim()) == key }
             .sortedWith(compareBy({ it.status != ReadingStatus.READ }, { searchKey(it.title) }))
         _panel.value = AuthorPanel(name, otherBooks = theirs, loading = authors != null)
         val info = authors?.author(name)

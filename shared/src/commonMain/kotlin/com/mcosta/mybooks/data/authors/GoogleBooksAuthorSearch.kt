@@ -1,6 +1,7 @@
 package com.mcosta.mybooks.data.authors
 
 import com.mcosta.mybooks.data.lookup.getOrNull
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 import io.ktor.client.HttpClient
 import io.ktor.http.encodeURLParameter
@@ -62,7 +63,7 @@ class GoogleBooksAuthorSearch(
         val language = if (portuguese) "&langRestrict=pt" else ""
         val body = http.getOrNull("$baseUrl/books/v1/volumes?q=$query&printType=books&maxResults=40$language$keyParam")
         body?.let { json.decodeFromString<Volumes>(it) }?.items.orEmpty().mapNotNull { it.volumeInfo }
-            .filter { info -> info.authors.any { searchKey(it) == key } && info.title.isNotBlank() }
+            .filter { info -> info.authors.any { authorKey(it) == authorKey(name) } && info.title.isNotBlank() }
             .map { info ->
                 AuthorBook(
                     title = info.title,

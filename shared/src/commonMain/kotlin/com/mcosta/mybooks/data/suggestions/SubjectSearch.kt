@@ -2,6 +2,7 @@ package com.mcosta.mybooks.data.suggestions
 
 import com.mcosta.mybooks.data.authors.AuthorBook
 import com.mcosta.mybooks.data.lookup.getOrNull
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 import io.ktor.client.HttpClient
 import io.ktor.http.encodeURLParameter
@@ -32,8 +33,8 @@ class SubjectSearch(
         val edition = http.getOrNull("$openLibrary/isbn/$isbn.json")?.let { json.decodeFromString<Edition>(it) } ?: return@quietly emptyList()
         val work = edition.works.firstOrNull()?.key ?: return@quietly emptyList()
         val subjects = http.getOrNull("$openLibrary$work.json")?.let { json.decodeFromString<Work>(it) }?.subjects.orEmpty()
-        val authorKeys = authors.split(',').map { searchKey(it.trim()) }.filter { it.isNotEmpty() }
-        subjects.map { it.trim() }.filter { isTelling(it) && searchKey(it) !in authorKeys }.distinctBy { searchKey(it) }
+        val authorKeys = authors.split(',').map { authorKey(it.trim()) }.filter { it.isNotEmpty() }
+        subjects.map { it.trim() }.filter { isTelling(it) && authorKey(it) !in authorKeys }.distinctBy { searchKey(it) }
     }
 
     override suspend fun booksOn(subject: String): List<AuthorBook> = quietly(emptyList()) {

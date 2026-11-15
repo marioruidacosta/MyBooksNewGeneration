@@ -8,6 +8,7 @@ import com.mcosta.mybooks.social.ActivityService
 import com.mcosta.mybooks.social.model.FeedBook
 import com.mcosta.mybooks.social.model.FeedEntry
 import com.mcosta.mybooks.data.authors.catalogTitleKey
+import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -75,7 +76,7 @@ internal class LikeToggler(private val activity: ActivityService, private val sc
  */
 internal fun shelvesFor(books: List<FeedBook>, library: List<Book>): Map<String, ReadingStatus> {
     val byIsbn = library.filter { it.isbn != null }.associate { it.isbn!! to it.status }
-    fun key(title: String, authors: String) = catalogTitleKey(title) + "|" + searchKey(authors.substringBefore(',').trim())
+    fun key(title: String, authors: String) = catalogTitleKey(title) + "|" + authorKey(authors.substringBefore(',').trim())
     val byTitle = library.associate { key(it.title, it.authors) to it.status }
     return books.mapNotNull { b ->
         val status = b.isbn?.let { byIsbn[it] } ?: byTitle[key(b.title, b.authors)]
@@ -85,7 +86,7 @@ internal fun shelvesFor(books: List<FeedBook>, library: List<Book>): Map<String,
 
 /** The user's copy of [book]: the same ISBN, or the same title (before any subtitle) and first author. */
 internal fun libraryBookFor(book: FeedBook, library: List<Book>): Book? {
-    fun key(title: String, authors: String) = catalogTitleKey(title) + "|" + searchKey(authors.substringBefore(',').trim())
+    fun key(title: String, authors: String) = catalogTitleKey(title) + "|" + authorKey(authors.substringBefore(',').trim())
     return book.isbn?.let { isbn -> library.firstOrNull { it.isbn == isbn } }
         ?: key(book.title, book.authors).let { k -> library.firstOrNull { key(it.title, it.authors) == k } }
 }
