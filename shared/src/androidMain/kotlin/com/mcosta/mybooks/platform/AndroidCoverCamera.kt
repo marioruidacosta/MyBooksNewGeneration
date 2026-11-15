@@ -12,8 +12,10 @@ import com.mcosta.mybooks.data.covers.AndroidPhotoShrinker
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileNotFoundException
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -21,11 +23,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * unregistered when the result arrives (results pending across activity recreation are lost).
  */
 class ActivityResults(private val activity: ComponentActivity) {
-    private val counter = AtomicInteger()
+    private val keys = ResultKeys()
 
     suspend fun <I, O> launch(contract: ActivityResultContract<I, O>, input: I): O {
         val result = CompletableDeferred<O>()
-        val key = "mybooks-result-${counter.incrementAndGet()}"
+        val key = keys.next()
         val launcher = activity.activityResultRegistry.register(key, contract) { result.complete(it) }
         try {
             launcher.launch(input)
@@ -34,6 +36,17 @@ class ActivityResults(private val activity: ComponentActivity) {
             launcher.unregister()
         }
     }
+}
+
+/**
+ * Keys for activity-result launches, unique across activity instances: after a rotation the registry still holds a
+ * result under the old instance's key, and a new instance reusing that key would hand the stale result to its next
+ * launch (a wrong cover, or a lost camera photo).
+ */
+internal class ResultKeys {
+    private val prefix = "mybooks-result-${UUID.randomUUID()}"
+    private val counter = AtomicInteger()
+    fun next(): String = "$prefix-${counter.incrementAndGet()}"
 }
 
 /** Opens the phone's camera app (no CAMERA permission needed) and returns the photo's bytes. */
@@ -66,8 +79,11 @@ class AndroidCoverPhotoPicker(private val activity: ComponentActivity, private v
     }
 }
 
-/** The bytes of a picked photo; throws with a message when it can't be opened (a cloud-only or deleted photo). */
-internal fun readPickedPhoto(resolver: ContentResolver, uri: Uri): ByteArray {
+/**
+ * The bytes of a picked photo; throws with a message when it can't be opened (a cloud-only or deleted photo) or is over
+ * [maxBytes] (reading a huge file whole could run out of memory, which would crash the app instead).
+ */
+internal fun readPickedPhoto(resolver: ContentResolver, uri: Uri, maxBytes: Int = MAX_PICKED_PHOTO_BYTES): ByteArray {
     val stream = try {
         resolver.openInputStream(uri)
     } catch (_: FileNotFoundException) {
@@ -75,8 +91,20 @@ internal fun readPickedPhoto(resolver: ContentResolver, uri: Uri): ByteArray {
     } catch (_: SecurityException) {
         null
     } ?: throw IllegalStateException("The photo couldn't be opened")
-    return stream.use { it.readBytes() }
+    return stream.use { input ->
+        val out = ByteArrayOutputStream()
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            if (out.size() + n > maxBytes) throw IllegalStateException("The photo is too large")
+            out.write(buffer, 0, n)
+        }
+        out.toByteArray()
+    }
 }
+
+internal const val MAX_PICKED_PHOTO_BYTES = 40 * 1024 * 1024
 
 /** Storage Access Framework pickers for backup export/import. */
 class AndroidDocumentPicker(private val activity: ComponentActivity, private val results: ActivityResults) : DocumentPicker {
