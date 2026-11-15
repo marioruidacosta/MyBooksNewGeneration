@@ -49,23 +49,25 @@ class RoundFourAndroidTest {
     private fun View.text(id: Int) = findViewById<TextView>(id).text.toString()
 
     @Test
-    fun widgetShowsTheBookItsProgressAndTheChallenge() {
+    fun widgetShowsHowManyBooksAndTheChallenge() {
         val book = Book(id = 7, title = "Princípio, meio, fim", authors = "Valeria Luiselli", status = ReadingStatus.READING, progressPercent = 26)
         val view = widget(ReadingSummary(listOf(book, book.copy(id = book.id + 1, title = "Other")), challenge = ChallengeProgress(2026, 25, 5)))
-        assertEquals("Reading · and 1 more", view.text(R.id.widget_label))
-        assertEquals("Princípio, meio, fim", view.text(R.id.widget_title))
-        assertEquals("Valeria Luiselli", view.text(R.id.widget_author))
-        assertEquals("26%", view.text(R.id.widget_percent))
-        assertEquals(26, view.findViewById<ProgressBar>(R.id.widget_progress).progress)
+        assertEquals("Reading · 2 books", view.text(R.id.widget_label))
         assertEquals("2026 challenge: 5 of 25 books", view.text(R.id.widget_challenge_text))
         assertEquals(20, view.findViewById<ProgressBar>(R.id.widget_challenge_progress).progress)
     }
 
     @Test
-    fun widgetWithNothingBeingReadAndNoGoal() {
+    fun widgetWithOneBookSaysReading() {
+        val book = Book(id = 7, title = "Stoner", status = ReadingStatus.READING)
+        assertEquals("Reading", widget(ReadingSummary(listOf(book), null)).text(R.id.widget_label))
+    }
+
+    @Test
+    fun nothingBeingReadShowsTheToReadCard() {
         val view = widget(ReadingSummary(emptyList(), null))
-        assertEquals("Nothing on the go", view.text(R.id.widget_title))
-        assertEquals(View.GONE, view.findViewById<View>(R.id.widget_progress_row).visibility)
+        assertEquals("Nothing on the go", view.text(R.id.widget_empty_title))
+        assertEquals("Pick your next book from To read", view.text(R.id.widget_empty_hint))
         assertEquals(View.GONE, view.findViewById<View>(R.id.widget_challenge).visibility)
     }
 

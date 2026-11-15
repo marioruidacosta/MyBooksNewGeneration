@@ -257,6 +257,22 @@ class ScreenshotTest {
         }
     }
 
+    /** One card of the home-screen widget's stack, with a generated cover (drawn as Android views, not Compose). */
+    private fun widgetCard(dark: Boolean) {
+        if (dark) RuntimeEnvironment.setQualifiers("+night")
+        val book = Book(id = 1, title = "Princípio, meio, fim", authors = "Valeria Luiselli", status = ReadingStatus.READING, progressPercent = 26)
+        val card = com.mcosta.mybooks.widget.cardFor(context, book, com.mcosta.mybooks.widget.generatedCoverBitmap(book.title, book.authors))
+            .apply(context, android.widget.FrameLayout(context))
+        val density = context.resources.displayMetrics.density
+        val width = (300 * density).toInt()
+        val height = (124 * density).toInt()
+        card.measure(android.view.View.MeasureSpec.makeMeasureSpec(width, android.view.View.MeasureSpec.EXACTLY), android.view.View.MeasureSpec.makeMeasureSpec(height, android.view.View.MeasureSpec.EXACTLY))
+        card.layout(0, 0, width, height)
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        card.draw(android.graphics.Canvas(bitmap))
+        File(out, "widget-card-${if (dark) "dark" else "light"}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
     /** Free classics after a search: one downloaded (Read), one to download. */
     private fun classics(dark: Boolean) {
         sampleLibrary()
@@ -622,6 +638,8 @@ class ScreenshotTest {
     }
 
     @Test fun coverPhotoMenuLight() = coverPhotoMenu(dark = false)
+    @Test fun widgetCardLight() = widgetCard(dark = false)
+    @Test fun widgetCardDark() = widgetCard(dark = true)
     @Test fun editFormLight() = editForm(dark = false)
     @Test fun editFormDark() = editForm(dark = true)
     @Test fun coverPhotoMenuDark() = coverPhotoMenu(dark = true)

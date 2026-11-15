@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
-/** The home-screen widget: the book being read with its progress, and this year's challenge. */
+/** The home-screen widget: a stack of cards for the books being read, and this year's challenge. */
 class ReadingWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         val pending = goAsync()
@@ -51,31 +51,19 @@ class ReadingWidget : AppWidgetProvider() {
             val ids = manager.getAppWidgetIds(ComponentName(context, ReadingWidget::class.java))
             if (ids.isEmpty()) return
             manager.updateAppWidget(ids, views(context, summary))
+            // The cards come from ReadingWidgetService: ask it to rebuild them from the library as it is now.
+            manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_stack)
         }
 
         fun views(context: Context, summary: ReadingSummary): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_reading)
-            val book = summary.current
-            if (book == null) {
-                views.setTextViewText(R.id.widget_label, "Reading")
-                views.setTextViewText(R.id.widget_title, "Nothing on the go")
-                views.setTextViewText(R.id.widget_author, "Pick your next book from To read")
-                views.setViewVisibility(R.id.widget_progress_row, View.GONE)
-                views.setOnClickPendingIntent(R.id.widget_book, open(context, Routes.shelf(com.mcosta.mybooks.domain.ReadingStatus.TO_READ), 1))
-            } else {
-                views.setTextViewText(R.id.widget_label, if (summary.alsoReading > 0) "Reading · and ${summary.alsoReading} more" else "Reading")
-                views.setTextViewText(R.id.widget_title, book.title)
-                views.setTextViewText(R.id.widget_author, book.authors)
-                val percent = book.progressPercent
-                if (percent != null) {
-                    views.setViewVisibility(R.id.widget_progress_row, View.VISIBLE)
-                    views.setProgressBar(R.id.widget_progress, 100, percent, false)
-                    views.setTextViewText(R.id.widget_percent, "$percent%")
-                } else {
-                    views.setViewVisibility(R.id.widget_progress_row, View.GONE)
-                }
-                views.setOnClickPendingIntent(R.id.widget_book, open(context, Routes.book(book.id), 1))
-            }
+            val count = summary.reading.size
+            views.setTextViewText(R.id.widget_label, if (count > 1) "Reading · $count books" else "Reading")
+            views.setRemoteAdapter(R.id.widget_stack, Intent(context, ReadingWidgetService::class.java))
+            views.setEmptyView(R.id.widget_stack, R.id.widget_empty)
+            // Each card fills in its book's route (cardFillIn); the template must be mutable to take it.
+            views.setPendingIntentTemplate(R.id.widget_stack, cardTemplate(context))
+            views.setOnClickPendingIntent(R.id.widget_empty, open(context, Routes.shelf(com.mcosta.mybooks.domain.ReadingStatus.TO_READ), 1))
             val challenge = summary.challenge
             if (challenge == null) {
                 views.setViewVisibility(R.id.widget_challenge, View.GONE)
@@ -91,6 +79,12 @@ class ReadingWidget : AppWidgetProvider() {
             }
             views.setOnClickPendingIntent(R.id.widget_root, open(context, null, 0))
             return views
+        }
+
+        private fun cardTemplate(context: Context): PendingIntent {
+            val intent = Intent(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            return PendingIntent.getActivity(context, 3, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
 
         private fun open(context: Context, route: String?, request: Int): PendingIntent {
