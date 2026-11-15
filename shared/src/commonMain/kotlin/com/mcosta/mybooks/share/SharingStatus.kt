@@ -7,6 +7,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +35,8 @@ class SharingStatus(
     private val onActivated: () -> Unit,
     /** Called after the server removed everything shared, with the user id. */
     private val onDisabled: suspend (owner: String) -> Unit,
+    /** The session it follows: an account library's own account only (another account signed in counts as signed out). */
+    private val session: Flow<SessionState> = social.auth.session,
 ) {
     private val _state = MutableStateFlow(SharingState())
     val state: StateFlow<SharingState> = _state.asStateFlow()
@@ -41,9 +44,9 @@ class SharingStatus(
 
     init {
         scope.launch {
-            social.auth.session.collect { session ->
+            session.collect { current ->
                 retry?.cancel()
-                if (session is SessionState.SignedIn) load(session.userId) else set(SharingState())
+                if (current is SessionState.SignedIn) load(current.userId) else set(SharingState())
             }
         }
     }

@@ -366,65 +366,22 @@ class FirstMergeTest {
     }
 
     @Test
-    fun signOutKeepLeavesLibraryClearsQueue() = runTest {
+    fun signOutKeepsLibraryQueueAndState() = runTest {
         val server = server()
         val phone = phone(server)
         phone.books.insert(book("x", "Os Maias"))
         phone.sync.start(OWNER)
         advanceUntilIdle()
         phone.queue.enqueue("books", "x", 0)
+        val state = phone.state.rows.toMap()
 
-        phone.sync.signOut(keepLibrary = true)
+        phone.sync.signOut()
 
+        // Kept for this account's next sign-in, which sends the queue and carries on from the stored cursor.
         assertEquals(listOf("x"), phone.live().map { it.uuid })
-        assertTrue(phone.queue.rows.value.isEmpty())
-        assertTrue(phone.state.rows.isEmpty())
+        assertEquals(listOf("x"), phone.queue.rows.value.map { it.rowId })
+        assertEquals(state, phone.state.rows.toMap())
         assertEquals(SyncStatus.Off, phone.sync.status.value)
-    }
-
-    @Test
-    fun signOutRemoveErasesLibrary() = runTest {
-        val server = server()
-        val phone = phone(server)
-        val photo = phone.covers.save(byteArrayOf(1, 2, 3))
-        phone.covers.put("stray.jpg", byteArrayOf(4))
-        val id = phone.books.insert(book("x", "Os Maias").copy(coverUrl = photo))
-        phone.quotes.insert(QuoteEntity(bookId = id, text = "Tudo isto é triste", page = 12, dateAdded = 0))
-        phone.bookmarks.insert(BookmarkEntity(bookId = id, position = "p", label = "cap. 3", dateAdded = 0))
-        phone.ebookFiles.store(id, EbookFormat.EPUB, Buffer().writeUtf8("epub"))
-        phone.ebooks.upsert(EbookEntity(id, EbookFormat.EPUB, "os-maias.epub", 4, 0))
-        // Two copies of one book with an ebook each: the combine leaves the older file on disk, with no record.
-        val twin1 = phone.books.insert(book("t1", "A Cidade e as Serras", isbn = "9789720049589"))
-        val twin2 = phone.books.insert(book("t2", "A Cidade e as Serras: romance"))
-        phone.addEbook(twin1, lastOpened = 100)
-        phone.addEbook(twin2, lastOpened = 900)
-        phone.challenges.upsert(ChallengeEntity(2026, 30))
-        phone.shareDao.upsert(
-            ShareStateEntity(
-                id, shareId = "x", owner = OWNER, hasBefore = false, beforeStatus = null, beforeRating = null,
-                beforeProgress = null, beforeReview = null, pending = false, excluded = false, deleted = false,
-            ),
-        )
-        phone.sync.start(OWNER)
-        advanceUntilIdle()
-
-        phone.sync.signOut(keepLibrary = false)
-
-        assertTrue(phone.books.rows.value.isEmpty())
-        assertTrue(phone.quotes.rows.value.isEmpty())
-        assertTrue(phone.bookmarks.rows.value.isEmpty())
-        assertTrue(phone.ebooks.rows.value.isEmpty())
-        assertTrue(phone.challenges.rows.value.isEmpty())
-        assertTrue(phone.shareDao.rows.value.isEmpty())
-        assertTrue(phone.queue.rows.value.isEmpty())
-        assertTrue(phone.state.rows.isEmpty())
-        assertFalse(phone.fs.exists(phone.covers.fileFor(photo)!!))
-        assertEquals(emptyList(), phone.fs.listOrNull(phone.covers.dir).orEmpty())
-        assertFalse(phone.ebookFiles.exists(id, EbookFormat.EPUB))
-        assertEquals(emptyList(), phone.fs.listOrNull("/ebooks".toPath()).orEmpty())
-        assertEquals(SyncStatus.Off, phone.sync.status.value)
-        // The cloud library is untouched.
-        assertEquals(2, server.liveBooks().size)
     }
 
     // ---- review fixes ----
@@ -529,17 +486,19 @@ class FirstMergeTest {
         phone.sync.start(OWNER)
         advanceUntilIdle()
 
-        phone.sync.signOut(keepLibrary = false)
+        phone.sync.signOut()
+        val calls = server.calls.size
         // Something starts sync again before the account is signed out (session observer, foreground).
         phone.sync.start(OWNER)
         advanceUntilIdle()
-        assertTrue(phone.books.rows.value.isEmpty())
+        assertEquals(calls, server.calls.size)
         assertEquals(SyncStatus.Off, phone.sync.status.value)
 
         phone.sync.signOutFinished()
+        server.push(listOf(book("d", "A Relíquia").toRow(null)))
         phone.sync.start(OWNER)
         advanceUntilIdle()
-        assertEquals(listOf("c"), phone.live().map { it.uuid })
+        assertEquals(listOf("c", "d"), phone.live().map { it.uuid })
     }
 
     @Test
@@ -630,7 +589,7 @@ class FirstMergeTest {
         assertEquals("C", phone.books.getById(id)!!.uuid)
         assertNull(phone.state.get("merged:$OWNER"))
 
-        phone.sync.signOut(keepLibrary = true)
+        phone.sync.signOut()
 
         assertEquals("C", phone.shareDao.get(id)!!.shareId)
         val social = FakeSocial()
@@ -653,13 +612,13 @@ class FirstMergeTest {
     }
 
     @Test
-    fun startRacingSignOutCannotRunAfterErase() = runTest {
+    fun startRacingSignOutCannotRunAfterIt() = runTest {
         val server = server()
         server.push(listOf(book("c", "Os Maias").toRow(null)))
         val dispatcher = HookDispatcher(StandardTestDispatcher(testScheduler))
         val phone = Phone(server, CoroutineScope(dispatcher + engineJob)) { testScheduler.currentTime }
         // A start (another thread) passed the sign-out check; the whole sign-out runs before it goes on.
-        dispatcher.hook = { launch(start = CoroutineStart.UNDISPATCHED) { phone.sync.signOut(keepLibrary = false) } }
+        dispatcher.hook = { launch(start = CoroutineStart.UNDISPATCHED) { phone.sync.signOut() } }
 
         phone.sync.start(OWNER)
         advanceUntilIdle()

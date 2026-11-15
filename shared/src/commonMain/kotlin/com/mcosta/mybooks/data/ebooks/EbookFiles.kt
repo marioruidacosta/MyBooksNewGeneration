@@ -37,11 +37,11 @@ class EbookFiles(
 
     fun delete(bookId: Long, format: EbookFormat) = fs.delete(path(bookId, format), mustExist = false)
 
-    /** Whether the folder holds any file (what signing out with "Remove" would delete). */
-    suspend fun any(): Boolean = withContext(io) { fs.listOrNull(dir)?.isNotEmpty() == true }
-
-    /** Every file in the folder, with or without a book pointing at it (signing out with "Remove"). */
-    suspend fun deleteAll() = withContext(io) {
-        fs.listOrNull(dir)?.forEach { fs.deleteRecursively(it) }
+    /**
+     * Whether the folder holds any ebook file (what signing out with "Remove" would delete). Folders in it don't count:
+     * the no-account library's folder holds the accounts' ebook folders.
+     */
+    suspend fun any(): Boolean = withContext(io) {
+        fs.listOrNull(dir)?.any { fs.metadataOrNull(it)?.isRegularFile == true } == true
     }
 }

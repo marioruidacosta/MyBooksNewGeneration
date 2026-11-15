@@ -3,6 +3,7 @@ package com.mcosta.mybooks.ui.social
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mcosta.mybooks.data.covers.PhotoShrinker
+import com.mcosta.mybooks.library.LibrarySessions
 import com.mcosta.mybooks.share.SharingStatus
 import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.social.model.Person
@@ -76,6 +77,8 @@ class AccountViewModel(
     /** Cloud sync of the library; null where it isn't set up (sign out then never asks about the library). */
     private val sync: LibrarySync? = null,
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    /** Switches libraries on sign-out; null in tests without libraries (signing out then only ends the session). */
+    private val sessions: LibrarySessions<*>? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(AccountState())
     val state: StateFlow<AccountState> = _state.asStateFlow()
@@ -157,21 +160,20 @@ class AccountViewModel(
             return
         }
         launchAction {
-            services.auth.signOut()
+            // Nothing to lose by keeping it: the account's library stays on the phone, and the phone shows its own.
+            leave(keepLibrary = true) { services.auth.signOut() }
             _state.update { AccountState(signedOut = true) }
         }
     }
 
-    /** The answer to "Keep a copy of your library on this device?". */
+    /**
+     * The answer to "Keep a copy of your library on this device?": the phone then shows its own library, and "Remove"
+     * deletes the account's.
+     */
     fun signOut(keepLibrary: Boolean) = launchAction {
         preparing?.cancel()
         _state.update { it.copy(askKeepLibrary = false) }
-        try {
-            sync?.signOut(keepLibrary)
-            services.auth.signOut()
-        } finally {
-            sync?.signOutFinished()
-        }
+        leave(keepLibrary) { services.auth.signOut() }
         _state.update { AccountState(signedOut = true) }
     }
 
@@ -187,17 +189,24 @@ class AccountViewModel(
         _state.update { it.copy(askKeepLibrary = false, preparingSignOut = false) }
     }
 
-    /** Deletes the community account; the library stays on this phone, as after "Keep" at sign-out. */
+    /**
+     * Deletes the community account. As after "Keep" at sign-out, the phone shows its own library, and the account's
+     * stays on the phone.
+     */
     fun deleteAccount() = launchAction {
-        // The session ending next is asked for, not an expiry.
-        sync?.signOutRequested()
+        leave(keepLibrary = true) { services.profiles.deleteAccount() }
+        _state.update { AccountState(deleted = true) }
+    }
+
+    /** Ends the session with [signOutOfServer], through [sessions] (which switches libraries) where there is one. */
+    private suspend fun leave(keepLibrary: Boolean, signOutOfServer: suspend () -> Unit) {
+        if (sessions != null) return sessions.signOut(keepLibrary, signOutOfServer)
+        sync?.signOut()
         try {
-            services.profiles.deleteAccount()
-            sync?.signOut(keepLibrary = true)
+            signOutOfServer()
         } finally {
             sync?.signOutFinished()
         }
-        _state.update { AccountState(deleted = true) }
     }
 
     fun dismissMessage() = _state.update { it.copy(message = null) }

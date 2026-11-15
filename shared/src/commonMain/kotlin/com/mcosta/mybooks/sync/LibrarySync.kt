@@ -89,7 +89,7 @@ class LibrarySync(
 
     private val coverSync = coverStore?.let {
         CoverSync(api, it, db.state, clock) { write ->
-            // Written between passes, and never once the session has stopped (sign-out erases next).
+            // Written between passes, and never once the session has stopped (signing out).
             passLock.withLock {
                 currentCoroutineContext().ensureActive()
                 write()
@@ -124,7 +124,7 @@ class LibrarySync(
     @Volatile
     private var signingOut = false
 
-    /** The account last [start]ed: whose unfinished merge [signOut] settles. */
+    /** The account last [start]ed: whose unfinished merge's share moves [signOut] runs. */
     @Volatile
     private var lastOwner: String? = null
 
@@ -177,7 +177,7 @@ class LibrarySync(
         coverSync?.retryUploads()
         // A sign-out on another thread may have set its latch after the check above. Session written, then latch read
         // here; latch written, then session read (in stop) by signOut: one of the two sees the other, so this session
-        // never runs past the erase. Cancelled before it starts, a lazy job never runs.
+        // never runs past the sign-out. Cancelled before it starts, a lazy job never runs.
         if (signingOut) {
             lifecycle {
                 if (session === next) {
@@ -211,11 +211,10 @@ class LibrarySync(
     }
 
     /**
-     * The account was signed out. When the user asked for it ([signOut], or [signOutRequested] before deleting the
-     * account), sync is off. Otherwise the session expired or was revoked: sync waits in [SyncStatus.SignInAgain],
-     * still queueing changes, with the queue and sync state kept, and the next sign-in carries on (no new merge for the
-     * same account). That includes a session that expired while the app was closed: this device had synced (a stored
-     * cursor) and nobody signed out.
+     * The account was signed out. When the user asked for it ([signOut]), sync is off. Otherwise the session expired
+     * or was revoked: sync waits in [SyncStatus.SignInAgain], still queueing changes, with the queue and sync state
+     * kept, and the next sign-in carries on (no new merge for the same account). That includes a session that expired
+     * while the app was closed: this device had synced (a stored cursor) and nobody signed out.
      */
     suspend fun sessionEnded() {
         val syncedBefore = db.state.get(SEQ_KEY) != null
@@ -226,31 +225,22 @@ class LibrarySync(
     }
 
     /**
-     * The user is about to sign out other than through [signOut] (deleting the account): the session ending isn't an
-     * expiry. Lasts until [signOutFinished]; [start] does nothing meanwhile.
-     */
-    fun signOutRequested() {
-        signingOut = true
-    }
-
-    /**
-     * Signing out: sync stops, and the queue and sync state are cleared (signing in again, to any account, runs the
-     * first sign-in merge). [keepLibrary] false also erases the library: books, quotes, ebooks, bookmarks, challenges,
-     * share state, cover photos and ebook files. The cloud library is untouched either way.
+     * Signing out (or deleting the account): sync stops, after its last pass. The library, its queue and its sync state
+     * stay as they are: unsent changes go at this account's next sign-in, and that sign-in carries on where this one
+     * stopped. (Removing the library is [com.mcosta.mybooks.library.Libraries.remove]'s, once it's closed.)
      * From here until [signOutFinished], [start] does nothing: a start meanwhile (the session observer, the app coming
-     * back to the foreground) would sync, and after Remove pull, the library being signed out of.
+     * back to the foreground) would sync the library being signed out of.
      */
-    suspend fun signOut(keepLibrary: Boolean) {
+    suspend fun signOut() {
         signingOut = true
         stop()
         val owner = lastOwner
         // After the stopped session's last pass.
         passLock.withLock {
-            // Any session that slipped past the latch is stopped too, before anything is erased.
+            // Any session that slipped past the latch is stopped too.
             stop()
-            // An unfinished first merge: its recorded share moves would go with the sync state, leaving books under their
-            // old public ids. Outside the transaction: the share state takes its own lock.
-            if (keepLibrary && owner != null) {
+            // An unfinished first merge: its recorded share moves run now, so no book waits under its old public id.
+            if (owner != null) {
                 try {
                     firstMerge.replayShareMoves(owner)
                 } catch (e: CancellationException) {
@@ -259,29 +249,13 @@ class LibrarySync(
                     // Best effort: signing out goes on.
                 }
             }
-            recorder.transaction {
-                db.queue.clear()
-                db.state.clear()
-                if (keepLibrary) return@transaction
-                db.ebooks.getAllAny().forEach { db.ebooks.delete(it.bookId) }
-                db.quotes.getAllAny().forEach { db.quotes.delete(it.id) }
-                db.bookmarks.getAllAny().forEach { db.bookmarks.delete(it.id) }
-                db.challenges.getAllAny().forEach { db.challenges.delete(it.year) }
-                db.shareState?.let { shares -> shares.all().forEach { shares.delete(it.bookId) } }
-                for (book in db.books.getAllAny()) {
-                    db.books.delete(book.id)
-                }
-            }
         }
-        // Every file in the folders, not just those with a record: a downloaded photo, a combined twin's ebook.
-        if (!keepLibrary) coverStore?.deleteAll()
-        if (!keepLibrary) ebookFiles?.deleteAll()
     }
 
     /**
-     * Whether this device's library belongs to a synced account: an account's first sign-in merge was done here and
-     * no sign-out has cleared it since. True from the app's start, before the stored session is restored, so changes
-     * made meanwhile (deletions included) are queued for that account.
+     * Whether this library belongs to a synced account: its account's first sign-in merge was done here. True from the
+     * app's start, before the stored session is restored, so changes made meanwhile (deletions included) are queued for
+     * that account.
      */
     internal suspend fun belongsToAnAccount(): Boolean = db.state.anyMerged()
 
@@ -343,7 +317,7 @@ class LibrarySync(
             now.tryReceive()
             val waiting = session.takeWaiters()
             val error = passLock.withLock {
-                // Stopped while waiting for the lock (signing out): no pass after the erase.
+                // Stopped while waiting for the lock (signing out): no pass after it.
                 currentCoroutineContext().ensureActive()
                 pass(session)
             }

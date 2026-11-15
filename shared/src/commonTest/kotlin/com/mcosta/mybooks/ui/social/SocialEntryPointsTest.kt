@@ -2,6 +2,7 @@
 
 package com.mcosta.mybooks.ui.social
 
+import com.mcosta.mybooks.library.LibraryId
 import com.mcosta.mybooks.data.FakeShareStateDao
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
@@ -39,7 +40,7 @@ class SocialEntryPointsTest {
 
     @Test
     fun sharingNullWhenSocialNotConfigured() = runTest {
-        assertNull(sharingFor(null, FakeShareStateDao(), backgroundScope) { null })
+        assertNull(sharingFor(LibraryId.Account("ana"), null, FakeShareStateDao(), backgroundScope) { null })
     }
 
     /** The pieces wired together: a change is uploaded 2 s later once the signed-in user shares. */
@@ -49,7 +50,7 @@ class SocialEntryPointsTest {
         val ana = fake.addUser("ana")
         fake.signInAs(ana)
         val book = Book(id = 1, title = "Dune", status = ReadingStatus.READING)
-        val sharing = sharingFor(fake.services, FakeShareStateDao(), backgroundScope) { book }!!
+        val sharing = sharingFor(LibraryId.Account(ana), fake.services, FakeShareStateDao(), backgroundScope) { book }!!
         runCurrent()
         assertEquals(ana, sharing.status.state.value.activeOwner)
         sharing.tracker.changed(null, book)

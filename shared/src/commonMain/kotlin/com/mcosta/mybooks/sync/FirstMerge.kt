@@ -40,7 +40,7 @@ internal fun mergeSharesKey(owner: String) = "merge-shares:$owner"
  * - A device with no live books does the same, minus the batches.
  *
  * Every write goes through the RAW DAOs: nothing here is stamped, recorded or published. Ebook files are never deleted
- * (an ebook that loses to its twin's keeps its file; "Remove" at sign-out erases the whole folder).
+ * (an ebook that loses to its twin's keeps its file; "Remove" at sign-out deletes the library's whole folder).
  */
 class FirstMerge(
     private val api: SyncApi,

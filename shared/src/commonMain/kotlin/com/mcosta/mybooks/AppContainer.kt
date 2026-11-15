@@ -25,6 +25,7 @@ import com.mcosta.mybooks.library.DeviceServices
 import com.mcosta.mybooks.library.Libraries
 import com.mcosta.mybooks.library.LibraryFiles
 import com.mcosta.mybooks.library.LibraryId
+import com.mcosta.mybooks.library.LibrarySessions
 import com.mcosta.mybooks.library.LibrarySpace
 import com.mcosta.mybooks.share.Publisher
 import com.mcosta.mybooks.share.ShareLock
@@ -42,13 +43,13 @@ import com.mcosta.mybooks.sync.SyncStatus
 import com.russhwolf.settings.Settings
 import io.ktor.client.engine.HttpClientEngine
 import kotlin.time.Clock
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okio.FileSystem
 import okio.Path
@@ -147,16 +148,8 @@ class AppContainer(
 
     /** The libraries on this phone; one is open at a time. */
     val libraries: Libraries<LibrarySpace> = Libraries(
-        factory = { id ->
-            val space = LibrarySpace(id, openDatabase(id), libraryFiles, device, applicationScope)
-            try {
-                space.open()
-            } catch (e: Throwable) {
-                if (e !is CancellationException) space.close()
-                throw e
-            }
-            space
-        },
+        // Built only: Room opens the file at the first query, and the library's preferences load in open().
+        factory = { id -> LibrarySpace(id, openDatabase(id), libraryFiles, device, applicationScope) },
         deviceSettings = preferences,
         scope = applicationScope,
         delete = { id ->
@@ -165,8 +158,21 @@ class AppContainer(
         },
     )
 
-    /** Opens the library active at the last launch; call once, before anything else uses the container. */
-    suspend fun start() = libraries.start()
+    /** Switches libraries with the session (each account its own library); null without the community. */
+    val sessions: LibrarySessions<LibrarySpace>? = social?.let { LibrarySessions(libraries, it.auth.session, applicationScope) }
+
+    /**
+     * Picks the library active at the last launch, at once (no database query: it may run on the main thread); call
+     * once, before anything else uses the container. Then, in the background, that library's preferences load, and
+     * only then does the session decide which library is shown and start its sync.
+     */
+    suspend fun start() {
+        libraries.start()
+        applicationScope.launch {
+            libraries.openActive()
+            sessions?.follow()
+        }
+    }
 
     private val space: LibrarySpace get() = libraries.active.value
 
@@ -210,7 +216,7 @@ class AppContainer(
     val readingSummaries: Flow<ReadingSummary>
         get() = libraries.active.flatMapLatest { it.readingSummaries }
 
-    /** The library kept in step with the cloud while signed in; null without the community. See [LibrarySpace.sync]. */
+    /** The active library's sync: null for the no-account library, and without the community. See [LibrarySpace.sync]. */
     val sync: LibrarySync? get() = space.sync
 
     /**
@@ -218,9 +224,7 @@ class AppContainer(
      * user whose sync stopped (the session had expired, or signing out failed) gets it started again.
      */
     suspend fun syncNow() {
-        val sync = sync ?: return
-        (social?.auth?.session?.value as? SessionState.SignedIn)?.let { sync.start(it.userId) }
-        sync.refresh()
+        sessions?.syncNow()
     }
 }
 
@@ -235,32 +239,38 @@ internal fun socialFor(
 internal class Sharing(val tracker: ShareTracker, val status: SharingStatus, val publisher: Publisher)
 
 /**
- * Activity sharing for [social], or null without the community. [loadBook] reads a book from the library; [uuidOf] gives a
- * book's uuid, also its public id.
+ * Activity sharing for an account's library [id], or null for the no-account library (it never publishes) and without
+ * the community. It follows [id]'s own session only: another account signed in counts as signed out. [loadBook] reads a
+ * book from the library; [uuidOf] gives a book's uuid, also its public id.
  */
 internal fun sharingFor(
+    id: LibraryId,
     social: SocialServices?,
     dao: ShareStateDao,
     scope: CoroutineScope,
     uuidOf: suspend (Long) -> String? = { null },
     loadBook: suspend (Long) -> Book?,
 ): Sharing? {
-    if (social == null) return null
+    if (social == null || id !is LibraryId.Account) return null
+    val ownSession = social.auth.session.map { session ->
+        if (session is SessionState.SignedIn && session.userId != id.userId) SessionState.SignedOut else session
+    }
     lateinit var status: SharingStatus
     val activeOwner = { status.state.value.activeOwner }
     val lock = ShareLock()
     val publisher = Publisher(dao, loadBook, social.activity, activeOwner, scope, lock = lock)
     val tracker = ShareTracker(dao, activeOwner, onPending = publisher::requestSync, lock = lock, uuidOf = uuidOf)
-    status = SharingStatus(social, scope, onActivated = publisher::requestSync, onDisabled = tracker::forgetOwner)
+    status = SharingStatus(social, scope, onActivated = publisher::requestSync, onDisabled = tracker::forgetOwner, session = ownSession)
     return Sharing(tracker, status, publisher)
 }
 
 /**
- * Library sync for [social], or null without the community (or where it has no sync endpoint). It runs while someone is
- * signed in: started on [SessionState.SignedIn]. Signed out, it stops if the user asked, else it waits for them to
- * sign in again ([LibrarySync.sessionEnded]). [db] must hold the RAW DAOs (see [LibrarySpace.sync]).
+ * Library sync for an account's library [id], or null for the no-account library (it never syncs) and without the
+ * community (or where it has no sync endpoint). [LibrarySessions] starts and stops it with the session. [db] must hold
+ * the RAW DAOs (see [LibrarySpace.sync]).
  */
 internal fun syncFor(
+    id: LibraryId,
     social: SocialServices?,
     db: SyncDatabase,
     recorder: SyncRecorder,
@@ -270,25 +280,17 @@ internal fun syncFor(
     coverStore: CoverStore?,
     ebookFiles: EbookFiles?,
 ): LibrarySync? {
+    if (id !is LibraryId.Account) return null
     val api = social?.sync ?: return null
     val applier = RemoteApplier(db, recorder, coverStore, shares, ebookFiles)
-    val sync = LibrarySync(api, db, recorder, applier, clock, scope, shares = shares, coverStore = coverStore, ebookFiles = ebookFiles)
-    scope.launch {
-        social.auth.session.collect { session ->
-            when (session) {
-                is SessionState.SignedIn -> sync.start(session.userId)
-                SessionState.SignedOut -> sync.sessionEnded()
-                SessionState.Loading -> Unit
-            }
-        }
-    }
-    return sync
+    return LibrarySync(api, db, recorder, applier, clock, scope, shares = shares, coverStore = coverStore, ebookFiles = ebookFiles)
 }
 
 /**
- * Whether local changes are queued for upload: while [sync] runs for a signed-in user, while it waits for them to
- * sign in again (an expired session: its changes go then), and whenever this device's library belongs to a synced
- * account (at start, before the stored session is restored). Not after the user signed out: the library kept is local.
+ * Whether an account library's local changes are queued for upload: while [sync] runs for its account, while it waits
+ * for the account to sign in again (an expired session: its changes go then), and whenever the library has joined its
+ * account's cloud library (at start, before the stored session is restored). Never without sync: the no-account
+ * library never queues.
  */
 internal suspend fun syncRecording(sync: LibrarySync?): Boolean =
     sync != null && (sync.status.value != SyncStatus.Off || sync.belongsToAnAccount())

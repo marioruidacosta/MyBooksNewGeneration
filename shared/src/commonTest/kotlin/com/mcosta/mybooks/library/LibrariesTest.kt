@@ -1,6 +1,7 @@
 package com.mcosta.mybooks.library
 
 import com.mcosta.mybooks.data.Preferences
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,7 +19,17 @@ class LibrariesTest {
         }
     }
 
-    private class FakeSpace(override val id: LibraryId, private val onClose: (FakeSpace) -> Unit) : LibraryHandle {
+    private class FakeSpace(
+        override val id: LibraryId,
+        private val openFails: Boolean = false,
+        private val onClose: (FakeSpace) -> Unit,
+    ) : LibraryHandle {
+        var opened = false
+        override suspend fun open() {
+            if (openFails) error("can't read it")
+            opened = true
+        }
+
         var closed = false
         override suspend fun close() {
             onClose(this)
@@ -31,13 +42,14 @@ class LibrariesTest {
     private val log = mutableListOf<String>()
     private val deleted = mutableListOf<LibraryId>()
     private var failing: LibraryId? = null
+    private var failingOpen: LibraryId? = null
     private lateinit var libraries: Libraries<FakeSpace>
 
     private fun libraries(scope: kotlinx.coroutines.CoroutineScope) = Libraries(
         factory = { id ->
             if (id == failing) error("can't open")
             opened += id
-            FakeSpace(id) { log += "close ${it.id.key} while ${libraries.active.value.id.key} active" }
+            FakeSpace(id, openFails = id == failingOpen) { log += "close ${it.id.key} while ${libraries.active.value.id.key} active" }
         },
         deviceSettings = settings,
         scope = scope,
@@ -52,6 +64,7 @@ class LibrariesTest {
         assertEquals(LibraryId.Local, local.id)
 
         libraries.activate(LibraryId.Account("a"))
+        runCurrent()
 
         assertEquals(LibraryId.Account("a"), libraries.active.value.id)
         assertTrue(local.closed)
@@ -142,5 +155,54 @@ class LibrariesTest {
         libraries.remove(LibraryId.Account("a"))
 
         assertEquals(listOf<LibraryId>(LibraryId.Account("a")), deleted)
+    }
+
+    @Test
+    fun aHeldLibraryClosesOnlyOnceReleased() = runTest {
+        val libraries = libraries(backgroundScope)
+        libraries.start()
+        val local = libraries.active.value
+        val screen = libraries.hold(local)!!
+
+        libraries.activate(LibraryId.Account("a"))
+        runCurrent()
+
+        assertFalse(local.closed)
+        // No longer active: a screen composing it now gets nothing, and shows the new one instead.
+        assertEquals(null, libraries.hold(local))
+        screen.release()
+        screen.release()
+        runCurrent()
+        assertTrue(local.closed)
+    }
+
+    @Test
+    fun activateOpensTheNewLibraryBeforeSwapping() = runTest {
+        val libraries = libraries(backgroundScope)
+        libraries.start()
+        failingOpen = LibraryId.Account("a")
+
+        assertFailsWith<IllegalStateException> { libraries.activate(LibraryId.Account("a")) }
+        assertEquals(LibraryId.Local, libraries.active.value.id)
+
+        libraries.activate(LibraryId.Account("b"))
+        assertTrue(libraries.active.value.opened)
+    }
+
+    @Test
+    fun startDoesNotOpenAndOpenActiveFallsBackToLocal() = runTest {
+        settings.values["library.active"] = "a"
+        failingOpen = LibraryId.Account("a")
+        val libraries = libraries(backgroundScope)
+
+        libraries.start()
+        assertEquals(LibraryId.Account("a"), libraries.active.value.id)
+        assertFalse(libraries.active.value.opened)
+
+        libraries.openActive()
+
+        assertEquals(LibraryId.Local, libraries.active.value.id)
+        assertTrue(libraries.active.value.opened)
+        assertTrue(deleted.isEmpty())
     }
 }

@@ -14,6 +14,9 @@ import com.mcosta.mybooks.data.lookup.lookupHttpClient
 import com.mcosta.mybooks.data.releases.ReleasesClient
 import com.mcosta.mybooks.data.releases.ReleasesRepository
 import com.mcosta.mybooks.data.suggestions.SubjectSearch
+import com.mcosta.mybooks.social.FakeSocial
+import com.mcosta.mybooks.social.SocialServices
+import com.mcosta.mybooks.sync.SyncTable
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
@@ -26,6 +29,7 @@ import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,13 +55,13 @@ class LibrarySpaceTest {
 
     private val devicePrefs = MemoryPreferences()
 
-    private val device = run {
+    private fun device(social: SocialServices? = null) = run {
         val http = lookupHttpClient(MockEngine { respondError(HttpStatusCode.NotFound) }, "MyBooks test")
         DeviceServices(
             lookup = LookupChain(emptyList()),
             authorBooks = GoogleBooksAuthorSearch(http, apiKey = ""),
             subjects = SubjectSearch(http, apiKey = ""),
-            social = null,
+            social = social,
             releases = ReleasesRepository(ReleasesClient(http), FileSystem.SYSTEM, files.filesDir / "releases"),
             events = ReadingEvents(),
             preferences = devicePrefs,
@@ -65,7 +69,7 @@ class LibrarySpaceTest {
         )
     }
 
-    private suspend fun open(id: LibraryId, database: AppDatabase) =
+    private suspend fun open(id: LibraryId, database: AppDatabase, device: DeviceServices = device()) =
         LibrarySpace(id, database, files, device, scope).also { it.open() }
 
     @After
@@ -101,5 +105,38 @@ class LibrarySpaceTest {
         space.pinnedTags.setPinned("Essays", true)
         assertEquals("Poetry\nEssays", devicePrefs.values["home.pinnedTags"])
         space.close()
+    }
+
+    @Test
+    fun noAccountLibraryNeverSyncsOrShares() = runTest(timeout = 30.seconds) {
+        val social = FakeSocial()
+        social.signInAs(social.addUser("ana"))
+        val withCommunity = device(social.services)
+        val local = open(LibraryId.Local, createDatabase(Room.inMemoryDatabaseBuilder<AppDatabase>(context), AndroidSQLiteDriver()), withCommunity)
+        val accountLibrary = open(account, openLibraryDatabase(context, account), withCommunity)
+
+        assertNull(local.sync)
+        assertNull(local.sharingStatus)
+        assertEquals(false, local.syncRecorder.enabled())
+        assertNotNull(accountLibrary.sync)
+        assertNotNull(accountLibrary.sharingStatus)
+        local.close()
+        accountLibrary.close()
+    }
+
+    @Test
+    fun aPreferenceChangedJustBeforeClosingIsStillQueued() = runTest(timeout = 30.seconds) {
+        val social = FakeSocial()
+        val database = openLibraryDatabase(context, account)
+        // Joined its account's cloud library earlier: changes are queued even before the session is back.
+        database.syncStateDao().set("merged:${account.userId}", "1")
+        val space = open(account, database, device(social.services))
+
+        space.pinnedTags.setPinned("Poetry", true)
+        space.close()
+
+        val again = openLibraryDatabase(context, account)
+        assertEquals(listOf(SyncTable.PREFS.wire to "home.pinnedTags"), again.syncQueueDao().batch(10).map { it.table to it.rowId })
+        again.close()
     }
 }

@@ -233,7 +233,7 @@ class AccountViewModelTest : MainDispatcherTest() {
     }
 
     @Test
-    fun signOutKeepLeavesLibraryClearsQueue() = runTest {
+    fun signOutKeepLeavesLibraryAndItsSyncState() = runTest {
         fake.signInAs(ana)
         val library = syncedLibrary()
         val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
@@ -246,8 +246,8 @@ class AccountViewModelTest : MainDispatcherTest() {
         assertTrue(vm.state.value.signedOut)
         assertFalse(vm.state.value.askKeepLibrary)
         assertEquals(listOf("x"), library.books.rows.value.values.map { it.uuid })
-        assertTrue(library.queue.rows.value.isEmpty())
-        assertTrue(library.state.rows.isEmpty())
+        // Kept for the next sign-in of this account (the phone shows its own library meanwhile).
+        assertTrue(library.state.rows.isNotEmpty())
         assertEquals(SyncStatus.Off, library.sync.status.value)
         // Sign-out is over: sync can start again (the next sign-in).
         library.sync.start(ana)
@@ -255,7 +255,7 @@ class AccountViewModelTest : MainDispatcherTest() {
     }
 
     @Test
-    fun signOutRemoveErasesLibrary() = runTest {
+    fun signOutRemoveSignsOutAndStopsSync() = runTest {
         fake.signInAs(ana)
         val library = syncedLibrary()
         val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
@@ -266,8 +266,6 @@ class AccountViewModelTest : MainDispatcherTest() {
 
         assertEquals(SessionState.SignedOut, fake.auth.session.value)
         assertTrue(vm.state.value.signedOut)
-        assertTrue(library.books.rows.value.isEmpty())
-        assertTrue(library.queue.rows.value.isEmpty())
         assertEquals(SyncStatus.Off, library.sync.status.value)
     }
 
@@ -301,7 +299,6 @@ class AccountViewModelTest : MainDispatcherTest() {
         // Still the user's choice.
         vm.signOut(keepLibrary = false)
         assertTrue(vm.state.value.signedOut)
-        assertTrue(library.books.rows.value.isEmpty())
     }
 
     @Test

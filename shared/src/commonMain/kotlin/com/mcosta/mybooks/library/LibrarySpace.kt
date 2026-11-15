@@ -40,6 +40,7 @@ import com.mcosta.mybooks.sync.SyncingQuoteDao
 import com.mcosta.mybooks.syncFor
 import com.mcosta.mybooks.syncRecording
 import com.mcosta.mybooks.ui.today
+import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -84,10 +85,14 @@ class LibrarySpace(
     /** This library's background work (sync, sharing, cover searches…): cancelled when it closes. */
     private val spaceScope = CoroutineScope(scope.coroutineContext + job)
 
+    /** Pinned tags' and "Not interested" changes being recorded: [close] lets them finish rather than cancel them. */
+    private val prefJob: CompletableJob = SupervisorJob(job)
+    private val prefScope = CoroutineScope(scope.coroutineContext + prefJob)
+
     /** Cover photos, in this library's folder. */
     val coverStore = CoverStore(files.fileSystem, files.coversDir(id))
 
-    /** Ebook files, in this library's folder. Never `deleteAll()` the no-account library's: it holds accounts' folders. */
+    /** Ebook files, in this library's folder (the no-account library's also holds the accounts' folders). */
     val ebookFiles = EbookFiles(files.fileSystem, files.ebooksDir(id))
 
     private val writeTransaction: suspend (suspend () -> Unit) -> Unit =
@@ -112,18 +117,18 @@ class LibrarySpace(
         if (id is LibraryId.Account) DbPreferences(database.syncStateDao(), spaceScope) else null
 
     private val sharing: Sharing? = sharingFor(
-        device.social, database.shareStateDao(), spaceScope,
+        id, device.social, database.shareStateDao(), spaceScope,
         uuidOf = { bookId -> database.bookDao().getById(bookId)?.uuid },
     ) { bookId -> repository.getBook(bookId) }
 
-    /** Whether the signed-in user shares their reading activity; null without the community. */
+    /** Whether this account shares its reading activity; null for the no-account library (it never publishes) and without the community. */
     val sharingStatus: SharingStatus? = sharing?.status
 
     /** Books marked "Not interested" in suggestions. */
-    val hiddenSuggestions = HiddenSuggestions(libraryPrefs ?: device.preferences, prefChanged, spaceScope)
+    val hiddenSuggestions = HiddenSuggestions(libraryPrefs ?: device.preferences, prefChanged, prefScope)
 
     /** Tags shown as rows on the home screen. */
-    val pinnedTags = PinnedTags(libraryPrefs ?: device.preferences, prefChanged, spaceScope)
+    val pinnedTags = PinnedTags(libraryPrefs ?: device.preferences, prefChanged, prefScope)
 
     /** Yearly reading challenges. */
     val challenges = ChallengeRepository(SyncingChallengeDao(database.challengeDao(), syncRecorder))
@@ -178,14 +183,16 @@ class LibrarySpace(
         }
 
     /**
-     * The library kept in step with the cloud while signed in; null without the community. Started and stopped with the
-     * session. Declared last: starting it runs work on other threads, which must find the rest of the library built.
+     * This account library's sync; null for the no-account library (it never syncs) and without the community.
+     * [LibrarySessions] starts it, for this library's own account, once the library is active and open. Declared last:
+     * starting it runs work on other threads, which must find the rest of the library built.
      *
      * WARNING: the [SyncDatabase] must hold the RAW DAOs (`database.bookDao()` …), never the `Syncing*` wrappers. They
      * would compile, but every pulled row would be stamped and queued again (sent back to the server, forever) and,
      * through the repository, published as this phone's activity.
      */
-    val sync: LibrarySync? = syncFor(
+    override val sync: LibrarySync? = syncFor(
+        id,
         device.social,
         SyncDatabase(
             books = database.bookDao(),
@@ -201,8 +208,8 @@ class LibrarySpace(
         syncRecorder, spaceScope, device.clock, sharing?.tracker, coverStore, ebookFiles,
     )
 
-    /** Loads this library's preferences; call once, before it's used. */
-    suspend fun open() {
+    /** Loads this library's preferences (its first database query); call once, off the main thread, before it's used. */
+    override suspend fun open() {
         val prefs = libraryPrefs ?: return
         prefs.load()
         pinnedTags.reload()
@@ -210,11 +217,14 @@ class LibrarySpace(
     }
 
     /**
-     * Stops its sync and background work (waiting for them to end), writes its pending preferences, then closes its
+     * Stops its sync, lets the preference changes being recorded finish (their queue entries go with the database),
+     * stops its other background work (waiting for it to end), writes its pending preferences, then closes its
      * database. Call it from outside this library's own work, which it waits for.
      */
     override suspend fun close() {
         sync?.stop()
+        prefJob.complete()
+        prefJob.join()
         job.cancelAndJoin()
         libraryPrefs?.flush()
         database.close()
