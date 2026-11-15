@@ -52,6 +52,7 @@ import com.mcosta.mybooks.ui.social.ActivityScreen
 import com.mcosta.mybooks.ui.social.ActivityViewModel
 import com.mcosta.mybooks.ui.social.FriendsScreen
 import com.mcosta.mybooks.ui.social.FriendsViewModel
+import com.mcosta.mybooks.ui.social.OPEN_FAILED
 import com.mcosta.mybooks.ui.social.ProfileScreen
 import com.mcosta.mybooks.ui.social.ProfileViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -248,6 +249,8 @@ fun MyBooksNavHost(
             composable(Routes.LIBRARY) {
                 val suggestionsVm = viewModel { SuggestionsViewModel(container.suggestions, container.hiddenSuggestions) }
                 val suggestions by suggestionsVm.state.collectAsStateWithLifecycle()
+                // The account's library couldn't be opened: the phone's is shown, and Home says so (as Account does).
+                val openFailed by container.libraries.openFailed.collectAsStateWithLifecycle()
                 HomeScreen(
                     viewModel = viewModel { HomeViewModel(container.repository, container.challenges, pinnedTags = container.pinnedTags) },
                     snackbarHostState = snackbar,
@@ -265,6 +268,8 @@ fun MyBooksNavHost(
                     onAddEbook = pickEbook?.let { pick -> { pick(null) } },
                     onClassics = ebookPlatform?.let { { nav.navigate(Routes.CLASSICS) } },
                     onRefresh = syncRefresh,
+                    openFailure = openFailed?.let { OPEN_FAILED },
+                    onOpenAccount = social?.let { { nav.navigate(Routes.ACCOUNT) } },
                     onAddManually = { nav.navigate(Routes.add()) },
                     onScan = {
                         scope.launch {

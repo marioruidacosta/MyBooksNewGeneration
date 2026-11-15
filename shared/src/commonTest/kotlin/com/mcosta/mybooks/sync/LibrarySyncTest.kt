@@ -43,6 +43,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 private const val OWNER = "owner"
 
@@ -243,6 +244,27 @@ class LibrarySyncTest {
         assertIs<SyncStatus.Synced>(a.sync.status.value)
         assertEquals(4, server.rating("x"))
         assertTrue(a.queue.rows.value.isEmpty())
+    }
+
+    @Test
+    fun syncPassSkipsWhenAnotherAccountIsSignedIn() = runTest(timeout = 30.seconds) {
+        val server = server()
+        val a = device(server)
+        a.seed("x", "Os Maias")
+        a.sync.start(OWNER)
+        advanceUntilIdle()
+        val pushes = server.pushTimes().size
+
+        // The owner's session ended and another account signed in before this sync was stopped: calls now carry
+        // the other account's token.
+        server.owner = "someone-else"
+        a.edit("x") { it.copy(rating = 2) }
+        advanceUntilIdle()
+
+        assertEquals(emptyMap(), server.stored("someone-else"))
+        assertEquals(pushes, server.pushTimes().size)
+        // The change waits for its own account.
+        assertEquals(1, a.queue.rows.value.size)
     }
 
     @Test

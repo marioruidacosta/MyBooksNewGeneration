@@ -27,6 +27,9 @@ class SyncException(
 }
 
 interface SyncApi {
+    /** The account whose token the calls carry now (the signed-in one); null if none. */
+    fun signedInUser(): String?
+
     /** Sends changes; callers batch: the server takes at most 200 per call. */
     suspend fun push(rows: List<SyncRow>): PushResult
 

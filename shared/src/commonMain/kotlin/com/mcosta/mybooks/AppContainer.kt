@@ -28,6 +28,7 @@ import com.mcosta.mybooks.library.LibraryId
 import com.mcosta.mybooks.library.LibrarySessions
 import com.mcosta.mybooks.library.LibrarySpace
 import com.mcosta.mybooks.library.LibraryUpgrade
+import com.mcosta.mybooks.library.UpgradeResult
 import com.mcosta.mybooks.share.Publisher
 import com.mcosta.mybooks.share.ShareLock
 import com.mcosta.mybooks.share.ShareTracker
@@ -73,6 +74,8 @@ class AppContainer(
      * ([LibraryUpgrade]); null skips the upgrade.
      */
     databaseFile: ((LibraryId) -> Path)? = null,
+    /** Opens a database file by its path, for the upgrade's copy before it is put in place; null skips the upgrade. */
+    openDatabaseFile: ((Path) -> AppDatabase)? = null,
     httpEngine: HttpClientEngine,
     googleBooksApiKey: String,
     userAgent: String,
@@ -128,8 +131,8 @@ class AppContainer(
     val appearance = Appearance(preferences)
 
     /** Turns today's single library into its account's, once ([start]); null without a database path or settings. */
-    private val upgrade: LibraryUpgrade? = if (databaseFile != null && preferences != null) {
-        LibraryUpgrade(preferences, libraryFiles, databaseFile, openDatabase)
+    private val upgrade: LibraryUpgrade? = if (databaseFile != null && openDatabaseFile != null && preferences != null) {
+        LibraryUpgrade(preferences, libraryFiles, databaseFile, openDatabaseFile)
     } else {
         null
     }
@@ -194,7 +197,9 @@ class AppContainer(
      */
     suspend fun start() {
         // Never throws: if it fails, the no-account library opens the originals and the next start tries again.
-        upgrade?.run(signedInUser = storedUser())
+        val upgraded = upgrade?.run(signedInUser = storedUser())
+        // Until then the original's accounts get no library of their own (the retry would find it in its way).
+        if (upgraded is UpgradeResult.Failed) libraries.awaitUpgrade(upgraded.pending)
         libraries.start()
         applicationScope.launch {
             libraries.openActive()

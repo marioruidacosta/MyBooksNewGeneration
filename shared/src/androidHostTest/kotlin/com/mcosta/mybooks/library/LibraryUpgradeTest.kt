@@ -88,11 +88,17 @@ class LibraryUpgradeTest {
     private fun dbPath(id: LibraryId): Path = libraryDatabaseFile(context, id).toOkioPath()
 
     private fun upgrade(
-        open: (LibraryId) -> AppDatabase = { openLibraryDatabase(context, it) },
+        open: (Path) -> AppDatabase = { openDatabaseFile(context, it.toFile()) },
         fileSystem: FileSystem = fs,
     ) = LibraryUpgrade(devicePrefs, LibraryFiles(fileSystem, files.filesDir), ::dbPath, open)
 
     private fun localDbFile(suffix: String) = dbPath(LibraryId.Local).let { it.parent!! / (it.name + suffix) }
+
+    /** The owner's database file with [suffix] (`.upgrading` is the copy's temporary name). */
+    private fun ownerDbFile(suffix: String) = dbPath(owner).let { it.parent!! / (it.name + suffix) }
+
+    /** Where the covers are copied before the copy is checked. */
+    private val tempCovers get() = files.coversDir(owner).parent!! / "covers.upgrading"
 
     /**
      * Files next to `mybooks.db` that only the upgrade makes (the original set aside); none once it's done. SQLite's own
@@ -110,6 +116,7 @@ class LibraryUpgradeTest {
             for (suffix in listOf("", "-wal", "-shm", "-journal")) fs.delete(db.parent!! / (db.name + suffix))
         }
         for (name in upgradeLeftovers()) fs.delete(dbPath(LibraryId.Local).parent!! / name)
+        fs.deleteRecursively(dbPath(owner).parent!!)
         fs.deleteRecursively(files.filesDir)
     }
 
@@ -238,8 +245,8 @@ class LibraryUpgradeTest {
     fun interruptedUpgradeRetriesFromTheOriginal() = runTest(timeout = 60.seconds) {
         seedPhone("owner-1")
         // What a run killed partway leaves: a half-copied database and cover folder, and one ebook already moved.
-        writeFile(dbPath(owner), "half a database")
-        writeFile(files.coversDir(owner) / "partial.jpg", "half")
+        writeFile(ownerDbFile(".upgrading"), "half a database")
+        writeFile(tempCovers / "partial.jpg", "half")
         fs.createDirectories(files.ebooksDir(owner))
         fs.atomicMove(files.ebooksDir(LibraryId.Local) / "1.epub", files.ebooksDir(owner) / "1.epub")
 
@@ -254,18 +261,89 @@ class LibraryUpgradeTest {
     }
 
     @Test
+    fun partialTemporaryCopyIsRemovedOnRetry() = runTest(timeout = 60.seconds) {
+        seedPhone("owner-1")
+        // Killed while copying: the database and its journal, and the covers, half there under their temporary names.
+        writeFile(ownerDbFile(".upgrading"), "half a database")
+        writeFile(ownerDbFile(".upgrading-wal"), "half a journal")
+        writeFile(tempCovers / "partial.jpg", "half")
+        // Deletes are recorded: the account's own database name is never deleted.
+        val deleted = mutableListOf<Path>()
+        val recording = object : ForwardingFileSystem(FileSystem.SYSTEM) {
+            override fun delete(path: Path, mustExist: Boolean) {
+                deleted += path
+                super.delete(path, mustExist)
+            }
+        }
+
+        assertEquals(UpgradeResult.MovedTo("owner-1"), upgrade(fileSystem = recording).run(signedInUser = null))
+
+        assertFinished()
+        assertFalse(fs.exists(ownerDbFile(".upgrading")))
+        assertFalse(fs.exists(ownerDbFile(".upgrading-wal")))
+        assertFalse(fs.exists(tempCovers))
+        val accountDb = listOf("", "-wal", "-shm", "-journal").map { ownerDbFile(it) }
+        assertTrue(deleted.toString(), deleted.none { it in accountDb })
+    }
+
+    @Test
+    fun existingAccountLibraryStopsTheUpgrade() = runTest(timeout = 60.seconds) {
+        seedPhone("owner-1")
+        // The account already has a library on this phone, with a book and a cover of its own.
+        withDb(owner) { it.bookDao().insert(Book(title = "Persuasion").toEntity()) }
+        writeFile(files.coversDir(owner) / "theirs.jpg", "theirs")
+
+        val result = upgrade().run(signedInUser = "owner-1")
+
+        assertTrue(result.toString(), result is UpgradeResult.Failed)
+        // Its owner waits for the retry: no library is opened for it meanwhile.
+        assertEquals(setOf(owner), (result as UpgradeResult.Failed).pending)
+        assertTrue(ShadowLog.getLogsForTag("MyBooks").any { it.msg.contains("upgrade", ignoreCase = true) })
+        // The account's library is untouched.
+        assertEquals(listOf("Persuasion"), books(owner))
+        assertEquals(listOf("theirs.jpg"), regularFiles(files.coversDir(owner)))
+        assertEquals(emptyList<String>(), regularFiles(files.ebooksDir(owner)))
+        // So is the original, which the next start tries again.
+        assertEquals(listOf("Dune", "Emma"), books(LibraryId.Local))
+        assertTrue(withDb(LibraryId.Local) { it.syncStateDao().anyMerged() })
+        assertEquals("jpeg", read(files.coversDir(LibraryId.Local) / "c1.jpg"))
+        assertEquals(listOf("1.epub", "2.pdf"), regularFiles(files.ebooksDir(LibraryId.Local)))
+        assertEquals(emptyList<String>(), upgradeLeftovers())
+        assertFalse(devicePrefs.values.containsKey("library.upgraded"))
+        assertNotEquals("owner-1", devicePrefs.values["library.active"])
+        assertFalse(fs.exists(ownerDbFile(".upgrading")))
+        assertFalse(fs.exists(tempCovers))
+    }
+
+    @Test
+    fun killedWhilePuttingTheCopyInPlaceRetriesFromTheOriginal() = runTest(timeout = 60.seconds) {
+        seedPhone("owner-1")
+        // Killed after the checked copy was put in place, before the original was renamed aside: the marker says those
+        // files are the upgrade's own.
+        writeFile(dbPath(owner), "a placed copy")
+        writeFile(files.coversDir(owner) / "c1.jpg", "jpeg")
+        writeFile(ownerDbFile(".placing"), "")
+
+        assertEquals(UpgradeResult.MovedTo("owner-1"), upgrade().run(signedInUser = null))
+
+        assertFinished()
+        assertFalse(fs.exists(ownerDbFile(".placing")))
+    }
+
+    @Test
     fun failedCheckKeepsOriginals() = runTest(timeout = 60.seconds) {
         seedPhone("owner-1")
         // The copy comes out short a book.
-        val badCopy: (LibraryId) -> AppDatabase = { id ->
-            openLibraryDatabase(context, id).also { db ->
-                if (id == owner) runBlocking { db.bookDao().getAll().firstOrNull()?.let { db.bookDao().delete(it.id) } }
+        val badCopy: (Path) -> AppDatabase = { path ->
+            openDatabaseFile(context, path.toFile()).also { db ->
+                if (path.parent == dbPath(owner).parent) runBlocking { db.bookDao().getAll().firstOrNull()?.let { db.bookDao().delete(it.id) } }
             }
         }
 
         val result = upgrade(badCopy).run(signedInUser = null)
 
         assertTrue(result is UpgradeResult.Failed)
+        assertEquals(setOf(owner), (result as UpgradeResult.Failed).pending)
         assertTrue(ShadowLog.getLogsForTag("MyBooks").any { it.msg.contains("upgrade", ignoreCase = true) })
         assertEquals(listOf("Dune", "Emma"), books(LibraryId.Local))
         assertTrue(withDb(LibraryId.Local) { it.syncStateDao().anyMerged() })
@@ -329,6 +407,10 @@ class LibraryUpgradeTest {
         assertNull(libraryPref(LibraryId.Local, "home.pinnedTags"))
         assertNull(libraryPref(LibraryId.Local, "suggestions.hidden"))
         assertEquals(emptyList<String>(), upgradeLeftovers())
+        // Nothing temporary is left beside the account's database or covers (Robolectric's `.lck` files aside).
+        val beside = fs.list(dbPath(owner).parent!!).map { it.name }.filter { !it.endsWith(".lck") }
+        assertTrue(beside.toString(), beside.none { ".upgrading" in it || it.endsWith(".placing") })
+        assertFalse(fs.exists(tempCovers))
         assertEquals("owner-1", devicePrefs.values["library.active"])
         assertTrue(devicePrefs.values.containsKey("library.upgraded"))
     }
@@ -369,7 +451,9 @@ class LibraryUpgradeTest {
         seedPhone("owner-1")
         // The original database can't be deleted, and the app goes on running.
         val stuck = FaultyFileSystem(failDelete = { it == dbPath(LibraryId.Local) || it.name.startsWith("mybooks.db.") })
-        assertTrue(upgrade(fileSystem = stuck).run(signedInUser = null) is UpgradeResult.Failed)
+        val failed = upgrade(fileSystem = stuck).run(signedInUser = null)
+        // The copy is the library already: its owner doesn't wait.
+        assertEquals(emptySet<LibraryId.Account>(), (failed as UpgradeResult.Failed).pending)
         assertEquals("owner-1", devicePrefs.values["library.active"])
         // The session that follows works on the copy.
         withDb(owner) { it.bookDao().insert(Book(title = "Persuasion").toEntity()) }

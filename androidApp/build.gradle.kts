@@ -103,5 +103,7 @@ dependencies {
     testImplementation(libs.room.runtime)
     // A whole-app test (BookNerdConversationTest) answers every request offline.
     testImplementation(libs.ktor.client.mock)
+    // Whole-app tests that start on the library active at the last launch (the app's settings).
+    testImplementation(libs.multiplatform.settings)
     debugImplementation(libs.compose.ui.test.manifest)
 }

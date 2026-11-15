@@ -23,10 +23,11 @@ sealed interface UpgradeResult {
 
     /**
      * It failed (and was logged). Before the copy was verified: everything is as it was, the no-account library opens the
-     * originals, and the next start tries again. After: the copy is the account's library, and the next start finishes
-     * clearing the originals.
+     * originals, and the next start tries again; [pending] are the accounts the original belongs to (its `merged:`
+     * owners, when they could be read), which get no library of their own until then. After: the copy is the account's
+     * library, the next start finishes clearing the originals, and [pending] is empty.
      */
-    data class Failed(val cause: Throwable) : UpgradeResult
+    data class Failed(val cause: Throwable, val pending: Set<LibraryId.Account> = emptySet()) : UpgradeResult
 }
 
 /**
@@ -37,25 +38,33 @@ sealed interface UpgradeResult {
  * live book count). Of several owners, the signed-in one wins, else the one recorded last. The library's two preferences
  * (pinned tags and "Not interested") move from the device settings into its own database.
  *
- * Until the copy is verified, any failure puts everything back as it was, and a run killed partway starts again from the
- * originals. The copy becomes the library in one step: `mybooks.db` is renamed aside (`mybooks.db.moved-to-<owner>`),
- * which the file system does whole or not at all. From then on the copy is never deleted or copied again: while the
- * renamed original is there, a start only finishes clearing the originals (and makes the new, empty no-account library),
- * and the renamed original goes last.
+ * The database and covers are copied under temporary names (`libraries/<owner>.db.upgrading`, `covers.upgrading`), and
+ * renamed into place only once the copy is verified. If the account already has a library on this phone, nothing is
+ * deleted or replaced: the upgrade stops (failed), the original stays as it is, and the next start tries again.
  *
- * [databaseFile] is where a library's database file is (its `-wal`/`-shm` next to it); [openDatabase] opens it.
+ * Until the copy is verified, any failure puts everything back as it was, and a run killed partway starts again from the
+ * originals: it deletes only its own temporary files (and a copy it was putting in place, which a marker file,
+ * `<owner>.db.placing`, says is its own). The copy becomes the library in one step: `mybooks.db` is renamed aside
+ * (`mybooks.db.moved-to-<owner>`), which the file system does whole or not at all. From then on the copy is never
+ * deleted or copied again: while the renamed original is there, a start only finishes clearing the originals (and makes
+ * the new, empty no-account library), and the renamed original goes last.
+ *
+ * [databaseFile] is where a library's database file is (its `-wal`/`-shm` next to it); [openDatabase] opens a database
+ * file.
  */
 class LibraryUpgrade(
     private val deviceSettings: Preferences,
     private val files: LibraryFiles,
     private val databaseFile: (LibraryId) -> Path,
-    private val openDatabase: (LibraryId) -> AppDatabase,
+    private val openDatabase: (Path) -> AppDatabase,
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val fs = files.fileSystem
 
     /** Upgrades, unless that's done; [signedInUser] is the stored session's user, if it could be read. Never throws. */
     suspend fun run(signedInUser: String?): UpgradeResult = withContext(io) {
+        // The original's owners, once read: if the upgrade fails before its copy is the library, they wait for the retry.
+        var owners = emptyList<LibraryId.Account>()
         try {
             val verified = verifiedCopy()
             when {
@@ -64,17 +73,24 @@ class LibraryUpgrade(
                     UpgradeResult.MovedTo(verified.userId)
                 }
                 deviceSettings.get(UPGRADED) != null -> UpgradeResult.NothingToDo
-                else -> upgrade(signedInUser).also { deviceSettings.set(UPGRADED, "1") }
+                else -> upgrade(signedInUser) { owners = it }.also { deviceSettings.set(UPGRADED, "1") }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             logLibraryError("Library upgrade failed; it is tried again at the next start", e)
-            UpgradeResult.Failed(e)
+            // If it can't be told whether the original was set aside, its owners wait: that loses nothing either way.
+            val committed = try {
+                verifiedCopy() != null
+            } catch (_: Exception) {
+                false
+            }
+            UpgradeResult.Failed(e, if (committed) emptySet() else owners.toSet())
         }
     }
 
-    private suspend fun upgrade(signedInUser: String?): UpgradeResult {
+    /** [onOwners] gets the original's (valid) `merged:` owners as soon as they're read. */
+    private suspend fun upgrade(signedInUser: String?, onOwners: (List<LibraryId.Account>) -> Unit): UpgradeResult {
         val original = databaseFile(LibraryId.Local)
         if (!fs.exists(original)) {
             // No library yet: stray journal files must not meet the new database.
@@ -82,9 +98,12 @@ class LibraryUpgrade(
             storePrefs(LibraryId.Local)
             return UpgradeResult.NothingToDo
         }
-        val (owners, books) = withDatabase(LibraryId.Local) { db ->
+        val (merged, books) = withDatabase(LibraryId.Local) { db ->
             db.syncStateDao().mergedOwners() to db.bookDao().getAll().size
         }
+        // Ids that can't name a library are skipped.
+        val owners = merged.mapNotNull(::accountOrNull)
+        onOwners(owners)
         val owner = ownerOf(owners, signedInUser)
         if (owner == null) {
             storePrefs(LibraryId.Local)
@@ -94,43 +113,70 @@ class LibraryUpgrade(
         return UpgradeResult.MovedTo(owner.userId)
     }
 
-    /** The signed-in user if among [owners], else the one recorded last; null if none (ids that can't name a library are skipped). */
-    private fun ownerOf(owners: List<String>, signedInUser: String?): LibraryId.Account? {
-        val valid = owners.mapNotNull(::accountOrNull)
-        return valid.firstOrNull { it.userId == signedInUser } ?: valid.lastOrNull()
-    }
+    /** The signed-in user if among [owners], else the one recorded last; null if none. */
+    private fun ownerOf(owners: List<LibraryId.Account>, signedInUser: String?): LibraryId.Account? =
+        owners.firstOrNull { it.userId == signedInUser } ?: owners.lastOrNull()
 
-    /** Copies today's library to [owner]'s, checks it holds [books] live books, makes it the library, then clears the originals. */
+    /**
+     * Copies today's library to [owner]'s (under temporary names), checks it holds [books] live books, puts it in place,
+     * makes it the library, then clears the originals. Stops (throws) before touching anything if [owner] already has a
+     * library here.
+     */
     private suspend fun moveTo(owner: LibraryId.Account, books: Int) {
         val original = databaseFile(LibraryId.Local)
         val copy = databaseFile(owner)
+        val tempCopy = upgrading(copy)
+        val covers = files.coversDir(owner)
+        val tempCovers = upgrading(covers)
+        removeLeftovers(owner)
         // Every ebook rename (from, to), to undo them.
         val renames = mutableListOf<Pair<Path, Path>>()
+        // Set once the verified copy goes into place: from then [owner]'s own names may hold its files (as the marker says).
+        var placing = false
         try {
-            removeLeftovers(owner)
             for (suffix in DATABASE_SUFFIXES) {
                 val from = withSuffix(original, suffix)
                 if (fs.exists(from)) {
-                    copy.parent?.let(fs::createDirectories)
-                    fs.copy(from, withSuffix(copy, suffix))
+                    tempCopy.parent?.let(fs::createDirectories)
+                    fs.copy(from, withSuffix(tempCopy, suffix))
                 }
             }
-            copyFolder(files.coversDir(LibraryId.Local), files.coversDir(owner))
+            copyFolder(files.coversDir(LibraryId.Local), tempCovers)
             moveEbooks(owner, renames)
-            withDatabase(owner) { db ->
+            withDatabase(tempCopy) { db ->
                 val copied = db.bookDao().getAll().size
                 check(copied == books) { "The copied library has $copied books, the original $books" }
                 for ((key, value) in devicePrefs()) storeLibraryPreference(db.syncStateDao(), key, value)
             }
-            // The copy is verified; this one rename makes it the library (it happens whole or not at all).
+            // Verified: into place, the marker first and the main database file last (journals alone are no library).
+            placing = true
+            fs.write(placingMarker(owner)) {}
+            if (fs.exists(tempCovers)) fs.atomicMove(tempCovers, covers)
+            for (suffix in DATABASE_SUFFIXES.asReversed()) {
+                val from = withSuffix(tempCopy, suffix)
+                if (fs.exists(from)) fs.atomicMove(from, withSuffix(copy, suffix))
+            }
+            // This one rename makes it the library (it happens whole or not at all).
             fs.atomicMove(original, aside(owner))
         } catch (e: Throwable) {
             withContext(NonCancellable) {
-                // Back as it was: the ebooks to their folder, the partial copy gone, the no-account library shown.
-                runCatching { for ((from, to) in renames.asReversed()) fs.atomicMove(to, from) }
-                runCatching { deleteDatabaseFiles(copy) }
-                runCatching { fs.deleteRecursively(files.coversDir(owner)) }
-                if (deviceSettings.get(ACTIVE) == owner.key) deviceSettings.set(ACTIVE, LibraryId.Local.key)
+                // Set aside after all (or that can't be told): nothing is undone, and the next start finishes or retries.
+                val committed = runCatching { fs.exists(aside(owner)) }.getOrDefault(true)
+                if (!committed) {
+                    // Back as it was: the ebooks to their folder, the copy gone, the no-account library shown.
+                    runCatching { for ((from, to) in renames.asReversed()) fs.atomicMove(to, from) }
+                    runCatching { deleteDatabaseFiles(tempCopy) }
+                    runCatching { fs.deleteRecursively(tempCovers) }
+                    if (placing) {
+                        // The marker goes last, once what it vouches for is gone.
+                        runCatching {
+                            deleteDatabaseFiles(copy)
+                            fs.deleteRecursively(covers)
+                            fs.delete(placingMarker(owner), mustExist = false)
+                        }
+                    }
+                    if (deviceSettings.get(ACTIVE) == owner.key) deviceSettings.set(ACTIVE, LibraryId.Local.key)
+                }
             }
             throw e
         }
@@ -154,9 +200,17 @@ class LibraryUpgrade(
         val localCovers = files.coversDir(LibraryId.Local)
         for (cover in regularFiles(files.coversDir(owner))) fs.delete(localCovers / cover.name, mustExist = false)
         if (!fs.exists(local)) withDatabase(LibraryId.Local) { it.bookDao().getAll() }
+        // The copy is in place for good.
+        fs.delete(placingMarker(owner), mustExist = false)
         deviceSettings.set(UPGRADED, "1")
         fs.delete(aside(owner), mustExist = false)
     }
+
+    /** [path]'s temporary name while it is copied (a database's journals beside it, as SQLite names them). */
+    private fun upgrading(path: Path): Path = withSuffix(path, UPGRADING)
+
+    /** There while the verified copy is put in place for [owner]: the files under [owner]'s names are the upgrade's. */
+    private fun placingMarker(owner: LibraryId.Account): Path = withSuffix(databaseFile(owner), PLACING)
 
     /** Where the original `mybooks.db` is renamed once its copy is [owner]'s verified library. */
     private fun aside(owner: LibraryId.Account): Path = withSuffix(databaseFile(LibraryId.Local), ASIDE + owner.userId)
@@ -178,12 +232,28 @@ class LibraryUpgrade(
     }
 
     /**
-     * What a run killed partway left in [owner]'s place: the partial copy goes, and ebooks it had already moved go back
-     * (they are the originals; one the no-account folder holds again stays, and is kept aside by [moveEbooks]).
+     * What a run killed partway left for [owner]: its temporary copy (database and covers) goes, so does a copy it was
+     * putting in place (only while its marker is there), and ebooks it had already moved go back (they are the
+     * originals; one the no-account folder holds again stays, and is kept aside by [moveEbooks]). Anything else under
+     * [owner]'s own names is a library the upgrade didn't make: then nothing is deleted or moved, and it throws.
      */
     private fun removeLeftovers(owner: LibraryId.Account) {
-        deleteDatabaseFiles(databaseFile(owner))
-        fs.deleteRecursively(files.coversDir(owner))
+        val copy = databaseFile(owner)
+        val covers = files.coversDir(owner)
+        val marker = placingMarker(owner)
+        if (fs.exists(marker)) {
+            // Killed while putting its verified copy in place, before the original was set aside: these are its files.
+            deleteDatabaseFiles(copy)
+            fs.deleteRecursively(covers)
+            fs.delete(marker)
+        }
+        val existing = (DATABASE_SUFFIXES.map { withSuffix(copy, it) } + covers).filter(fs::exists)
+        check(existing.isEmpty()) {
+            "${owner.userId} already has a library on this phone (${existing.joinToString { it.name }}): it is kept, " +
+                "and the upgrade stops"
+        }
+        deleteDatabaseFiles(upgrading(copy))
+        fs.deleteRecursively(upgrading(covers))
         val local = files.ebooksDir(LibraryId.Local)
         for (file in regularFiles(files.ebooksDir(owner))) {
             val back = local / file.name
@@ -242,8 +312,10 @@ class LibraryUpgrade(
         withDatabase(id) { db -> for ((key, value) in prefs) storeLibraryPreference(db.syncStateDao(), key, value) }
     }
 
-    private suspend fun <T> withDatabase(id: LibraryId, block: suspend (AppDatabase) -> T): T {
-        val db = openDatabase(id)
+    private suspend fun <T> withDatabase(id: LibraryId, block: suspend (AppDatabase) -> T): T = withDatabase(databaseFile(id), block)
+
+    private suspend fun <T> withDatabase(file: Path, block: suspend (AppDatabase) -> T): T {
+        val db = openDatabase(file)
         try {
             return block(db)
         } finally {
@@ -260,6 +332,12 @@ class LibraryUpgrade(
 
         /** `mybooks.db` + this + the owner: the original, renamed aside once its copy is verified. */
         const val ASIDE = ".moved-to-"
+
+        /** A copy's (and its covers folder's) name + this, until the copy is verified. */
+        const val UPGRADING = ".upgrading"
+
+        /** `libraries/<owner>.db` + this: the marker while the verified copy is put in place. */
+        const val PLACING = ".placing"
 
         /** The main file first: once it's gone, the rest can't be mistaken for a library. */
         val DATABASE_SUFFIXES = listOf("", "-wal", "-shm", "-journal")

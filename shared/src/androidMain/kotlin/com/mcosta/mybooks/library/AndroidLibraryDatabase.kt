@@ -20,8 +20,10 @@ fun libraryDatabaseFile(context: Context, id: LibraryId): File {
 }
 
 /** Opens a library's database: `mybooks.db` for the no-account library, `databases/libraries/<id>.db` for an account. */
-fun openLibraryDatabase(context: Context, id: LibraryId): AppDatabase {
-    val file = libraryDatabaseFile(context, id)
+fun openLibraryDatabase(context: Context, id: LibraryId): AppDatabase = openDatabaseFile(context, libraryDatabaseFile(context, id))
+
+/** Opens the database file [file] (a library's, or the upgrade's copy of one before it is put in place). */
+fun openDatabaseFile(context: Context, file: File): AppDatabase {
     file.parentFile?.mkdirs()
     return createDatabase(
         Room.databaseBuilder<AppDatabase>(context.applicationContext, file.absolutePath),

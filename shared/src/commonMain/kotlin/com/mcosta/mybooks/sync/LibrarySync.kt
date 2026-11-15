@@ -59,10 +59,15 @@ internal const val PULL_MAX = 500
  * anything else ([mergeProgress] counts it). [shares], [coverStore] and [ebookFiles] are what that merge and [signOut]
  * touch besides the database.
  *
+ * Each call to the server goes out only while the account signed in (whose token it carries) is the session's owner:
+ * otherwise the session stops as if it had expired ([SyncStatus.SignInAgain]), its queue kept, and nothing is sent to,
+ * or taken from, the other account's library. That covers a pass that starts between the owner's session ending and
+ * the next account's sign-in stopping this sync.
+ *
  * Everything runs in [scope] (the app's, off the main thread).
  */
 class LibrarySync(
-    private val api: SyncApi,
+    server: SyncApi,
     private val db: SyncDatabase,
     private val recorder: SyncRecorder,
     private val applier: RemoteApplier,
@@ -76,6 +81,9 @@ class LibrarySync(
     init {
         require(retryDelays.isNotEmpty()) { "retryDelays is empty" }
     }
+
+    /** The server, as the running session's owner only (see the class comment). */
+    private val api: SyncApi = OwnerOnly(server) { session?.owner }
 
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.Off)
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
@@ -484,5 +492,43 @@ internal suspend fun pullFrom(api: SyncApi, db: SyncDatabase, applier: RemoteApp
         applier.apply(page.rows) { db.state.set(SEQ_KEY, last.toString()) }
         if (page.rows.size < PULL_MAX || last <= after) return
         after = last
+    }
+}
+
+/**
+ * [api], as [owner]'s library only: each data call first checks that the signed-in account (whose token the call
+ * carries) is [owner] (for covers, the owner the call names), and fails as an expired session
+ * ([SyncException.Kind.AUTH]) without calling the server if it isn't. Pings only wake the worker, and pass through.
+ */
+private class OwnerOnly(private val api: SyncApi, private val owner: () -> String?) : SyncApi by api {
+    private fun check(owner: String?) {
+        if (owner == null || api.signedInUser() != owner) {
+            throw SyncException(SyncException.Kind.AUTH, "not signed in as this library's account")
+        }
+    }
+
+    override suspend fun push(rows: List<SyncRow>): PushResult {
+        check(owner())
+        return api.push(rows)
+    }
+
+    override suspend fun pull(after: Long, max: Int): PullPage {
+        check(owner())
+        return api.pull(after, max)
+    }
+
+    override suspend fun mergeLibrary(books: List<SyncRow>): MergeResult {
+        check(owner())
+        return api.mergeLibrary(books)
+    }
+
+    override suspend fun uploadCover(owner: String, bookUuid: String, jpeg: ByteArray) {
+        check(owner)
+        api.uploadCover(owner, bookUuid, jpeg)
+    }
+
+    override suspend fun downloadCover(owner: String, bookUuid: String): ByteArray? {
+        check(owner)
+        return api.downloadCover(owner, bookUuid)
     }
 }

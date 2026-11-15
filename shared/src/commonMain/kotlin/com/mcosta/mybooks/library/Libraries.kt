@@ -94,6 +94,29 @@ class Libraries<S : LibraryHandle>(
         _openFailed.value = null
     }
 
+    /** Accounts whose library is still today's `mybooks.db`, its upgrade having failed ([awaitUpgrade]). */
+    @Volatile
+    private var awaitingUpgrade: Set<LibraryId.Account> = emptySet()
+
+    /**
+     * The upgrade of an install from before libraries were separate ([LibraryUpgrade]) failed before its copy was
+     * verified: [accounts]' library is still the no-account library's database, and the next start tries again. Until
+     * then they get no library of their own (one made now would stop that retry, or be lost to it): they can't be
+     * activated, as if their library couldn't be opened ([openFailed]), so the no-account library stays shown and the
+     * first sign-in's question is never asked. Call before [start].
+     */
+    fun awaitUpgrade(accounts: Set<LibraryId.Account>) {
+        awaitingUpgrade = accounts
+    }
+
+    /** Builds [id]'s library with [factory], unless it waits for the upgrade ([awaitUpgrade]): then it throws. */
+    private suspend fun build(id: LibraryId): S {
+        check(id !is LibraryId.Account || id !in awaitingUpgrade) {
+            "${id.key}'s library waits for the upgrade at the next start"
+        }
+        return factory(id)
+    }
+
     /** The active library. Available once [start] has returned. */
     val active: StateFlow<S>
         get() {
@@ -119,7 +142,7 @@ class Libraries<S : LibraryHandle>(
             factory(LibraryId.Local)
         } else {
             try {
-                factory(last)
+                build(last)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -199,7 +222,7 @@ class Libraries<S : LibraryHandle>(
         val old = active.value
         // One open copy of a database at a time: a copy still closing finishes first.
         closing[id]?.join()
-        val next = factory(id)
+        val next = build(id)
         try {
             next.open()
         } catch (e: Throwable) {
@@ -373,7 +396,7 @@ class Libraries<S : LibraryHandle>(
         val current = active.value
         if (current.id == id) return block(current)
         closing[id]?.join()
-        val space = factory(id)
+        val space = build(id)
         try {
             space.open()
             return block(space)

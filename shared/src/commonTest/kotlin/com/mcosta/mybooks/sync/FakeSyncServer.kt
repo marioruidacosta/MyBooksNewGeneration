@@ -69,6 +69,9 @@ class FakeSyncServer(
 
     private fun mine() = rows.getOrPut(owner) { mutableMapOf() }
 
+    /** Calls are made as [owner] (its token). */
+    override fun signedInUser(): String? = owner
+
     /** Merges [row] into the stored one; returns true when anything changed. */
     private fun mergeRow(row: SyncRow, id: String = row.id): Boolean {
         val cap = clock() + 60_000

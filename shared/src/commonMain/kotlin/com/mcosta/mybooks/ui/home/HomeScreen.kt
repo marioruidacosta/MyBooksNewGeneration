@@ -113,6 +113,10 @@ fun HomeScreen(
     onClassics: (() -> Unit)? = null,
     /** Pull-to-refresh: syncs the library now; null while sync is off (no pull-to-refresh). */
     onRefresh: (suspend () -> Unit)? = null,
+    /** Why the phone's library is shown instead of the account's ("Couldn't open your library…"); null when it isn't. */
+    openFailure: String? = null,
+    /** Settings → Account, from [openFailure]'s banner; null where there is none. */
+    onOpenAccount: (() -> Unit)? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var addMenuOpen by remember { mutableStateOf(false) }
@@ -169,6 +173,9 @@ fun HomeScreen(
         }
         SyncRefreshBox(onRefresh, Modifier.padding(padding).fillMaxSize()) {
             LazyColumn(Modifier.fillMaxSize()) {
+                if (openFailure != null) {
+                    item(key = "openFailure") { OpenFailureBanner(openFailure, onOpenAccount) }
+                }
                 item {
                     if (state.reading.isEmpty()) {
                         SectionTitle("Reading")
@@ -232,6 +239,21 @@ fun HomeScreen(
             dismissButton = { TextButton(onClick = viewModel::dismissFinish) { Text("Not yet") } },
         )
     }
+}
+
+/** [text] above the library while the account's library can't be opened; tapping it opens [onClick] (Account). */
+@Composable
+private fun OpenFailureBanner(text: String, onClick: (() -> Unit)?) {
+    val modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp)
+    val content: @Composable () -> Unit = {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(16.dp),
+        )
+    }
+    if (onClick != null) OutlinedCard(onClick = onClick, modifier = modifier) { content() } else OutlinedCard(modifier) { content() }
 }
 
 /** A section heading; with [onClick] it opens the section's full list. */

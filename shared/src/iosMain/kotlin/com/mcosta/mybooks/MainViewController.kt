@@ -6,6 +6,7 @@ import androidx.compose.ui.window.ComposeUIViewController
 import com.mcosta.mybooks.library.LibraryFiles
 import com.mcosta.mybooks.library.deleteLibraryDatabase
 import com.mcosta.mybooks.library.libraryDatabasePath
+import com.mcosta.mybooks.library.openDatabaseFile
 import com.mcosta.mybooks.library.openLibraryDatabase
 import com.mcosta.mybooks.platform.IosNativeServices
 import com.mcosta.mybooks.platform.iosPlatformServices
@@ -39,6 +40,7 @@ private val container: AppContainer by lazy {
         openDatabase = { id -> openLibraryDatabase(documents, id) },
         deleteDatabase = { id -> deleteLibraryDatabase(documents, id) },
         databaseFile = { id -> libraryDatabasePath(documents, id).toPath() },
+        openDatabaseFile = { path -> openDatabaseFile(path.toString()) },
         libraryFiles = LibraryFiles(FileSystem.SYSTEM, documents.toPath()),
         // Sending the sign-in email can take longer than the default wait.
         httpEngine = Darwin.create { configureSession { timeoutIntervalForRequest = 30.0 } },

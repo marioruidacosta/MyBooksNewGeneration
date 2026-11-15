@@ -172,8 +172,11 @@ class AccountViewModelTest : MainDispatcherTest() {
 
     // ---- signing out while the library syncs ----
 
-    /** A synced library on this phone, with one book and one change waiting; [files]: with photo and ebook folders. */
-    private class SyncedLibrary(scope: CoroutineScope, files: Boolean = false) {
+    /**
+     * A synced library on this phone, with one book and one change waiting; [files]: with photo and ebook folders. Its
+     * cloud is [owner]'s, the account signed in (whose token the calls carry).
+     */
+    private class SyncedLibrary(scope: CoroutineScope, owner: String, files: Boolean = false) {
         val books = FakeBookDao()
         val queue = FakeSyncQueueDao()
         val state = FakeSyncStateDao()
@@ -182,7 +185,7 @@ class AccountViewModelTest : MainDispatcherTest() {
         val ebookFiles = EbookFiles(fs, "/ebooks".toPath(), kotlinx.coroutines.Dispatchers.Unconfined)
         private val db = SyncDatabase(books, FakeQuoteDao(), FakeEbookDao(), FakeBookmarkDao(), FakeChallengeDao(), queue, state)
         private val recorder = SyncRecorder(queue, { 0L }, { true }, { it() })
-        val server = FakeSyncServer()
+        val server = FakeSyncServer(owner)
         val sync = LibrarySync(
             server, db, recorder, RemoteApplier(db, recorder, if (files) covers else null), { 0L }, scope,
             coverStore = if (files) covers else null, ebookFiles = if (files) ebookFiles else null,
@@ -207,7 +210,7 @@ class AccountViewModelTest : MainDispatcherTest() {
     fun stopEngines() = engineJob.cancel()
 
     private suspend fun TestScope.syncedLibrary(): SyncedLibrary {
-        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob))
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
         library.fill()
         library.sync.start(ana)
         return library
@@ -275,7 +278,7 @@ class AccountViewModelTest : MainDispatcherTest() {
     @Test
     fun removeWarnsAboutUnsyncedChanges() = runTest {
         fake.signInAs(ana)
-        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob))
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
         library.fill()
         library.server.failNext = SyncException(SyncException.Kind.OFFLINE, "offline")
         library.server.failTimes = 1_000
@@ -307,7 +310,7 @@ class AccountViewModelTest : MainDispatcherTest() {
     @Test
     fun removeAfterSuccessfulFinalSyncShowsNoWarning() = runTest {
         fake.signInAs(ana)
-        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob))
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
         library.fill()
         // Offline until now: the change is still queued when "Sign out" is tapped.
         library.server.failNext = SyncException(SyncException.Kind.OFFLINE, "offline")
@@ -332,7 +335,7 @@ class AccountViewModelTest : MainDispatcherTest() {
     @Test
     fun removeWarnsAboutPhotosNotUploaded() = runTest {
         fake.signInAs(ana)
-        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), files = true)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana, files = true)
         library.fill()
         // Named after the book, as a photo is once synced.
         val photo = library.covers.put("x.jpg", byteArrayOf(1, 2, 3))
@@ -354,7 +357,7 @@ class AccountViewModelTest : MainDispatcherTest() {
     @Test
     fun removeWarnsThatEbookFilesAreDeleted() = runTest {
         fake.signInAs(ana)
-        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), files = true)
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana, files = true)
         library.fill()
         library.ebookFiles.store(1, EbookFormat.EPUB, Buffer().writeUtf8("epub"))
         library.sync.start(ana)
@@ -388,7 +391,7 @@ class AccountViewModelTest : MainDispatcherTest() {
     @Test
     fun signOutWithSyncOffSignsOutAtOnce() = runTest {
         fake.signInAs(ana)
-        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob))
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
         library.fill()
         val vm = AccountViewModel(fake.services, shrinker, sync = library.sync, workDispatcher = mainDispatcher)
 
@@ -428,7 +431,7 @@ class AccountViewModelTest : MainDispatcherTest() {
     @Test
     fun setAsideChangesAreCounted() = runTest {
         fake.signInAs(ana)
-        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob))
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
         library.fill()
         // Past the first merge (which would refuse the book once more): one change, refused once.
         library.state.set(com.mcosta.mybooks.sync.mergedKey(ana), "1")
@@ -444,7 +447,7 @@ class AccountViewModelTest : MainDispatcherTest() {
     @Test
     fun retrySyncTriesAgainAtOnce() = runTest {
         fake.signInAs(ana)
-        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob))
+        val library = SyncedLibrary(CoroutineScope(StandardTestDispatcher(testScheduler) + engineJob), ana)
         library.fill()
         library.server.failNext = SyncException(SyncException.Kind.OTHER, "500")
         library.sync.start(ana)

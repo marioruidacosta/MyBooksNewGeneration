@@ -14,8 +14,10 @@ fun libraryDatabasePath(documents: String, id: LibraryId): String = when (id) {
 }
 
 /** Opens a library's database: `mybooks.db` for the no-account library, `databases/libraries/<id>.db` for an account. */
-fun openLibraryDatabase(documents: String, id: LibraryId): AppDatabase {
-    val path = libraryDatabasePath(documents, id)
+fun openLibraryDatabase(documents: String, id: LibraryId): AppDatabase = openDatabaseFile(libraryDatabasePath(documents, id))
+
+/** Opens the database file at [path] (a library's, or the upgrade's copy of one before it is put in place). */
+fun openDatabaseFile(path: String): AppDatabase {
     path.toPath().parent?.let { FileSystem.SYSTEM.createDirectories(it) }
     return createDatabase(Room.databaseBuilder<AppDatabase>(name = path), BundledSQLiteDriver())
 }

@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.mcosta.mybooks.data.covers.PhotoShrinker
+import com.mcosta.mybooks.data.db.AppDatabase
 import com.mcosta.mybooks.data.db.createAndroidDatabase
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
@@ -29,6 +30,8 @@ import com.mcosta.mybooks.social.SafetyService
 import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.social.model.SessionState
 import com.mcosta.mybooks.ui.App
+import com.russhwolf.settings.Settings
+import com.russhwolf.settings.SharedPreferencesSettings
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respondError
 import io.ktor.http.HttpStatusCode
@@ -39,6 +42,7 @@ import kotlinx.coroutines.runBlocking
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -93,8 +97,12 @@ class LibrarySwitchUiTest {
 
     private val social = SocialServices(auth, profiles, fake<FriendsService>(), fake<SafetyService>(), fake<ActivityService>())
 
-    private fun container(social: SocialServices? = null) = AppContainer(
-        openDatabase = { id -> createAndroidDatabase(context, dbName(id)) },
+    private fun container(
+        social: SocialServices? = null,
+        appSettings: Settings? = null,
+        openDatabase: (LibraryId) -> AppDatabase = { id -> createAndroidDatabase(context, dbName(id)) },
+    ) = AppContainer(
+        openDatabase = openDatabase,
         deleteDatabase = { id -> context.deleteDatabase(dbName(id)) },
         libraryFiles = LibraryFiles(FileSystem.SYSTEM, files),
         httpEngine = MockEngine { respondError(HttpStatusCode.NotFound) },
@@ -103,6 +111,7 @@ class LibrarySwitchUiTest {
         releasesFileSystem = FileSystem.SYSTEM,
         releasesDir = files / "releases",
         socialServices = social,
+        appSettings = appSettings,
     ).also { runBlocking { it.start() } }
 
     private val services = PlatformServices(
@@ -119,6 +128,7 @@ class LibrarySwitchUiTest {
     fun tearDown() {
         for (id in listOf(LibraryId.Local, accountA, accountB, newReader)) context.deleteDatabase(dbName(id))
         FileSystem.SYSTEM.deleteRecursively(files)
+        context.deleteSharedPreferences("$run-settings")
     }
 
     private fun waitFor(condition: () -> Boolean) =
@@ -146,6 +156,27 @@ class LibrarySwitchUiTest {
         for (title in listOf("Os Maias", "A Relíquia")) {
             assertTrue("$title still on screen", compose.onAllNodesWithText(title, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
         }
+    }
+
+    @Test
+    fun libraryThatCantOpenAtStartIsExplainedOnHome() {
+        // The account's library was active at the last launch, and this time it can't be opened.
+        val settings = context.getSharedPreferences("$run-settings", Context.MODE_PRIVATE)
+        settings.edit().putString("library.active", accountA.key).commit()
+        val container = container(
+            appSettings = SharedPreferencesSettings(settings),
+            openDatabase = { id ->
+                if (id == accountA) throw IllegalStateException("unreadable") else createAndroidDatabase(context, dbName(id))
+            },
+        )
+        assertEquals(LibraryId.Local, container.libraries.active.value.id)
+        runBlocking { container.repository.save(Book(title = "Mensagem", authors = "Fernando Pessoa", status = ReadingStatus.READING)) }
+
+        compose.setContent { App(container, services) }
+
+        // Home shows the phone's library, and says why.
+        waitFor { shown("Mensagem") }
+        waitFor { shown("Couldn't open your library. Try signing in again.") }
     }
 
     @Test

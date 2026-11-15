@@ -4,6 +4,7 @@ import android.content.Context
 import com.mcosta.mybooks.library.LibraryFiles
 import com.mcosta.mybooks.library.deleteLibraryDatabase
 import com.mcosta.mybooks.library.libraryDatabaseFile
+import com.mcosta.mybooks.library.openDatabaseFile
 import com.mcosta.mybooks.library.openLibraryDatabase
 import com.mcosta.mybooks.social.SocialConfig
 import com.russhwolf.settings.SharedPreferencesSettings
@@ -18,6 +19,7 @@ fun androidAppContainer(context: Context, googleBooksApiKey: String, appVersion:
     openDatabase = { id -> openLibraryDatabase(context, id) },
     deleteDatabase = { id -> deleteLibraryDatabase(context, id) },
     databaseFile = { id -> libraryDatabaseFile(context, id).toOkioPath() },
+    openDatabaseFile = { path -> openDatabaseFile(context, path.toFile()) },
     libraryFiles = LibraryFiles(FileSystem.SYSTEM, context.filesDir.toOkioPath()),
     // OkHttp waits 10 s for data by default; sending the sign-in email can take longer.
     httpEngine = OkHttp.create {

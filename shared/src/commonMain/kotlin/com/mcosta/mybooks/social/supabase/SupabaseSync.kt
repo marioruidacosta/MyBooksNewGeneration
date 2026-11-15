@@ -9,6 +9,7 @@ import com.mcosta.mybooks.sync.SyncException
 import com.mcosta.mybooks.sync.SyncRow
 import com.mcosta.mybooks.sync.SyncTable
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.exceptions.HttpRequestException
 import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.postgrest.exception.PostgrestRestException
@@ -75,6 +76,9 @@ internal class SupabaseSync(
     private val client: SupabaseClient,
     private val pingChannel: (topic: String) -> PingChannel = { topic -> RealtimePingChannel(client, topic) },
 ) : SyncApi {
+    // The session whose access token the client sends with each call.
+    override fun signedInUser(): String? = client.auth.currentSessionOrNull()?.user?.id
+
     private suspend fun <T> call(block: suspend () -> T): T = try {
         block()
     } catch (e: CancellationException) {
