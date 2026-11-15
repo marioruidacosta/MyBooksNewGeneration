@@ -29,6 +29,8 @@ class WidgetCovers(
     private val cacheDir: File,
     private val store: () -> CoverStore,
     private val shrinker: PhotoShrinker = AndroidPhotoShrinker,
+    private val failures: MutableMap<String, Long> = recentFailures,
+    private val now: () -> Long = System::currentTimeMillis,
     private val download: (String) -> ByteArray? = ::downloadCover,
 ) {
     /** Never blank and never throws: anything that can't be shown becomes the generated cover. */
@@ -44,22 +46,44 @@ class WidgetCovers(
 
     private fun webCover(url: String): ByteArray? = try {
         val file = File(File(cacheDir, DIR), sha1(url) + ".jpg")
-        if (file.isFile) {
-            file.readBytes()
-        } else {
-            download(url)?.let { shrinker.shrink(it, maxSide = MAX_SIDE) }?.also { shrunk ->
-                file.parentFile?.mkdirs()
-                file.writeBytes(shrunk)
+        val failedAt = failures[url]
+        when {
+            file.isFile -> file.readBytes()
+            // A cover site that is down: don't make every refresh wait on it again for each card.
+            failedAt != null && now() - failedAt < RETRY_AFTER_MS -> null
+            else -> {
+                val shrunk = download(url)?.let { shrinker.shrink(it, maxSide = MAX_SIDE) }
+                if (shrunk == null) {
+                    failures[url] = now()
+                } else {
+                    failures.remove(url)
+                    file.parentFile?.mkdirs()
+                    file.writeBytes(shrunk)
+                }
+                shrunk
             }
         }
     } catch (_: Exception) {
         null
     }
 
+    /** Decoded at most [MAX_SIDE] on its long side: a cover photo is kept at up to 1000 px, the card shows ~72 dp. */
     private fun decode(bytes: ByteArray): Bitmap? = try {
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_SIDE) sample *= 2
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+        decoded?.let { fitWithin(it, MAX_SIDE) }
     } catch (_: Exception) {
         null
+    }
+
+    private fun fitWithin(bitmap: Bitmap, maxSide: Int): Bitmap {
+        val longest = maxOf(bitmap.width, bitmap.height)
+        if (longest <= maxSide) return bitmap
+        val scale = maxSide.toFloat() / longest
+        return Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1), (bitmap.height * scale).toInt().coerceAtLeast(1), true)
     }
 
     private fun sha1(text: String): String =
@@ -68,14 +92,18 @@ class WidgetCovers(
     private companion object {
         const val DIR = "widget-covers"
         const val MAX_SIDE = 300
+        const val RETRY_AFTER_MS = 30 * 60_000L
     }
 }
+
+/** Web covers whose download failed lately, by URL, with when (process-wide: each widget refresh makes new factories). */
+private val recentFailures: MutableMap<String, Long> = java.util.concurrent.ConcurrentHashMap()
 
 /** A web cover's bytes, or null on any failure (no network, a timeout, a non-2xx answer). */
 internal fun downloadCover(url: String): ByteArray? = try {
     val connection = URL(url).openConnection() as HttpURLConnection
-    connection.connectTimeout = 10_000
-    connection.readTimeout = 10_000
+    connection.connectTimeout = 5_000
+    connection.readTimeout = 5_000
     try {
         if (connection.responseCode in 200..299) connection.inputStream.use { it.readBytes() } else null
     } finally {

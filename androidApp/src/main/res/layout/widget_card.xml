@@ -7,14 +7,17 @@
     android:background="@drawable/widget_background"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:padding="8dp">
+    android:padding="6dp">
 
+    <!-- The cover follows the card's height (the stack is shorter at the widget's minimum size), up to 72 dp wide. -->
     <ImageView
         android:id="@+id/card_cover"
-        android:layout_width="72dp"
-        android:layout_height="108dp"
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent"
+        android:adjustViewBounds="true"
         android:contentDescription="Cover"
-        android:scaleType="centerCrop" />
+        android:maxWidth="72dp"
+        android:scaleType="fitCenter" />
 
     <LinearLayout
         android:layout_width="0dp"

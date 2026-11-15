@@ -14,6 +14,7 @@ import com.mcosta.mybooks.ui.Routes
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -59,6 +60,21 @@ class ReadingCardsTest {
         assertEquals("26%", card.text(R.id.card_percent))
         assertEquals(View.VISIBLE, card.findViewById<View>(R.id.card_progress_row).visibility)
         assertEquals(Routes.book(7), cardFillIn(book).getStringExtra(MainActivity.OPEN_ROUTE))
+    }
+
+    /** At the widget's minimum height (and in a widget still sized 4×2) the stack is short: the cover must fit it. */
+    @Test
+    fun aCardFitsAShortStack() {
+        val book = reading(3, "Stoner", percent = 40)
+        val card = cardFor(context, book, generatedCoverBitmap(book.title, book.authors)).apply(context, FrameLayout(context))
+        val density = context.resources.displayMetrics.density
+        val width = (300 * density).toInt()
+        val height = (80 * density).toInt()
+        card.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+        card.layout(0, 0, width, height)
+        val cover = card.findViewById<View>(R.id.card_cover)
+        assertTrue("cover ${cover.top}..${cover.bottom} in a card of $height", cover.top >= 0 && cover.bottom <= height)
+        assertTrue(cover.height > 0)
     }
 
     @Test

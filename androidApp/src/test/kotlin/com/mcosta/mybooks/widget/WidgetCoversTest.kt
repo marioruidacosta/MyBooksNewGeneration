@@ -9,6 +9,7 @@ import com.mcosta.mybooks.ui.components.coverColorArgb
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -38,7 +39,9 @@ class WidgetCoversTest {
     private var downloads = 0
     private var downloaded: ByteArray? = byteArrayOf(1, 2, 3)
 
-    private fun covers() = WidgetCovers(cache, { store }, shrinker) { downloads++; downloaded }
+    private var now = 1_000_000L
+    private val failures = mutableMapOf<String, Long>()
+    private fun covers() = WidgetCovers(cache, { store }, shrinker, failures = failures, now = { now }) { downloads++; downloaded }
     private fun cachedFiles(): List<File> = File(cache, "widget-covers").listFiles()?.toList().orEmpty()
 
     /** A generated cover is the app's colour for the title; the right-middle avoids the spine and the text. */
@@ -51,6 +54,39 @@ class WidgetCoversTest {
         val bitmap = covers().bitmapFor(Book(title = "Stoner", coverUrl = ref))
         assertEquals(20, bitmap.width)
         assertEquals(0, downloads)
+    }
+
+    /** A cover photo is kept at up to 1000 px; the widget only needs a small cover, so it gets one. */
+    @Test
+    fun aPhotoCoverIsShrunkToTheWidgetSize() {
+        val big = ByteArrayOutputStream().also {
+            Bitmap.createBitmap(1000, 1500, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }.compress(Bitmap.CompressFormat.JPEG, 80, it)
+        }.toByteArray()
+        val bitmap = covers().bitmapFor(Book(title = "Stoner", coverUrl = store.save(big)))
+        assertTrue("${bitmap.width}x${bitmap.height}", maxOf(bitmap.width, bitmap.height) <= 300)
+    }
+
+    /** A cover site that is down: every refresh would otherwise wait on it again for each card. */
+    @Test
+    fun aFailedDownloadIsNotRetriedStraightAway() {
+        downloaded = null
+        val book = Book(title = "Stoner", coverUrl = "https://covers.example/slow.jpg")
+        covers().bitmapFor(book)
+        now += 10 * 60_000L
+        covers().bitmapFor(book)
+        assertEquals(1, downloads)
+    }
+
+    @Test
+    fun aFailedDownloadIsRetriedLater() {
+        downloaded = null
+        val book = Book(title = "Stoner", coverUrl = "https://covers.example/slow.jpg")
+        covers().bitmapFor(book)
+        now += 31 * 60_000L
+        downloaded = byteArrayOf(1)
+        covers().bitmapFor(book)
+        assertEquals(2, downloads)
+        assertEquals(1, cachedFiles().size)
     }
 
     @Test
