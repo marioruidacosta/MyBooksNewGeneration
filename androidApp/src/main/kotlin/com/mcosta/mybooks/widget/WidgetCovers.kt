@@ -153,3 +153,30 @@ fun generatedCoverBitmap(title: String, authors: String, width: Int = WIDGET_COV
     }
     return bitmap
 }
+
+/**
+ * A shelf spot's picture: [cover] with its progress bar under it, exactly as wide as the cover (a separate bar would
+ * span the whole spot while the cover sits in its middle). Without [percent] the bar's place stays empty, so every
+ * cover in the row sits at the same height.
+ */
+fun shelfSpotBitmap(cover: Bitmap, percent: Int?, track: Int, accent: Int): Bitmap {
+    val gap = (cover.height * 0.04f).toInt().coerceAtLeast(2)
+    val bar = (cover.height * 0.035f).toInt().coerceAtLeast(3)
+    val bitmap = Bitmap.createBitmap(cover.width, cover.height + gap + bar, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    canvas.drawBitmap(cover, 0f, 0f, null)
+    if (percent != null) {
+        val top = (cover.height + gap).toFloat()
+        val bottom = bitmap.height.toFloat()
+        val radius = bar / 2f
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        paint.color = track
+        canvas.drawRoundRect(0f, top, cover.width.toFloat(), bottom, radius, radius, paint)
+        val filled = cover.width * percent.coerceIn(0, 100) / 100f
+        if (filled > 0f) {
+            paint.color = accent
+            canvas.drawRoundRect(0f, top, filled.coerceAtLeast(bar.toFloat()), bottom, radius, radius, paint)
+        }
+    }
+    return bitmap
+}

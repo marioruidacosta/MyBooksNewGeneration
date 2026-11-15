@@ -43,7 +43,6 @@ class ReadingWidget : AppWidgetProvider() {
         private const val SPOTS = 4
         private val COVERS = listOf(R.id.shelf_cover_0, R.id.shelf_cover_1, R.id.shelf_cover_2, R.id.shelf_cover_3)
         private val SPOT_VIEWS = listOf(R.id.shelf_spot_0, R.id.shelf_spot_1, R.id.shelf_spot_2, R.id.shelf_spot_3)
-        private val BARS = listOf(R.id.shelf_progress_0, R.id.shelf_progress_1, R.id.shelf_progress_2, R.id.shelf_progress_3)
 
         private suspend fun summary(container: AppContainer): ReadingSummary = container.readingSummaries.first()
 
@@ -84,6 +83,8 @@ class ReadingWidget : AppWidgetProvider() {
                 views.setViewVisibility(R.id.widget_empty, View.GONE)
                 // Four fit; with more, three covers and "+N" for the rest.
                 val shown = if (books.size > SPOTS) books.take(SPOTS - 1) else books
+                val track = context.getColor(R.color.widget_track)
+                val accent = context.getColor(R.color.widget_accent)
                 for (i in 0 until SPOTS) {
                     val book = shown.getOrNull(i)
                     if (book == null) {
@@ -91,15 +92,9 @@ class ReadingWidget : AppWidgetProvider() {
                         continue
                     }
                     views.setViewVisibility(SPOT_VIEWS[i], View.VISIBLE)
-                    views.setImageViewBitmap(COVERS[i], cover(book))
-                    views.setContentDescription(COVERS[i], book.title)
                     val percent = book.progressPercent
-                    if (percent != null) {
-                        views.setViewVisibility(BARS[i], View.VISIBLE)
-                        views.setProgressBar(BARS[i], 100, percent, false)
-                    } else {
-                        views.setViewVisibility(BARS[i], View.INVISIBLE)
-                    }
+                    views.setImageViewBitmap(COVERS[i], shelfSpotBitmap(cover(book), percent, track, accent))
+                    views.setContentDescription(COVERS[i], if (percent != null) "${book.title}, $percent% read" else book.title)
                     views.setOnClickPendingIntent(SPOT_VIEWS[i], open(context, Routes.book(book.id), 10 + i))
                 }
                 if (books.size > SPOTS) {

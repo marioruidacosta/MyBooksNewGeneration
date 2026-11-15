@@ -40,23 +40,13 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
+            <!-- The cover with its progress bar under it, drawn as one picture so the bar is as wide as the cover. -->
             <ImageView
                 android:id="@+id/shelf_cover_0"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
+                android:layout_height="match_parent"
                 android:contentDescription="Cover"
-                android:scaleType="fitEnd" />
-
-            <ProgressBar
-                android:id="@+id/shelf_progress_0"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="4dp"
-                android:layout_marginTop="4dp"
-                android:max="100"
-                android:progressBackgroundTint="@color/widget_track"
-                android:progressTint="@color/widget_accent" />
+                android:scaleType="fitCenter" />
         </LinearLayout>
         <LinearLayout
             android:id="@+id/shelf_spot_1"
@@ -66,23 +56,13 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
+            <!-- The cover with its progress bar under it, drawn as one picture so the bar is as wide as the cover. -->
             <ImageView
                 android:id="@+id/shelf_cover_1"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
+                android:layout_height="match_parent"
                 android:contentDescription="Cover"
-                android:scaleType="fitEnd" />
-
-            <ProgressBar
-                android:id="@+id/shelf_progress_1"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="4dp"
-                android:layout_marginTop="4dp"
-                android:max="100"
-                android:progressBackgroundTint="@color/widget_track"
-                android:progressTint="@color/widget_accent" />
+                android:scaleType="fitCenter" />
         </LinearLayout>
         <LinearLayout
             android:id="@+id/shelf_spot_2"
@@ -92,23 +72,13 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
+            <!-- The cover with its progress bar under it, drawn as one picture so the bar is as wide as the cover. -->
             <ImageView
                 android:id="@+id/shelf_cover_2"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
+                android:layout_height="match_parent"
                 android:contentDescription="Cover"
-                android:scaleType="fitEnd" />
-
-            <ProgressBar
-                android:id="@+id/shelf_progress_2"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="4dp"
-                android:layout_marginTop="4dp"
-                android:max="100"
-                android:progressBackgroundTint="@color/widget_track"
-                android:progressTint="@color/widget_accent" />
+                android:scaleType="fitCenter" />
         </LinearLayout>
         <LinearLayout
             android:id="@+id/shelf_spot_3"
@@ -118,23 +88,13 @@
             android:layout_weight="1"
             android:orientation="vertical">
 
+            <!-- The cover with its progress bar under it, drawn as one picture so the bar is as wide as the cover. -->
             <ImageView
                 android:id="@+id/shelf_cover_3"
                 android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
+                android:layout_height="match_parent"
                 android:contentDescription="Cover"
-                android:scaleType="fitEnd" />
-
-            <ProgressBar
-                android:id="@+id/shelf_progress_3"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="4dp"
-                android:layout_marginTop="4dp"
-                android:max="100"
-                android:progressBackgroundTint="@color/widget_track"
-                android:progressTint="@color/widget_accent" />
+                android:scaleType="fitCenter" />
         </LinearLayout>
         <TextView
             android:id="@+id/shelf_more"

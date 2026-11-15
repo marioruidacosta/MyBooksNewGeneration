@@ -4,7 +4,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.view.View
 import android.widget.FrameLayout
-import android.widget.ProgressBar
+import android.graphics.Color
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import com.mcosta.mybooks.MainActivity
@@ -14,6 +14,7 @@ import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.ReadingSummary
 import com.mcosta.mybooks.ui.Routes
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -28,7 +29,7 @@ import org.robolectric.annotation.GraphicsMode
 class ShelfWidgetTest {
     private val context = ApplicationProvider.getApplicationContext<Context>()
     private val spots = listOf(R.id.shelf_spot_0, R.id.shelf_spot_1, R.id.shelf_spot_2, R.id.shelf_spot_3)
-    private val bars = listOf(R.id.shelf_progress_0, R.id.shelf_progress_1, R.id.shelf_progress_2, R.id.shelf_progress_3)
+    private val covers = listOf(R.id.shelf_cover_0, R.id.shelf_cover_1, R.id.shelf_cover_2, R.id.shelf_cover_3)
 
     private fun reading(n: Int, percent: Int? = 10 * n) =
         (1..n).map { Book(id = it.toLong(), title = "Book $it", authors = "A", status = ReadingStatus.READING, progressPercent = percent) }
@@ -62,12 +63,36 @@ class ShelfWidgetTest {
         assertEquals(false, view.visible(R.id.shelf_more))
     }
 
+    /**
+     * The cover and its progress bar are one picture: the bar is exactly as wide as the cover and sits under it, whatever
+     * the widget's size (a separate bar spanned the whole spot while the cover sat at its right).
+     */
     @Test
-    fun eachCoverHasItsProgressHiddenWhenUnknown() {
+    fun theProgressBarIsAsWideAsTheCover() {
+        val cover = generatedCoverBitmap("Stoner", "John Williams")
+        val spot = shelfSpotBitmap(cover, percent = 50, track = Color.LTGRAY, accent = Color.BLUE)
+        assertEquals(cover.width, spot.width)
+        assertTrue(spot.height > cover.height)
+        val barY = spot.height - 3
+        assertEquals(Color.BLUE, spot.getPixel(spot.width / 4, barY))       // half filled, from the cover's left
+        assertEquals(Color.LTGRAY, spot.getPixel(spot.width * 3 / 4, barY)) // the track runs to the cover's right edge
+    }
+
+    /** Without progress the bar's place stays empty, so every cover in the row sits at the same height. */
+    @Test
+    fun noProgressLeavesTheBarEmptyButTheCoverLevel() {
+        val cover = generatedCoverBitmap("Stoner", "John Williams")
+        val withBar = shelfSpotBitmap(cover, percent = 50, track = Color.LTGRAY, accent = Color.BLUE)
+        val without = shelfSpotBitmap(cover, percent = null, track = Color.LTGRAY, accent = Color.BLUE)
+        assertEquals(withBar.height, without.height)
+        assertEquals(Color.TRANSPARENT, without.getPixel(without.width / 2, without.height - 3))
+    }
+
+    @Test
+    fun aCoverSaysItsTitleAndProgress() {
         val view = widget(listOf(reading(1, percent = 26).single(), reading(2, percent = null)[1]))
-        assertEquals(26, view.findViewById<ProgressBar>(bars[0]).progress)
-        assertEquals(true, view.visible(bars[0]))
-        assertEquals(false, view.visible(bars[1]))
+        assertEquals("Book 1, 26% read", view.findViewById<View>(covers[0]).contentDescription)
+        assertEquals("Book 2", view.findViewById<View>(covers[1]).contentDescription)
     }
 
     @Test
