@@ -15,22 +15,32 @@ export function SignIn() {
     e.preventDefault()
     setBusy(true)
     setError(null)
-    const { error: err } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: false },
-    })
-    setBusy(false)
-    if (err) setError(SEND_ERROR)
-    else setStep('code')
+    try {
+      const { error: err } = await supabase.auth.signInWithOtp({
+        email,
+        options: { shouldCreateUser: false },
+      })
+      if (err) setError(SEND_ERROR)
+      else setStep('code')
+    } catch {
+      setError(SEND_ERROR)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function signIn(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
     setError(null)
-    const { error: err } = await supabase.auth.verifyOtp({ email, token, type: 'email' })
-    setBusy(false)
-    if (err) setError(CODE_ERROR)
+    try {
+      const { error: err } = await supabase.auth.verifyOtp({ email, token, type: 'email' })
+      if (err) setError(CODE_ERROR)
+    } catch {
+      setError(CODE_ERROR)
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (

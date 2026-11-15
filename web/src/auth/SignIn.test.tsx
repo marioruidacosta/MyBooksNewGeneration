@@ -49,4 +49,34 @@ describe('SignIn', () => {
 
     expect(await screen.findByText("That code didn't work. Check it, or send a new one.")).toBeInTheDocument()
   })
+
+  it("aNetworkFailureWhileSendingCanBeRetried", async () => {
+    signInWithOtp.mockRejectedValue(new TypeError("Failed to fetch"))
+    const user = userEvent.setup()
+    render(<SignIn />)
+
+    await user.type(screen.getByLabelText("Email"), "reader@example.com")
+    await user.click(screen.getByRole("button", { name: "Send code" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We couldn't send a code to that address. Check it and try again.",
+    )
+    expect(screen.getByRole("button", { name: "Send code" })).toBeEnabled()
+  })
+
+  it("aNetworkFailureWhileVerifyingCanBeRetried", async () => {
+    verifyOtp.mockRejectedValue(new TypeError("Failed to fetch"))
+    const user = userEvent.setup()
+    render(<SignIn />)
+
+    await user.type(screen.getByLabelText("Email"), "reader@example.com")
+    await user.click(screen.getByRole("button", { name: "Send code" }))
+    await user.type(await screen.findByLabelText("Code"), "123456")
+    await user.click(screen.getByRole("button", { name: "Sign in" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That code didn't work. Check it, or send a new one.",
+    )
+    expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled()
+  })
 })
