@@ -79,6 +79,8 @@ import com.mcosta.mybooks.ui.activity.YearReviewScreen
 import com.mcosta.mybooks.ui.activity.YearReviewViewModel
 import com.mcosta.mybooks.ui.detail.BookDetailScreen
 import com.mcosta.mybooks.ui.detail.BookDetailViewModel
+import com.mcosta.mybooks.ui.edit.EditBookViewModel
+import com.mcosta.mybooks.ui.edit.EditBookScreen
 import com.mcosta.mybooks.ui.home.HomeScreen
 import com.mcosta.mybooks.ui.home.HomeViewModel
 import com.mcosta.mybooks.ui.library.LibraryScreen
@@ -242,6 +244,16 @@ class ScreenshotTest {
         }
         shoot("cover-photo-menu", dark, ready = { compose.onAllNodesWithText("Choose from photos").fetchSemanticsNodes().isNotEmpty() }, act = open) {
             BookDetailScreen(vm, onBack = {}, onEdit = {}, onRead = {}, onAddEbookFile = {})
+        }
+    }
+
+    /** The edit form: the cover with "Take photo" and "Choose photo" under it. */
+    private fun editForm(dark: Boolean) {
+        sampleLibrary()
+        val id = runBlocking { repo.findByTitleAndAuthors("Stoner", "John Williams")!!.id }
+        val vm = EditBookViewModel(repo, id, null)
+        shoot("edit-form", dark, ready = { vm.state.value.form.title.isNotEmpty() }) {
+            EditBookScreen(vm, isNew = false, onBack = {}, onSaved = {})
         }
     }
 
@@ -610,6 +622,8 @@ class ScreenshotTest {
     }
 
     @Test fun coverPhotoMenuLight() = coverPhotoMenu(dark = false)
+    @Test fun editFormLight() = editForm(dark = false)
+    @Test fun editFormDark() = editForm(dark = true)
     @Test fun coverPhotoMenuDark() = coverPhotoMenu(dark = true)
     @Test fun accountSyncLight() = accountSync(dark = false)
     @Test fun accountCombiningDark() = accountCombining(dark = true)

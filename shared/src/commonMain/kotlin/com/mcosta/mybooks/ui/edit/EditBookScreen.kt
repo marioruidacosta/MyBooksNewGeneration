@@ -1,6 +1,7 @@
 package com.mcosta.mybooks.ui.edit
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +19,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -25,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -110,8 +113,8 @@ fun EditBookScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     BookCover(f.coverUrl, Modifier.width(80.dp).height(120.dp), title = f.title.ifBlank { null }, authors = f.authors)
-                    TextButton(onClick = takePhoto) { Text("Take photo") }
-                    choosePhoto?.let { TextButton(onClick = it) { Text("Choose photo") } }
+                    CoverPhotoButton("Take photo", takePhoto)
+                    choosePhoto?.let { CoverPhotoButton("Choose photo", it) }
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Field("Title *", f.title) { v -> viewModel.update { it.copy(title = v) } }
@@ -175,3 +178,13 @@ internal val isbnKeyboardOptions = KeyboardOptions(
     keyboardType = KeyboardType.Ascii,
     capitalization = KeyboardCapitalization.Characters,
 )
+
+/** A compact text button under the cover: "Take photo" and "Choose photo" sit close together, not 48 dp apart. */
+@Composable
+private fun CoverPhotoButton(label: String, onClick: () -> Unit) {
+    CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+        TextButton(onClick = onClick, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+            Text(label)
+        }
+    }
+}
