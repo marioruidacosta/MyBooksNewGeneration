@@ -52,7 +52,8 @@ class WidgetCoversTest {
     fun aPhotoCoverIsReadFromTheStore() {
         val ref = store.save(jpeg)
         val bitmap = covers().bitmapFor(Book(title = "Stoner", coverUrl = ref))
-        assertEquals(20, bitmap.width)
+        val pixel = bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)   // the photo's red (JPEG shifts it a little)
+        assertTrue(Color.red(pixel) > 200 && Color.green(pixel) < 50 && Color.blue(pixel) < 50)
         assertEquals(0, downloads)
     }
 
@@ -64,6 +65,18 @@ class WidgetCoversTest {
         }.toByteArray()
         val bitmap = covers().bitmapFor(Book(title = "Stoner", coverUrl = store.save(big)))
         assertTrue("${bitmap.width}x${bitmap.height}", maxOf(bitmap.width, bitmap.height) <= 300)
+    }
+
+    /** Covers come square, tall or wide; in the stack every card must look the same, so every cover is 2:3. */
+    @Test
+    fun everyCoverHasTheSameShape() {
+        fun photo(w: Int, h: Int) = ByteArrayOutputStream().also {
+            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }.compress(Bitmap.CompressFormat.JPEG, 80, it)
+        }.toByteArray()
+        val shapes = listOf(photo(600, 600), photo(400, 900), photo(900, 500)).map {
+            covers().bitmapFor(Book(title = "Stoner", coverUrl = store.save(it))).let { b -> b.width to b.height }
+        } + generatedCoverBitmap("Stoner", "John Williams").let { it.width to it.height }
+        assertEquals(listOf(200 to 300), shapes.distinct())
     }
 
     /** A cover site that is down: every refresh would otherwise wait on it again for each card. */

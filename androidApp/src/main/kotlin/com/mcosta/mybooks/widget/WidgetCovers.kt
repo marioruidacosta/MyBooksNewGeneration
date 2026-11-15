@@ -67,23 +67,31 @@ class WidgetCovers(
         null
     }
 
-    /** Decoded at most [MAX_SIDE] on its long side: a cover photo is kept at up to 1000 px, the card shows ~72 dp. */
+    /**
+     * Decoded small (a cover photo is kept at up to 1000 px, the card shows ~72 dp) and in the book shape every card uses
+     * ([COVER_WIDTH]×[COVER_HEIGHT], cropped to the middle), so square, tall and wide covers all look the same in the stack.
+     */
     private fun decode(bytes: ByteArray): Bitmap? = try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= MAX_SIDE) sample *= 2
         val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
-        decoded?.let { fitWithin(it, MAX_SIDE) }
+        decoded?.let { inCoverShape(it) }
     } catch (_: Exception) {
         null
     }
 
-    private fun fitWithin(bitmap: Bitmap, maxSide: Int): Bitmap {
-        val longest = maxOf(bitmap.width, bitmap.height)
-        if (longest <= maxSide) return bitmap
-        val scale = maxSide.toFloat() / longest
-        return Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1), (bitmap.height * scale).toInt().coerceAtLeast(1), true)
+    /** Crops [bitmap] to the middle 2:3 and scales it to [COVER_WIDTH]×[COVER_HEIGHT]. */
+    private fun inCoverShape(bitmap: Bitmap): Bitmap {
+        val targetRatio = COVER_WIDTH.toFloat() / COVER_HEIGHT
+        val (w, h) = if (bitmap.width.toFloat() / bitmap.height > targetRatio) {
+            (bitmap.height * targetRatio).toInt().coerceAtLeast(1) to bitmap.height
+        } else {
+            bitmap.width to (bitmap.width / targetRatio).toInt().coerceAtLeast(1)
+        }
+        val cropped = Bitmap.createBitmap(bitmap, (bitmap.width - w) / 2, (bitmap.height - h) / 2, w, h)
+        return Bitmap.createScaledBitmap(cropped, COVER_WIDTH, COVER_HEIGHT, true)
     }
 
     private fun sha1(text: String): String =
@@ -92,6 +100,8 @@ class WidgetCovers(
     private companion object {
         const val DIR = "widget-covers"
         const val MAX_SIDE = 300
+        const val COVER_WIDTH = 200
+        const val COVER_HEIGHT = 300
         const val RETRY_AFTER_MS = 30 * 60_000L
     }
 }
