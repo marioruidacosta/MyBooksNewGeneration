@@ -627,14 +627,17 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
 /* Library: the empty right-hand side of the band that holds the header and the shelf, and no further. */
 @media (min-width: 52rem) {
   .library-band { overflow: hidden; min-height: 17rem; margin-inline: -0.5rem; padding-inline: 0.5rem; padding-bottom: 0.5rem; }
-  .quote-day--library { position: absolute; top: 0; right: 1rem; width: 34rem; height: 100%; z-index: -1; display: flex; flex-direction: column; justify-content: center; padding-right: 1rem; }
+  /* Below the header's goal panel (the top 6rem of the band), so the portrait never sits under it. */
+  .quote-day--library { position: absolute; top: 6rem; right: 1rem; width: 34rem; height: calc(100% - 6rem); z-index: -1; display: flex; flex-direction: column; justify-content: center; padding-right: 1rem; }
   .quote-day--library .quote-day__portrait { right: -1rem; }
   .quote-day--library blockquote, .quote-day--library figcaption { max-width: 20rem; }
 }
 /* Sign in: a backdrop beside the form, only where it can't reach it (the form is 26rem, centred). */
 @media (min-width: 70rem) {
   .quote-day--sign-in { position: fixed; top: 5rem; right: 0; bottom: 0; width: calc(50vw - 15rem); z-index: -1; display: flex; flex-direction: column; justify-content: center; padding: 0 3rem 0 1rem; }
-  .quote-day--sign-in .quote-day__portrait { height: 28rem; right: 0; top: 50%; transform: translateY(-50%); }
+  .quote-day--sign-in .quote-day__portrait { height: 28rem; right: -4rem; top: 50%; transform: translateY(-50%); }
+  /* The words stay left of the face: the portrait sits at the far right edge. */
+  .quote-day--sign-in blockquote, .quote-day--sign-in figcaption { max-width: 16rem; }
 }
 
 /* Narrower: a quiet line under the title, no portrait. */
@@ -711,7 +714,7 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
 .year-authors li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.5rem 0; border-bottom: 1px solid var(--rule); }
 .year-authors__count { color: var(--ink-soft); font-size: 0.9375rem; }
 .year-covers { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.75rem; }
-.year-covers a { display: block; border-radius: 2px; }
+.year-covers a { display: block; border-radius: 2px; color: inherit; text-decoration: none; }
 .year-cover { width: 5rem; height: 7.5rem; border-radius: 2px; object-fit: cover; box-shadow: var(--book-shadow); }
 
 /* ---------- Small screens and reduced motion ---------- */
