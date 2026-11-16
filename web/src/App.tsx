@@ -11,6 +11,7 @@ import {
 } from '@tanstack/react-router'
 import { SignIn } from './auth/SignIn'
 import { useSession } from './auth/useSession'
+import { AddPage } from './add/AddPage'
 import { BookPage } from './book/BookPage'
 import { CoverContext } from './covers/storage'
 import { LibraryPage } from './library/LibraryPage'
@@ -66,6 +67,12 @@ function LibraryRoute() {
   return <LibraryPage store={store} onAdd={onAdd} onOpen={onOpen} />
 }
 
+function AddRoute() {
+  const store = useStore()
+  const navigate = useNavigate()
+  return <AddPage store={store} onOpen={(id) => void navigate({ to: '/book/$id', params: { id } })} />
+}
+
 function BookRoute() {
   const store = useStore()
   const { id } = bookRoute.useParams()
@@ -105,7 +112,7 @@ const addRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/add',
   beforeLoad: requireSession,
-  component: page('Add a book'),
+  component: AddRoute,
 })
 const importRoute = createRoute({
   getParentRoute: () => rootRoute,
