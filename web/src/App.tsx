@@ -33,6 +33,7 @@ import { ToastProvider } from './ui/Toast'
 const ImportPage = lazy(() => import('./io/ImportPage').then((m) => ({ default: m.ImportPage })))
 const TidyPage = lazy(() => import('./tidy/TidyPage').then((m) => ({ default: m.TidyPage })))
 const YearPage = lazy(() => import('./year/YearPage').then((m) => ({ default: m.YearPage })))
+const NewsPage = lazy(() => import('./news/NewsPage').then((m) => ({ default: m.NewsPage })))
 
 const loadingPage = <p className="loading">Loading…</p>
 
@@ -68,6 +69,7 @@ function Shell() {
             <Link to="/import">Import</Link>
             <Link to="/tidy">Tidy up</Link>
             <Link to="/year">Year in books</Link>
+            <Link to="/news">Book news</Link>
           </nav>
           <Jump store={store} />
           <SaveBadge store={store} />
@@ -138,6 +140,16 @@ function YearRoute() {
   )
 }
 
+function NewsRoute() {
+  return (
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>
+        <NewsPage />
+      </Suspense>
+    </PageBoundary>
+  )
+}
+
 function BookRoute() {
   const store = useStore()
   const { id } = bookRoute.useParams()
@@ -201,7 +213,14 @@ const yearRoute = createRoute({
   component: YearRoute,
 })
 
-const routeTree = rootRoute.addChildren([signInRoute, libraryRoute, bookRoute, addRoute, importRoute, tidyRoute, yearRoute])
+const newsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/news',
+  beforeLoad: requireSession,
+  component: NewsRoute,
+})
+
+const routeTree = rootRoute.addChildren([signInRoute, libraryRoute, bookRoute, addRoute, importRoute, tidyRoute, yearRoute, newsRoute])
 
 const router = createRouter({
   routeTree,

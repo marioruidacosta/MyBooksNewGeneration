@@ -1,0 +1,123 @@
+{
+  "generatedAt": 1794872920201,
+  "sources": [
+    {
+      "id": "apel",
+      "name": "APEL",
+      "lang": "pt",
+      "ok": true
+    },
+    {
+      "id": "publico",
+      "name": "Público",
+      "lang": "pt",
+      "ok": true
+    },
+    {
+      "id": "expresso",
+      "name": "Expresso",
+      "lang": "pt",
+      "ok": true
+    },
+    {
+      "id": "observador",
+      "name": "Observador",
+      "lang": "pt",
+      "ok": true
+    },
+    {
+      "id": "sapomag",
+      "name": "SAPO Mag",
+      "lang": "pt",
+      "ok": true
+    },
+    {
+      "id": "jl",
+      "name": "Jornal de Letras",
+      "lang": "pt",
+      "ok": true
+    },
+    {
+      "id": "rtp",
+      "name": "RTP Cultura",
+      "lang": "pt",
+      "ok": true
+    },
+    {
+      "id": "guardian",
+      "name": "The Guardian Books",
+      "lang": "en",
+      "ok": true
+    },
+    {
+      "id": "lithub",
+      "name": "Literary Hub",
+      "lang": "en",
+      "ok": true
+    },
+    {
+      "id": "nyt",
+      "name": "The New York Times Books",
+      "lang": "en",
+      "ok": true
+    },
+    {
+      "id": "npr",
+      "name": "NPR Books",
+      "lang": "en",
+      "ok": true
+    }
+  ],
+  "items": [
+    {
+      "id": "8ad93537b5980b35c8a8a7c2bb9b0c253c2a3746",
+      "title": "Book Review: ‘Rome’s Age of Revolution,’ by Tim Whitmarsh",
+      "summary": "In “Rome’s Age of Revolution,” Tim Whitmarsh argues that movements advanced by Augustus and Paul the Apostle, far from being at odds, were two sides of the same imperial coin.",
+      "url": "https://www.nytimes.com/2026/11/10/books/review/romes-age-of-revolution-tim-whitmarsh.html",
+      "source": "nyt",
+      "lang": "en",
+      "published": 1794869340000,
+      "image": null
+    },
+    {
+      "id": "e5fc8ac630d69cfa30268eab1bebe6e067fc740e",
+      "title": "O livro com 723 anos que, para já, o Estado não compra nem deixa vender lá fora",
+      "summary": "Biblioteca Nacional abriu processo de classificação de manuscrito da Ordem de Avis, cuja exportação proibiu. Ouvimos o leiloeiro que o quis vender e o Ministério da Cultura. A hora é de avaliação.",
+      "url": "https://www.publico.pt/2026/11/16/culturaipsilon/noticia/livro-723-anos-ja-estado-nao-compra-deixa-vender-2195155",
+      "source": "publico",
+      "lang": "pt",
+      "published": 1794861007000,
+      "image": null
+    },
+    {
+      "id": "0e0a00a1f277eb7cbb94ab15369d797967d5687b",
+      "title": "Michael by Bob Mortimer review – heartwarming quirkiness from the comedian",
+      "summary": "Mortimer’s off-kilter charm energises the story of a troubled teenager in 1970s Middlesbrough In comedian Bob Mortimer’s fourth novel, Michael, when we meet him, isn’t an angel; but he’s in a place that he suspects is at least angel-adjacent. He’s dead, or close to it, having…",
+      "url": "https://www.theguardian.com/books/2026/nov/16/michael-by-bob-mortimer-review-heartwarming-quirkiness-from-the-comedian",
+      "source": "guardian",
+      "lang": "en",
+      "published": 1794826858000,
+      "image": "https://i.guim.co.uk/img/media/d8e36abfe0607e466705b53ab0414c4fd9410517/560_0_5600_4480/master/5600.jpg?width=140&quality=85&auto=format&fit=max&s=8f29353eb8acdc5c55223569d28af57a"
+    },
+    {
+      "id": "334efa5d3e6f612a09cf617baa6076160a825ae5",
+      "title": "Feira do Livro Infantil e Juvenil de Bolonha 2027 – Inscrições Abertas",
+      "summary": "",
+      "url": "https://apel.pt/2026/11/04/feira-do-livro-infantil-e-juvenil-de-bolonha-2027-inscricoes-abertas/",
+      "source": "apel",
+      "lang": "pt",
+      "published": 1793811291000,
+      "image": "https://apel.pt/wp-content/uploads/2026/11/egrwe.png"
+    },
+    {
+      "id": "8259112df89b27112f41b6aeb224c8d65387f031",
+      "title": "Curtis Sittenfeld’s Prep is coming to the small screen. Who should play Lee?",
+      "summary": "Back in 2005, Curtis Sittenfeld’s debut novel Prep was the talk of the town. We debated everything from its genre to its striving protagonist, whose moral universe felt like something straight outta Wharton. Sittenfeld was praised and derided for her",
+      "url": "https://lithub.com/curtis-sittenfelds-prep-is-coming-to-the-small-screen-who-should-play-lee/",
+      "source": "lithub",
+      "lang": "en",
+      "published": 1794858377000,
+      "image": "https://s26162.pcdn.co/wp-content/uploads/2026/11/Untitled-Design-18-768x384.png"
+    }
+  ]
+}
