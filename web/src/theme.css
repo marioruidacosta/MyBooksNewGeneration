@@ -14,6 +14,8 @@
   --ink-soft: #4e473d;
   --rule: #d2c8b9;
   --rule-strong: #80776b;
+  /* Empty stars in the table: 3:1 or more on every row background (a lone icon needs 3:1). */
+  --star-empty: #80776b;
   --teal: #1f5f5b;
   --on-teal: #ffffff;
   --teal-soft: #bfe5df;
@@ -50,6 +52,7 @@
     --ink-soft: #d2c8b9;
     --rule: #4e473d;
     --rule-strong: #9b9184;
+    --star-empty: #9b9184;
     --teal: #8fd3cb;
     --on-teal: #003733;
     --teal-soft: #00504b;
@@ -287,10 +290,10 @@ select.status-select option { background: var(--paper); color: var(--ink); }
 .stars-edit { display: inline-flex; white-space: nowrap; }
 button.star-btn {
   padding: 0 0.0625rem; border: 0; background: none; font-size: 1.0625rem; line-height: 1.4;
-  color: var(--rule-strong); opacity: 0.45; transition: color 120ms ease, transform 120ms ease, opacity 120ms ease;
+  color: var(--star-empty); transition: color 120ms ease, transform 120ms ease;
 }
-button.star-btn:hover:not(:disabled) { background: none; opacity: 1; transform: scale(1.15); }
-button.star-btn.star-btn--on { color: var(--gold); opacity: 1; }
+button.star-btn:hover:not(:disabled) { background: none; transform: scale(1.15); }
+button.star-btn.star-btn--on { color: var(--gold); }
 .chips { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; }
 button.chip {
   padding: 0.0625rem 0.625rem; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper-low);
@@ -506,6 +509,7 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
   --ink-soft: #b9b09c;
   --rule: #263a33;
   --rule-strong: #5b6e65;
+  --star-empty: #7d9188;
   --teal: #d9a54a;
   --on-teal: #1b1305;
   --teal-soft: #3b2f15;
