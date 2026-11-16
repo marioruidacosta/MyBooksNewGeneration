@@ -16,7 +16,18 @@ describe('feeds', () => {
     expect(keep('Prémio Pessoa entregue hoje')).toBe(false)
     expect(keep('Festival de cinema abre em Cannes', 'Filmes e atores')).toBe(false)
     expect(keep('O delivro não conta')).toBe(false)
-    expect(FEEDS.map((f) => f.id)).toEqual(['apel', 'jl', 'rtp', 'guardian', 'lithub', 'nyt', 'npr'])
-    expect(FEEDS.filter((f) => f.filter).map((f) => f.id)).toEqual(['rtp'])
+    expect(FEEDS.map((f) => f.id)).toEqual(['apel', 'publico', 'expresso', 'jl', 'rtp', 'guardian', 'lithub', 'nyt', 'npr'])
+    expect(FEEDS.filter((f) => f.filter).map((f) => f.id)).toEqual(['expresso', 'rtp'])
+  })
+  it('expressoKeepsOnlyBookStories', () => {
+    const expresso = FEEDS.find((f) => f.id === 'expresso')!
+    const rtp = FEEDS.find((f) => f.id === 'rtp')!
+    expect(expresso.url).toBe('https://feeds.feedburner.com/expresso-geral')
+    expect(expresso.filter).toBe(rtp.filter) // one shared filter
+    expect(expresso.filter!('Nova edição do romance de Gonçalo M. Tavares', '')).toBe(true)
+    expect(expresso.filter!('SpaceX recupera a nave Starship', 'Economia espacial')).toBe(false)
+    const publico = FEEDS.find((f) => f.id === 'publico')!
+    expect(publico.url).toBe('https://www.publico.pt/api/list/rss/livros')
+    expect(publico.filter).toBeUndefined()
   })
 })

@@ -61,6 +61,10 @@ function cap(text: string, max: number): string {
   return `${cut.replace(/[\s,;:.\-–—]+$/, '')}…`
 }
 
+/**
+ * Plain-text summary. It can be the empty string: some feeds (APEL) only carry a footer, which is dropped, so
+ * everything that shows a summary must cope with "".
+ */
 export function summarize(html: string): string {
   const plain = toPlainText(html).replace(/\s*The post .{0,300}? appeared first on .{0,100}?\.?$/, '')
   return cap(plain, MAX_SUMMARY)

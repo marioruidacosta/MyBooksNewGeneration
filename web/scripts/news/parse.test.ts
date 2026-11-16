@@ -82,6 +82,15 @@ describe('parseFeed', () => {
     expect(items[2].image).toBeNull()
   })
 
+  it('titlesWithEscapedHtmlBecomePlainText', () => {
+    const items = parseFeed(fixture('publico.rss.xml'), ctx('publico', 'pt'))
+    expect(items).toHaveLength(3)
+    expect(items[1].title).toBe('Embaixada do Brasil em Lisboa celebra 70 anos de Grande Sertão: Veredas')
+    for (const i of items) expect(i.title).not.toMatch(/[<>]|&[a-z#0-9]+;/i)
+    const xml = '<rss version="2.0"><channel><item><title>A &amp;lt;b&amp;gt;bold&amp;lt;/b&amp;gt; &amp;amp; move</title><link>https://a.test/1</link></item></channel></rss>'
+    expect(parseFeed(xml, ctx('a', 'pt'))[0].title).toBe('A bold & move')
+  })
+
   it('rejectsAnHtmlErrorPage', () => {
     expect(() => parseFeed('<!doctype html><html><body>Oops</body></html>', ctx('a', 'en'))).toThrow()
     expect(() => parseFeed('<rss><channel><item><title>x', ctx('a', 'en'))).toThrow()

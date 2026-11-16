@@ -15,13 +15,15 @@ const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCas
 const BOOK_WORDS = ['livro', 'livros', 'escritor', 'escritora', 'poeta', 'poesia', 'romance', 'literatura', 'literario', 'literaria', 'editora']
 const BOOK_PATTERN = new RegExp(`(?<![a-z])(?:${BOOK_WORDS.join('|')})(?![a-z])`)
 
-/** RTP Cultura covers all the arts: keep only the stories about books, ignoring case and accents. */
+/** RTP Cultura and Expresso cover far more than books: keep only the stories about books, ignoring case and accents. */
 export function keepsBookStory(title: string, summary: string): boolean {
   return BOOK_PATTERN.test(fold(`${title} ${summary}`))
 }
 
 export const FEEDS: Feed[] = [
   { id: 'apel', name: 'APEL', lang: 'pt', url: 'https://www.apel.pt/rss' },
+  { id: 'publico', name: 'Público', lang: 'pt', url: 'https://www.publico.pt/api/list/rss/livros' },
+  { id: 'expresso', name: 'Expresso', lang: 'pt', url: 'https://feeds.feedburner.com/expresso-geral', filter: keepsBookStory },
   { id: 'jl', name: 'Jornal de Letras', lang: 'pt', url: 'https://jornaldeletras.pt/feed/' },
   { id: 'rtp', name: 'RTP Cultura', lang: 'pt', url: 'https://www.rtp.pt/noticias/rss/cultura', filter: keepsBookStory },
   { id: 'guardian', name: 'The Guardian Books', lang: 'en', url: 'https://www.theguardian.com/books/rss' },

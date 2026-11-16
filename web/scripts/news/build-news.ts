@@ -109,6 +109,10 @@ export async function buildNews(opts: BuildOptions): Promise<{ file: NewsFile; l
     merged.push(item)
   }
   merged.sort((a, b) => b.published - a.published)
+  // An outage must never block a deploy: with nothing at all to publish, publish an empty list and say so.
+  if (merged.length === 0 && sources.every((s) => !s.ok) && !opts.previous) {
+    log.push('WARNING: every feed failed and there is no previous file, so news.json has no items')
+  }
   return { file: { generatedAt: now, sources, items: merged.slice(0, MAX_ITEMS) }, log }
 }
 
@@ -124,10 +128,6 @@ async function main() {
   console.log(previous ? `previous file: ${previous.items.length} items` : 'previous file: none')
   const { file, log } = await buildNews({ feeds: FEEDS, fetch, now: Date.now(), previous })
   for (const line of log) console.log(line)
-  // Every feed down and nothing carried over: publish nothing rather than an empty feed.
-  if (file.items.length === 0 && file.sources.every((s) => !s.ok)) {
-    throw new Error('every feed failed and there is no previous file, so news.json was not written')
-  }
   await mkdir(resolve(out), { recursive: true })
   await writeFile(join(resolve(out), 'news.json'), JSON.stringify(file))
   console.log(`wrote ${join(out, 'news.json')}: ${file.items.length} items`)

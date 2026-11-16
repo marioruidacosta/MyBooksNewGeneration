@@ -73,6 +73,18 @@ describe('buildNews', () => {
     expect(allDown.file.sources[0].ok).toBe(false)
   })
 
+  it('allFeedsFailingWithNoPreviousPublishesAnEmptyList', async () => {
+    const fetchFn = (() => respond('nope', 503)) as unknown as F
+    const out = await buildNews({ feeds: [feed('a'), feed('b')], fetch: fetchFn, now: NOW, previous: null })
+    expect(out.file.items).toEqual([])
+    expect(out.file.sources.map((s) => s.ok)).toEqual([false, false])
+    expect(out.file.generatedAt).toBe(NOW)
+    expect(out.log.some((l) => l.startsWith('WARNING'))).toBe(true)
+    // with a previous file there is nothing to warn about
+    const prev: NewsFile = { generatedAt: NOW - DAY, sources: [], items: [old({})] }
+    expect((await buildNews({ feeds: [feed('a')], fetch: fetchFn, now: NOW, previous: prev })).log.some((l) => l.startsWith('WARNING'))).toBe(false)
+  })
+
   it('mergesWithThePreviousFile', async () => {
     const prev: NewsFile = {
       generatedAt: NOW - DAY,

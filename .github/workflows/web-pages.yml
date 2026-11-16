@@ -78,7 +78,7 @@ jobs:
 
       # news/news.json is rebuilt from public RSS/Atom feeds and merged with the file that is live now, so a bad night
       # never empties it. Both news files are published at /news/, one base URL for the website and the app.
-      # The job fails (and nothing is deployed) only when every feed is down and there is no previous file.
+      # When every feed is down and there is no previous file, news.json is published with no items and the step still succeeds.
       - name: Build the book news feed into _site/news
         working-directory: web
         run: |
