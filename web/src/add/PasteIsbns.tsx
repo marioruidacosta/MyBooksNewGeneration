@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import type { Book } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
-import { addBook, inLibrary } from './addBook'
-import { normalizeIsbn, type Found, type Lookup } from './lookup'
+import { addBook, authorsText, inLibrary } from './addBook'
+import { normalizeIsbn, NotFoundWithErrors, type Found, type Lookup } from './lookup'
 
 export const PASTE_CONCURRENCY = 4
 
+const UNREACHED = 'Not found. A source couldn’t be reached. Try again later.'
+
 type Line =
-  | { raw: string; state: 'waiting' | 'looking' | 'notfound' | 'invalid' | 'error' }
+  | { raw: string; state: 'waiting' | 'looking' | 'notfound' | 'unreached' | 'invalid' | 'error' }
   | { raw: string; state: 'found'; found: Found }
 
 /** Runs `task` over `items`, at most `limit` at a time. */
@@ -34,7 +36,13 @@ export function PasteIsbns({ store, lookup, books }: Props) {
   const set = (i: number, line: Line) => setLines((old) => old.map((l, k) => (k === i ? line : l)))
 
   const run = async () => {
-    const raws = [...new Set(textValue.split('\n').map((l) => l.trim()).filter((l) => l !== ''))]
+    // One line per book: two spellings of one ISBN are the same line.
+    const byIsbn = new Map<string, string>()
+    for (const l of textValue.split('\n').map((x) => x.trim()).filter((x) => x !== '')) {
+      const key = normalizeIsbn(l) ?? l
+      if (!byIsbn.has(key)) byIsbn.set(key, l)
+    }
+    const raws = [...byIsbn.values()]
     setMessage('')
     setLines(raws.map((raw) => ({ raw, state: 'waiting' })))
     setBusy(true)
@@ -46,8 +54,8 @@ export function PasteIsbns({ store, lookup, books }: Props) {
         try {
           const found = await lookup.lookupIsbn(isbn)
           set(i, found ? { raw, state: 'found', found } : { raw, state: 'notfound' })
-        } catch {
-          set(i, { raw, state: 'error' })
+        } catch (e) {
+          set(i, { raw, state: e instanceof NotFoundWithErrors ? 'unreached' : 'error' })
         }
       })
     } finally {
@@ -56,7 +64,14 @@ export function PasteIsbns({ store, lookup, books }: Props) {
   }
 
   const known = (l: Line) => l.state === 'found' && inLibrary(l.found, books) !== undefined
-  const toAdd = lines.filter((l): l is Line & { state: 'found'; found: Found } => l.state === 'found' && !known(l))
+  // The books to add: new to the library, and distinct from each other (same ISBN, or same title and first author).
+  const toAdd: (Line & { state: 'found'; found: Found })[] = []
+  const batch: Book[] = []
+  for (const l of lines) {
+    if (l.state !== 'found' || known(l) || inLibrary(l.found, batch)) continue
+    toAdd.push(l)
+    batch.push({ id: l.raw, isbn: l.found.isbn, title: l.found.title, authors: authorsText(l.found, books) } as Book)
+  }
 
   const addAll = () => {
     let n = 0
@@ -72,6 +87,8 @@ export function PasteIsbns({ store, lookup, books }: Props) {
         return 'Looking…'
       case 'notfound':
         return 'Not found'
+      case 'unreached':
+        return UNREACHED
       case 'invalid':
         return 'Not a valid ISBN'
       case 'error':

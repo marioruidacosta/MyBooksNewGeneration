@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createLookup, createLookupApi, normalizeIsbn, type Found, type LookupApi } from './lookup'
+import { createLookup, createLookupApi, NotFoundWithErrors, normalizeIsbn, type Found, type LookupApi } from './lookup'
 
 const found = (over: Partial<Found> = {}): Found => ({
   isbn: null, title: 'T', authors: ['A'], publisher: null, year: null, pages: null, coverUrl: null, description: null, ...over,
@@ -7,7 +7,7 @@ const found = (over: Partial<Found> = {}): Found => ({
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 
-function fakes(opts: { bnp?: () => Promise<Found | null>; google?: () => Promise<Found[]>; ol?: () => Response }) {
+function fakes(opts: { timeoutMs?: number; bnp?: () => Promise<Found | null>; google?: () => Promise<Found[]>; ol?: () => Response | Promise<Response> }) {
   const calls: string[] = []
   const api: LookupApi = {
     bnp: () => {
@@ -23,7 +23,7 @@ function fakes(opts: { bnp?: () => Promise<Found | null>; google?: () => Promise
     calls.push(url.includes('/authors/') ? 'ol-author' : 'ol')
     return Promise.resolve(url.includes('/authors/') ? json({ name: 'José Saramago' }) : (opts.ol ?? (() => json({}, 404)))())
   }
-  return { calls, lookup: createLookup(api, fetchIt) }
+  return { calls, lookup: createLookup(api, fetchIt, opts.timeoutMs) }
 }
 
 describe('lookup', () => {
@@ -38,13 +38,13 @@ describe('lookup', () => {
     expect(got).toMatchObject({ title: 'Blindness', isbn: '9789722015981' })
 
     // The first source that has it ends the chain.
-    const b = fakes({ bnp: () => Promise.resolve(found({ title: 'From BNP', isbn: '9789722015981' })) })
+    const b = fakes({ bnp: () => Promise.resolve(found({ title: 'From BNP', isbn: '9789722015981', coverUrl: 'https://x.test/c.jpg' })) })
     expect((await b.lookup.lookupIsbn('9789722015981'))?.title).toBe('From BNP')
     expect(b.calls).toEqual(['bnp'])
 
     // Open Library: the edition, then each author.
     const c = fakes({
-      ol: () => json({ title: 'Blindness', authors: [{ key: '/authors/OL1A' }], publish_date: 'May 1995', number_of_pages: 300 }),
+      ol: () => json({ title: 'Blindness', authors: [{ key: '/authors/OL1A' }], publish_date: 'May 1995', number_of_pages: 300, covers: [1] }),
     })
     const fromOl = await c.lookup.lookupIsbn('9789722015981')
     expect(c.calls).toEqual(['bnp', 'ol', 'ol-author'])
@@ -80,5 +80,40 @@ describe('lookup', () => {
     const results = await api.google('x y')
     expect(calls).toEqual(['lookup?source=google&q=x%20y'])
     expect(results.map((r) => r.isbn)).toEqual([null, '9789722015981'])
+  })
+})
+
+describe('lookup fix round 1', () => {
+  it('aHitWithoutACoverTakesOneFromALaterSource', async () => {
+    const a = fakes({
+      bnp: () => Promise.resolve(found({ title: 'From BNP', isbn: '9789722015981', coverUrl: null })),
+      ol: () => json({ title: 'From OL', covers: [5] }),
+    })
+    const got = await a.lookup.lookupIsbn('9789722015981')
+    expect(got).toMatchObject({ title: 'From BNP', coverUrl: 'https://covers.openlibrary.org/b/id/5-L.jpg' })
+    expect(a.calls).toEqual(['bnp', 'ol'])
+  })
+
+  it('aMissWithAFailedSourceSaysSo', async () => {
+    const a = fakes({ bnp: () => Promise.reject(new Error('502')) })
+    await expect(a.lookup.lookupIsbn('9789722015981')).rejects.toBeInstanceOf(NotFoundWithErrors)
+  })
+
+  it('aStalledBodyTimesOut', async () => {
+    const stalled = { ok: true, status: 200, json: () => new Promise(() => {}) } as unknown as Response
+    const a = fakes({ timeoutMs: 20, ol: () => stalled })
+    await expect(a.lookup.lookupIsbn('9789722015981')).rejects.toBeInstanceOf(NotFoundWithErrors)
+    const s = fakes({ timeoutMs: 20, ol: () => stalled })
+    await expect(s.lookup.searchTitle('x')).resolves.toEqual([])
+  })
+
+  it('aNonHttpCoverIsDropped', async () => {
+    const api = createLookupApi(() =>
+      Promise.resolve({
+        data: { results: [{ title: 'X', coverUrl: 'javascript:alert(1)' }, { title: 'Y', coverUrl: 'https://x.test/y.jpg' }] },
+        error: null,
+      }),
+    )
+    expect((await api.google('x')).map((r) => r.coverUrl)).toEqual([null, 'https://x.test/y.jpg'])
   })
 })

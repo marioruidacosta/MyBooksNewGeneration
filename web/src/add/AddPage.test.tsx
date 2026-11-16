@@ -7,7 +7,7 @@ import { rowKey, type SyncApi } from '../sync/api'
 import type { Book } from '../sync/model'
 import { LibraryStore } from '../sync/store'
 import { AddPage } from './AddPage'
-import type { Found, Lookup } from './lookup'
+import { NotFoundWithErrors, type Found, type Lookup } from './lookup'
 
 const api: SyncApi = {
   pull: async () => ({ rows: [], last: 0 }),
@@ -164,5 +164,36 @@ describe('AddPage', () => {
     await user.click(screen.getByRole('button', { name: 'Search' }))
     expect(await screen.findByText('<img src=x onerror=alert(1)> hello')).toBeInTheDocument()
     expect(document.querySelector('img')).toBeNull()
+  })
+  it('pasteTreatsTwoSpellingsOfOneIsbnAsOne', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    const lookup = lookupOf({
+      lookupIsbn: (isbn) =>
+        Promise.resolve(isbn === '9780140449136' ? found({ isbn, title: 'Blindness: second ed', authors: ['José Saramago'] }) : found()),
+    })
+    render(<AddPage store={store} lookup={lookup} onOpen={vi.fn()} />)
+    await user.type(
+      screen.getByLabelText('ISBNs, one per line'),
+      ['978-972-20-1598-1', '9789722015981', '9780140449136'].join('{Enter}'),
+    )
+    await user.click(screen.getByRole('button', { name: 'Look up' }))
+    // The third is the same title and author under another ISBN: one book in the batch.
+    await user.click(await screen.findByRole('button', { name: 'Add 1 book' }))
+    expect(store.books()).toHaveLength(1)
+    expect(screen.getByText('Added 1 book')).toBeInTheDocument()
+  })
+
+  it('aMissWithAFailedSourceSaysSoOnScreen', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    const lookup = lookupOf({ lookupIsbn: () => Promise.reject(new NotFoundWithErrors()) })
+    render(<AddPage store={store} lookup={lookup} onOpen={vi.fn()} />)
+    await user.type(screen.getByLabelText('ISBN or title'), '9789722015981')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    expect(await screen.findByText(/source couldn.t be reached/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('ISBNs, one per line'), '9789722015981')
+    await user.click(screen.getByRole('button', { name: 'Look up' }))
+    expect(await screen.findAllByText(/source couldn.t be reached/)).toHaveLength(2)
   })
 })

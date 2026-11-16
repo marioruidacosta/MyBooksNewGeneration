@@ -1,8 +1,10 @@
 import { useState, useSyncExternalStore } from 'react'
 import type { LibraryStore } from '../sync/store'
 import { addBook, inLibrary } from './addBook'
-import { defaultLookup, isbnQuery, type Found, type Lookup } from './lookup'
+import { defaultLookup, isbnQuery, NotFoundWithErrors, type Found, type Lookup } from './lookup'
 import { PasteIsbns } from './PasteIsbns'
+
+const UNREACHED = "Not found. A source couldn’t be reached. Try again later."
 
 type Props = { store: LibraryStore; lookup?: Lookup; onOpen: (id: string) => void }
 
@@ -34,8 +36,8 @@ export function AddPage({ store, lookup = defaultLookup, onOpen }: Props) {
       } else {
         setResults(await lookup.searchTitle(q))
       }
-    } catch {
-      setError("Couldn't search just now. Try again.")
+    } catch (e) {
+      setError(e instanceof NotFoundWithErrors ? UNREACHED : "Couldn't search just now. Try again.")
     } finally {
       setBusy(false)
     }
