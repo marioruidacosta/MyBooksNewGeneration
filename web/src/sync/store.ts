@@ -495,6 +495,22 @@ export class LibraryStore {
     this.write(table, id, { deleted: true }, [], false)
   }
 
+  /**
+   * Brings back a book this site removed, writing only `deleted: false`, so a field someone else changed since (a
+   * phone, within the seconds Undo is on offer) keeps its newer value. When the row is gone for good (the server's
+   * deleted copy came back and it was dropped) there is nothing to bring back, so [book] is created whole.
+   */
+  restoreBook(book: Book): void {
+    if (this.rows.has(rowKey('books', book.id))) this.write('books', book.id, { deleted: false }, [], false)
+    else this.create(book)
+  }
+
+  /** As [restoreBook], for a quote. */
+  restoreQuote(quote: Quote): void {
+    if (this.rows.has(rowKey('quotes', quote.id))) this.write('quotes', quote.id, { deleted: false }, [], false)
+    else this.createQuote(quote)
+  }
+
   private write(
     table: SyncTable, id: string, fields: Record<string, unknown>, restamp: string[], allowNew: boolean,
     origin?: ChangeOrigin,

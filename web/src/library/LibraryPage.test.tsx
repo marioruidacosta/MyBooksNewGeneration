@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rowKey, SyncError, type SyncApi } from '../sync/api'
-import type { Book } from '../sync/model'
+import type { Book, SyncRow } from '../sync/model'
 import { LibraryStore } from '../sync/store'
 import { CoverContext } from '../covers/storage'
 import { ToastProvider } from '../ui/Toast'
@@ -31,6 +31,28 @@ function book(id: string, over: Partial<Book> = {}): Book {
 
 const NOW = 1_800_000_000_000
 const stores: LibraryStore[] = []
+
+/** What "the phone" has: rows served at the first pull, and rows served at the next one (an edit made meanwhile). */
+const phone = { served: false, first: [] as SyncRow[], later: [] as SyncRow[] }
+const phoneApi: SyncApi = {
+  ...api,
+  pull: async (after) => {
+    if (!phone.served) {
+      phone.served = true
+      return { rows: phone.first, last: phone.first.length }
+    }
+    const rows = phone.later.splice(0)
+    return { rows, last: after + rows.length }
+  },
+}
+
+async function openWithPhone(books: Book[]) {
+  const store = new LibraryStore({ api: phoneApi, owner: 'u1', retryDelays: [60_000], pollMs: 0 })
+  stores.push(store)
+  await store.load()
+  books.forEach((b) => store.create(b))
+  return store
+}
 
 async function open(books: Book[]) {
   const store = new LibraryStore({ api, owner: 'u1', retryDelays: [60_000], pollMs: 0 })
@@ -62,6 +84,9 @@ const quickTitles = () => [...document.querySelectorAll('table a')].map((a) => a
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
   window.localStorage.clear()
+  phone.served = false
+  phone.first = []
+  phone.later = []
 })
 
 afterEach(async () => {
@@ -617,6 +642,7 @@ describe('LibraryPage', () => {
     await user.type(bad, '140{Enter}')
     expect(store.book('a')?.progressPercent).toBe(40)
     expect(bad).toHaveAttribute('aria-invalid', 'true')
+    expect(within(shelf).getByRole('alert')).toHaveTextContent('Type a percentage from 0 to 100')
   }, T)
 
   it('escapeLeavesProgressUnchanged', async () => {
@@ -643,36 +669,36 @@ describe('LibraryPage', () => {
     show(store)
 
     const before = Date.now()
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Alpha' }), 'READING')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Alpha by Author' }), 'READING')
     const started = store.book('a')?.dateStarted ?? 0
     expect(started).toBeGreaterThanOrEqual(before)
     expect(store.book('a')?.status).toBe('READING')
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Alpha' }), 'READ')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Alpha by Author' }), 'READ')
     expect(store.book('a')).toMatchObject({ status: 'READ', dateStarted: started })
     expect(store.book('a')?.dateRead).toBeGreaterThanOrEqual(before)
 
     // To read forgets the dates and the progress, as everywhere else.
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Bravo' }), 'TO_READ')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Bravo by Author' }), 'TO_READ')
     expect(store.book('b')).toMatchObject({ status: 'TO_READ', dateStarted: null, dateRead: null, currentPage: null, progressPercent: null })
-    expect(screen.getByRole('combobox', { name: 'Status of Bravo' })).toHaveValue('TO_READ')
+    expect(screen.getByRole('combobox', { name: 'Status of Bravo by Author' })).toHaveValue('TO_READ')
   }, T)
 
   it('clickingAStarInTheTableSetsTheScore', async () => {
-    const store = await open([book('a', { title: 'Stoner', rating: null })])
+    const store = await open([book('a', { title: 'Stoner', authors: 'John Williams', rating: null })])
     const user = userEvent.setup()
     show(store)
 
-    await user.click(screen.getByRole('button', { name: '3 stars for Stoner' }))
+    await user.click(screen.getByRole('button', { name: '3 stars for Stoner by John Williams' }))
     expect(store.book('a')?.rating).toBe(3)
-    expect(screen.getByRole('button', { name: '3 stars for Stoner' })).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('button', { name: '1 star for Stoner' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '3 stars for Stoner by John Williams' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '1 star for Stoner by John Williams' })).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '5 stars for Stoner' }))
+    await user.click(screen.getByRole('button', { name: '5 stars for Stoner by John Williams' }))
     expect(store.book('a')?.rating).toBe(5)
 
     // The current star again clears it, as on the book page.
-    await user.click(screen.getByRole('button', { name: '5 stars for Stoner' }))
+    await user.click(screen.getByRole('button', { name: '5 stars for Stoner by John Williams' }))
     expect(store.book('a')?.rating).toBeNull()
   }, T)
 
@@ -737,5 +763,114 @@ describe('LibraryPage', () => {
     expect(screen.getByLabelText('Filter by tag')).toHaveValue('fantasy')
     await user.click(screen.getByRole('button', { name: 'Clear filters' }))
     expect(titles()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+  }, T)
+
+  it('undoingADeleteKeepsANewerPhoneEdit', async () => {
+    const store = await openWithPhone([book('a', { title: 'Alpha', rating: 2 })])
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    // Within the eight seconds the phone changes the title and the score.
+    phone.later.push({
+      table: 'books', id: 'a', fields: { title: 'Alpha, revised', rating: 5 },
+      times: { title: Date.now() + 60_000, rating: Date.now() + 60_000 }, seq: 1,
+    })
+    await store.refresh()
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    // Only the book coming back is written: the phone's values stay.
+    expect(store.book('a')).toMatchObject({ title: 'Alpha, revised', rating: 5 })
+  }, T)
+
+  it('undoStillBringsBackABookTheServerForgot', async () => {
+    const store = await openWithPhone([book('a', { title: 'Alpha' })])
+    store.createQuote({ id: 'q1', bookId: 'a', text: 'One', page: null, dateAdded: 1, position: null, deleted: false })
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    // The server's copy comes back as deleted, so the site drops the rows for good.
+    phone.later.push(
+      { table: 'books', id: 'a', fields: { deleted: true }, times: { deleted: Date.now() + 60_000 }, seq: 1 },
+      { table: 'quotes', id: 'q1', fields: { deleted: true }, times: { deleted: Date.now() + 60_000 }, seq: 2 },
+    )
+    await store.refresh()
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(store.book('a')).toMatchObject({ title: 'Alpha', deleted: false })
+    expect(store.quotes('a').map((q) => q.text)).toEqual(['One'])
+  }, T)
+
+  it('deletingBooksWithPhoneDataAsksFirst', async () => {
+    phone.first = [{ table: 'bookmarks', id: 'm1', fields: { book_id: 'a', deleted: false }, times: { book_id: 1 }, seq: 1 }]
+    const store = await openWithPhone([
+      book('a', { title: 'Alpha', dateAdded: 3 }),
+      book('b', { title: 'Bravo', dateAdded: 2 }),
+      book('c', { title: 'Charlie', dateAdded: 1 }),
+    ])
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const user = userEvent.setup()
+    show(store)
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Bravo' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(confirm).toHaveBeenCalledWith(
+      "1 of these books have bookmarks or an e-book on your phone. Those won't come back with Undo. Delete anyway?",
+    )
+    expect(store.books()).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+
+    confirm.mockReturnValue(true)
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(store.books().map((b) => b.id)).toEqual(['c'])
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument()
+
+    // Books without phone data are never asked about.
+    confirm.mockClear()
+    await user.click(screen.getByRole('checkbox', { name: 'Select Charlie' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(confirm).not.toHaveBeenCalled()
+  }, T)
+
+  it('aBadShelfValueOnBlurSaysSo', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', status: 'READING', dateStarted: 1, pageCount: 200, currentPage: 50, progressPercent: 25 }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+    const shelf = screen.getByRole('region', { name: 'Reading now' })
+    await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
+    const input = within(shelf).getByRole('spinbutton', { name: 'Current page of Alpha' })
+    await user.clear(input)
+    await user.type(input, '-4')
+    await user.tab()
+    expect(within(shelf).getByRole('spinbutton', { name: 'Current page of Alpha' })).toHaveAttribute('aria-invalid', 'true')
+    expect(within(shelf).getByRole('alert')).toHaveTextContent('Type a page number')
+    expect(store.book('a')).toMatchObject({ currentPage: 50, progressPercent: 25 })
+  }, T)
+
+  it('coversViewCanBeSorted', async () => {
+    const store = await open([
+      book('a', { title: 'Bravo', authors: 'Zed', dateAdded: 3, dateRead: 100 }),
+      book('b', { title: 'Alpha', authors: 'Mia', dateAdded: 2, dateRead: 300 }),
+      book('c', { title: 'Charlie', authors: 'Ann', dateAdded: 1, dateRead: null }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('button', { name: 'Covers' }))
+    const order = () => [...document.querySelectorAll('.cover-card__title')].map((t) => t.textContent)
+    const sort = screen.getByRole('combobox', { name: 'Sort covers' })
+
+    expect(order()).toEqual(['Bravo', 'Alpha', 'Charlie'])
+    await user.selectOptions(sort, 'Title')
+    expect(order()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+    await user.selectOptions(sort, 'Author')
+    expect(order()).toEqual(['Charlie', 'Alpha', 'Bravo'])
+    await user.selectOptions(sort, 'Recently read')
+    expect(order()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+    await user.selectOptions(sort, 'Recently added')
+    expect(order()).toEqual(['Bravo', 'Alpha', 'Charlie'])
   }, T)
 })

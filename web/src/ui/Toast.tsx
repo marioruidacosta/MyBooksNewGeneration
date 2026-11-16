@@ -1,30 +1,81 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { TOAST_MS, ToastContext, type ToastAction, type ToastApi } from './toastContext'
 
+/** How many show at once: past this, the oldest goes. */
+const MAX_TOASTS = 3
+
 type Shown = { id: number; message: string; action?: ToastAction }
 
+/** One message. Its time runs out on its own, and stops while it is hovered or has focus. */
+function ToastItem({
+  toast, onDismiss, onRun,
+}: {
+  toast: Shown
+  onDismiss: (id: number) => void
+  onRun: (toast: Shown) => void
+}) {
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const held = hovered || focused
+  const left = useRef(TOAST_MS)
+
+  useEffect(() => {
+    if (held) return
+    const started = Date.now()
+    const timer = setTimeout(() => onDismiss(toast.id), left.current)
+    return () => {
+      clearTimeout(timer)
+      left.current = Math.max(0, left.current - (Date.now() - started))
+    }
+  }, [held, onDismiss, toast.id])
+
+  return (
+    <div
+      className="toast"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false)
+      }}
+    >
+      <span>{toast.message}</span>
+      {toast.action && (
+        <button type="button" onClick={() => onRun(toast)}>
+          {toast.action.label}
+        </button>
+      )}
+    </div>
+  )
+}
+
 /**
- * A short message with an optional button (Undo), announced through a live region and gone after [TOAST_MS]. The
- * region is always on the page, so a message put into it is read out.
+ * Short messages with an optional button (Undo), announced through a live region. Up to three show at once, the newest
+ * at the bottom, each with its own Undo and its own [TOAST_MS]. The region is always on the page, so a message put
+ * into it is read out.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [shown, setShown] = useState<Shown | null>(null)
+  const [shown, setShown] = useState<Shown[]>([])
   const next = useRef(0)
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  const close = useCallback(() => {
-    clearTimeout(timer.current)
-    setShown(null)
-  }, [])
+  const dismiss = useCallback((id: number) => setShown((list) => list.filter((t) => t.id !== id)), [])
 
   const show = useCallback((message: string, action?: ToastAction) => {
-    clearTimeout(timer.current)
     const id = ++next.current
-    setShown({ id, message, action })
-    timer.current = setTimeout(() => setShown((s) => (s?.id === id ? null : s)), TOAST_MS)
+    setShown((list) => [...list, { id, message, action }].slice(-MAX_TOASTS))
   }, [])
 
-  useEffect(() => () => clearTimeout(timer.current), [])
+  const run = useCallback(
+    (toast: Shown) => {
+      dismiss(toast.id)
+      try {
+        toast.action?.run()
+      } catch {
+        show("Couldn't undo.")
+      }
+    },
+    [dismiss, show],
+  )
 
   const api = useMemo<ToastApi>(() => ({ show }), [show])
 
@@ -32,23 +83,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <div className="toast-region" role="status">
-        {shown && (
-          <div className="toast" key={shown.id}>
-            <span>{shown.message}</span>
-            {shown.action && (
-              <button
-                type="button"
-                onClick={() => {
-                  const { run } = shown.action as ToastAction
-                  close()
-                  run()
-                }}
-              >
-                {shown.action.label}
-              </button>
-            )}
-          </div>
-        )}
+        {shown.map((t) => (
+          <ToastItem key={t.id} toast={t} onDismiss={dismiss} onRun={run} />
+        ))}
       </div>
     </ToastContext.Provider>
   )

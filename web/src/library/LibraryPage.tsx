@@ -38,6 +38,14 @@ function saveVisibility(v: VisibilityState) {
   }
 }
 
+/** The sorts the covers view offers, as the table's sorting state (the same state, so the two views agree). */
+const COVER_SORTS: Record<string, SortingState> = {
+  title: [{ id: 'title', desc: false }],
+  authors: [{ id: 'authors', desc: false }],
+  added: [{ id: 'added', desc: true }],
+  read: [{ id: 'read', desc: true }],
+}
+
 function loadView(): LibraryView {
   try {
     return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'covers' ? 'covers' : 'table'
@@ -179,17 +187,28 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
 
   const remove = useCallback(() => {
     if (selected.length === 0) return
+    // Bookmarks and an e-book on the phone go with the book and Undo can't bring them back: that one asks first.
+    const withPhoneData = selected.filter((b) => store.hasPhoneData(b.id)).length
+    if (
+      withPhoneData > 0 &&
+      !window.confirm(
+        `${String(withPhoneData)} of these books have bookmarks or an e-book on your phone. Those won't come back with Undo. Delete anyway?`,
+      )
+    ) {
+      return
+    }
     // What undo needs, taken before the books go: every field of each book (the book itself) and its quotes.
     const gone = selected.map((b) => ({ book: b, quotes: store.quotes(b.id) }))
     for (const b of selected) store.remove('books', b.id)
     setRowSelection({})
     toast.show(`Deleted ${plural(gone.length, 'book')}.`, {
       label: 'Undo',
-      // A normal write: the rows are set again, so each field that changed is stamped anew and syncs to the phone.
+      // Only `deleted: false` is written, for the books and for the quotes this delete took: a field changed on the
+      // phone meanwhile keeps its newer value. It is a normal stamped edit, so it syncs.
       run: () => {
         for (const { book, quotes } of gone) {
-          store.create(book)
-          for (const q of quotes) store.createQuote(q)
+          store.restoreBook(book)
+          for (const q of quotes) store.restoreQuote(q)
         }
       },
     })
@@ -254,6 +273,11 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
   }
 
   const rows = table.getRowModel().rows
+  // Newest first until a column is chosen; a sort made in the table that the covers don't offer shows as "Table order".
+  const coverSort =
+    sorting.length === 0
+      ? 'added'
+      : (Object.keys(COVER_SORTS).find((k) => sorting.length === 1 && COVER_SORTS[k][0].id === sorting[0].id && COVER_SORTS[k][0].desc === sorting[0].desc) ?? '')
   const filtered = filters.query !== '' || filters.status !== '' || filters.tag !== '' || filters.lent !== ''
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => setFilters((f) => ({ ...f, [key]: value }))
 
@@ -345,6 +369,15 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
             </button>
           ))}
         </div>
+        {view === 'covers' && (
+          <select aria-label="Sort covers" value={coverSort} onChange={(e) => setSorting(COVER_SORTS[e.target.value] ?? [])}>
+            {coverSort === '' && <option value="">Table order</option>}
+            <option value="title">Title</option>
+            <option value="authors">Author</option>
+            <option value="added">Recently added</option>
+            <option value="read">Recently read</option>
+          </select>
+        )}
         {view === 'table' && (
         <details className="columns">
           <summary>Columns</summary>

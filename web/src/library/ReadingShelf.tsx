@@ -14,7 +14,7 @@ function progressOf(book: Book): number | null {
 
 /**
  * "Page [ ] of N" (a percentage when the page count is unknown) for one book. Enter or leaving the field saves, Escape
- * cancels; a value that isn't a page or a percentage is not saved.
+ * cancels; a value that isn't a page or a percentage is not saved, and the editor stays open and says what to type.
  */
 function ProgressEditor({ book, onSave, onClose }: { book: Book; onSave: (input: ProgressInput) => void; onClose: () => void }) {
   const byPages = book.pageCount !== null && book.pageCount > 0
@@ -46,6 +46,7 @@ function ProgressEditor({ book, onSave, onClose }: { book: Book; onSave: (input:
 
   return (
     <span className="shelf-edit">
+      <span className="shelf-edit__row">
       {byPages && <span aria-hidden="true">Page</span>}
       <input
         ref={input}
@@ -60,11 +61,7 @@ function ProgressEditor({ book, onSave, onClose }: { book: Book; onSave: (input:
           setText(e.target.value)
           setInvalid(false)
         }}
-        onBlur={() => {
-          // Leaving a field that isn't a valid value cancels it rather than saving something odd.
-          const ok = text.trim() === '' || parseProgress(text, byPages) !== null
-          finish(ok)
-        }}
+        onBlur={() => finish(true)}
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault()
@@ -76,6 +73,12 @@ function ProgressEditor({ book, onSave, onClose }: { book: Book; onSave: (input:
         }}
       />
       <span aria-hidden="true">{byPages ? `of ${String(book.pageCount)}` : '%'}</span>
+      </span>
+      {invalid && (
+        <span className="shelf-edit__error" role="alert">
+          {byPages ? 'Type a page number' : 'Type a percentage from 0 to 100'}
+        </span>
+      )}
     </span>
   )
 }

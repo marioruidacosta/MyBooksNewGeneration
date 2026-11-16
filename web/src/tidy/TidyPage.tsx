@@ -112,9 +112,9 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
     setMessage('')
     setError('')
     setBusy(keepId)
+    let coverKept = false
+    const undos: (() => void)[] = []
     try {
-      let coverKept = false
-      const undos: (() => void)[] = []
       for (const id of dropIds) {
         const keep = store.book(keepId)
         const drop = store.book(id)
@@ -123,17 +123,20 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
         coverKept = coverKept || r.coverKept
         undos.push(r.undo)
       }
-      const title = store.book(keepId)?.title ?? 'the book'
-      toast.show(
-        `Merged into ${title}.` +
-          (coverKept ? " The other book's cover photo could not be used, so the book keeps its own cover." : ''),
-        // Newest first, so the kept book ends as it was before the first merge.
-        { label: 'Undo', run: () => undos.reverse().forEach((u) => u()) },
-      )
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : 'The books could not be merged.')
     } finally {
       setBusy(null)
+      // Merges that went through can still be undone, even when a later one failed.
+      if (undos.length > 0) {
+        const title = store.book(keepId)?.title ?? 'the book'
+        toast.show(
+          `Merged into ${title}.` +
+            (coverKept ? " The other book's cover photo could not be used, so the book keeps its own cover." : ''),
+          // Newest first, so the kept book ends as it was before the first merge.
+          { label: 'Undo', run: () => undos.reverse().forEach((u) => u()) },
+        )
+      }
     }
   }
 

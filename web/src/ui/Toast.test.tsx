@@ -65,4 +65,92 @@ describe('Toast', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Saved.')
     expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
   })
+
+  it('aSecondToastKeepsTheFirstUndo', async () => {
+    const first = vi.fn()
+    const second = vi.fn()
+    function Two() {
+      const toast = useToast()
+      return (
+        <>
+          <button type="button" onClick={() => toast.show('First.', { label: 'Undo', run: first })}>
+            One
+          </button>
+          <button type="button" onClick={() => toast.show('Second.', { label: 'Undo', run: second })}>
+            Two
+          </button>
+          <button type="button" onClick={() => toast.show('Third.')}>
+            Three
+          </button>
+          <button type="button" onClick={() => toast.show('Fourth.')}>
+            Four
+          </button>
+        </>
+      )
+    }
+    const user = userEvent.setup()
+    render(
+      <ToastProvider>
+        <Two />
+      </ToastProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: 'One' }))
+    await user.click(screen.getByRole('button', { name: 'Two' }))
+    const text = () => screen.getByRole('status').textContent
+    // Both are there, the newest last, and each has its own Undo.
+    expect(text()).toBe('First.UndoSecond.Undo')
+    const undos = screen.getAllByRole('button', { name: 'Undo' })
+    expect(undos).toHaveLength(2)
+    await user.click(undos[0])
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).not.toHaveBeenCalled()
+    expect(text()).toBe('Second.Undo')
+
+    // At most three: when there are more, the oldest goes.
+    await user.click(screen.getByRole('button', { name: 'Three' }))
+    await user.click(screen.getByRole('button', { name: 'Four' }))
+    expect(text()).toBe('Second.UndoThird.Fourth.')
+    await user.click(screen.getByRole('button', { name: 'Three' }))
+    expect(text()).toBe('Third.Fourth.Third.')
+  })
+
+  it('toastPausesWhileFocused', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(
+      <ToastProvider>
+        <Trigger onUndo={() => {}} />
+      </ToastProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Go' }))
+    act(() => screen.getByRole('button', { name: 'Undo' }).focus())
+    act(() => void vi.advanceTimersByTime(30_000))
+    expect(screen.getByRole('status')).toHaveTextContent('Deleted 2 books.')
+
+    // Hovering keeps it too; leaving starts the rest of the time.
+    await user.hover(screen.getByRole('button', { name: 'Undo' }))
+    act(() => screen.getByRole('button', { name: 'Undo' }).blur())
+    act(() => void vi.advanceTimersByTime(30_000))
+    expect(screen.getByRole('status')).toHaveTextContent('Deleted 2 books.')
+    await user.unhover(screen.getByRole('button', { name: 'Undo' }))
+    act(() => void vi.advanceTimersByTime(8_500))
+    expect(screen.getByRole('status')).not.toHaveTextContent('Deleted')
+  })
+
+  it('aFailingUndoSaysSoInsteadOfThrowing', async () => {
+    const user = userEvent.setup()
+    render(
+      <ToastProvider>
+        <Trigger
+          onUndo={() => {
+            throw new Error('boom')
+          }}
+        />
+      </ToastProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Go' }))
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(screen.getByRole('status')).toHaveTextContent("Couldn't undo.")
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+  })
 })

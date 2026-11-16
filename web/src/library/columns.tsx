@@ -72,6 +72,9 @@ export type CellActions = {
 
 const STARS = [1, 2, 3, 4, 5] as const
 
+/** A book's name for a control: its title, and its authors when it has them (two books can share a title). */
+const nameOf = (b: Book) => (b.authors.trim() === '' ? b.title : `${b.title} by ${b.authors}`)
+
 /** The table's columns; [onOpen] opens a book from its title, [actions] change it from its row. */
 export function makeColumns(onOpen: (id: string) => void, actions: CellActions): ColumnDef<Book>[] {
   const base = import.meta.env.BASE_URL
@@ -146,7 +149,7 @@ export function makeColumns(onOpen: (id: string) => void, actions: CellActions):
           <span className={`status status--${b.status.toLowerCase()}`}>
             <select
               className="status-select"
-              aria-label={`Status of ${b.title}`}
+              aria-label={`Status of ${nameOf(b)}`}
               value={b.status}
               onChange={(e) => {
                 const next = STATUSES.find((s) => s === e.target.value)
@@ -176,7 +179,7 @@ export function makeColumns(onOpen: (id: string) => void, actions: CellActions):
                 key={n}
                 type="button"
                 className={`star-btn ${b.rating !== null && n <= b.rating ? 'star-btn--on' : ''}`}
-                aria-label={`${String(n)} ${n === 1 ? 'star' : 'stars'} for ${b.title}`}
+                aria-label={`${String(n)} ${n === 1 ? 'star' : 'stars'} for ${nameOf(b)}`}
                 aria-pressed={b.rating === n}
                 onClick={() => actions.setRating(b, b.rating === n ? null : n)}
               >
