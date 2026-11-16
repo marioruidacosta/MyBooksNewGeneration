@@ -48,7 +48,7 @@ internal fun mapSyncError(e: Throwable): SyncException {
     val message = chain.joinToString(" ") { it.message.orEmpty() }
     val status = chain.filterIsInstance<RestException>().firstOrNull()?.statusCode
     return when {
-        status == 401 || status == 403 || (e is PostgrestRestException && e.code == "PGRST301") ||
+        status == 401 || (e is PostgrestRestException && e.code == "PGRST301") ||
             message.contains("JWT expired", ignoreCase = true) ->
             SyncException(SyncException.Kind.AUTH, "session expired", e)
         status == 413 || message.contains("exceeded the maximum allowed size", ignoreCase = true) ||

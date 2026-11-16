@@ -187,9 +187,10 @@ class SupabaseSyncTest : MainDispatcherTest() {
     }
 
     @Test
-    fun a403IsAuthLikeA401() = runTest {
+    fun a403IsRetriedNotRefused() = runTest {
         val e = assertFailsWith<SyncException> { sync(403, """{"message":"forbidden"}""").pull(0) }
-        assertEquals(SyncException.Kind.AUTH, e.kind)
+        assertEquals(SyncException.Kind.OTHER, e.kind)
+        assertFalse(e.rejected)
     }
 
     @Test
