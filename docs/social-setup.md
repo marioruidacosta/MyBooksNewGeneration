@@ -195,3 +195,9 @@ steps **in this order**:
 The anon key is public by design: it ships in the website and the apps, and the row-level security rules are what
 protect the data. The `service_role` key is never used by the website, the apps or the workflow; never put it in a
 variable or in the repository. Never write a real key in these docs.
+
+**Book news.** The same workflow runs every night at 05:15 UTC and builds `news/news.json` from public RSS and Atom
+feeds (`web/scripts/news/feeds.ts` lists them). It keeps 30 days of headlines, short summaries and links, and merges
+with the file that is live, so a bad night never empties it. It publishes `news.json` and the hand-kept `events.json`
+at `https://marioruidacosta.github.io/MyBooksNewGeneration/news/`. It needs no key or setting. To run it by hand from
+`web/`: `npm run news -- --out <folder>`.

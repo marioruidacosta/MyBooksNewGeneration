@@ -11,6 +11,9 @@ on:
       - '.github/pages/**'
       - '.github/workflows/web-pages.yml'
   workflow_dispatch:
+  # Every night the book news feed is rebuilt and the whole site is published again with it.
+  schedule:
+    - cron: '15 5 * * *'
 
 permissions:
   pages: write
@@ -72,6 +75,16 @@ jobs:
           npm run build
           mkdir -p ../_site/app
           cp -a dist/. ../_site/app/
+
+      # news/news.json is rebuilt from public RSS/Atom feeds and merged with the file that is live now, so a bad night
+      # never empties it. Both news files are published at /news/, one base URL for the website and the app.
+      # The job fails (and nothing is deployed) only when every feed is down and there is no previous file.
+      - name: Build the book news feed into _site/news
+        working-directory: web
+        run: |
+          mkdir -p ../_site/news
+          npx vite-node scripts/news/build-news.ts --out ../_site/news --previous https://marioruidacosta.github.io/MyBooksNewGeneration/news/news.json
+          cp public/news/events.json ../_site/news/events.json
 
       - uses: actions/upload-pages-artifact@v3
         with:
