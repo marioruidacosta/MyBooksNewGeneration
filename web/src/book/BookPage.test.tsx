@@ -8,6 +8,7 @@ import { rowKey, type SyncApi } from '../sync/api'
 import type { Book, SyncRow } from '../sync/model'
 import { LibraryStore } from '../sync/store'
 import { BookPage } from './BookPage'
+import { dayText } from './parse'
 
 const T = 15_000
 
@@ -114,6 +115,27 @@ describe('BookPage', () => {
 
     await user.click(screen.getByLabelText('Title'))
     for (let i = 0; i < 40; i++) await user.tab()
+    expect(edit).not.toHaveBeenCalled()
+  }, T)
+
+  it('retypingTheSameValueEditsNothing', async () => {
+    // 23:30 UTC is another local day east of Greenwich; a local midnight is the day before in UTC west of it.
+    const read = Date.UTC(2026, 0, 2, 23, 30)
+    const started = new Date(2026, 2, 5, 0, 0).getTime()
+    const store = await open(book({ dateRead: read, dateStarted: started, pageCount: 310, publishedYear: 1995, tags: ['a', 'b'] }))
+    const edit = vi.spyOn(store, 'edit')
+    const user = userEvent.setup()
+    show(store)
+
+    const same: [string, string][] = [
+      ['Finished', dayText(read)], ['Started', dayText(started)], ['Pages', '310'], ['Year', '1995'], ['Tags', 'a, b'],
+    ]
+    for (const [label, text] of same) {
+      const box = screen.getByLabelText(label)
+      await user.clear(box)
+      await user.type(box, text)
+      await user.tab()
+    }
     expect(edit).not.toHaveBeenCalled()
   }, T)
 

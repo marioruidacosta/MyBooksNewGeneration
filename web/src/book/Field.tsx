@@ -16,15 +16,17 @@ type Props = {
 export function Field({ label, shown, onCommit, kind = 'text' }: Props) {
   const [draft, setDraft] = useState<string | null>(null)
   const value = draft ?? shown
-  const finish = () => {
+  const finish = (box: HTMLInputElement | HTMLTextAreaElement) => {
     if (draft === null) return
     setDraft(null)
+    // A number box reports partly typed text ("12e", "-") as empty with badInput: that is a typo, not a clearing.
+    if ('validity' in box && box.validity?.badInput) return
     if (draft !== shown) onCommit(draft)
   }
   const common = {
     value,
     onChange: (e: { target: { value: string } }) => setDraft(e.target.value),
-    onBlur: finish,
+    onBlur: (e: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => finish(e.currentTarget),
   }
   return (
     <label className={kind === 'area' ? 'field field--wide' : 'field'}>
