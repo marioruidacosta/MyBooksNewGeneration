@@ -1,0 +1,362 @@
+import 'fake-indexeddb/auto'
+import { IDBFactory } from 'fake-indexeddb'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { rowKey, type SyncApi } from '../sync/api'
+import type { Book } from '../sync/model'
+import { LibraryStore } from '../sync/store'
+import { COLUMN_STORAGE_KEY } from './columns'
+import { LibraryPage } from './LibraryPage'
+
+const T = 10_000
+
+/** A server that takes everything and has nothing else. */
+const api: SyncApi = {
+  pull: async () => ({ rows: [], last: 0 }),
+  push: async (changes) => ({ applied: changes.map((c) => rowKey(c.table, c.id)), rejected: [] }),
+  onPing: () => () => {},
+}
+
+function book(id: string, over: Partial<Book> = {}): Book {
+  return {
+    id, isbn: null, title: `Book ${id}`, authors: 'Author', publisher: null, publishedYear: null, pageCount: null,
+    coverUrl: null, description: null, status: 'TO_READ', rating: null, notes: '', dateAdded: 7, dateRead: null,
+    dateStarted: null, currentPage: null, progressPercent: null, review: '', tags: [], series: null,
+    seriesNumber: null, lentTo: null, lentOn: null, deleted: false, ...over,
+  }
+}
+
+const stores: LibraryStore[] = []
+
+async function open(books: Book[]) {
+  const store = new LibraryStore({ api, owner: 'u1', retryDelays: [60_000], pollMs: 0 })
+  stores.push(store)
+  await store.load()
+  books.forEach((b) => store.create(b))
+  return store
+}
+
+function show(store: LibraryStore, extra: { onAdd?: () => void; onOpen?: (id: string) => void } = {}) {
+  const onAdd = extra.onAdd ?? vi.fn()
+  const onOpen = extra.onOpen ?? vi.fn()
+  render(<LibraryPage store={store} year={2026} onAdd={onAdd} onOpen={onOpen} />)
+  return { onAdd, onOpen }
+}
+
+/** The titles in the table, in row order. */
+const titles = () =>
+  within(screen.getByRole('table')).queryAllByRole('link').map((a) => a.textContent)
+
+beforeEach(() => {
+  globalThis.indexedDB = new IDBFactory()
+  window.localStorage.clear()
+})
+
+afterEach(async () => {
+  vi.restoreAllMocks()
+  await Promise.all(stores.splice(0).map((s) => s.close()))
+})
+
+describe('LibraryPage', () => {
+  it('searchIgnoresAccents', async () => {
+    const store = await open([
+      book('1', { title: 'Ensaio sobre a Cegueira', authors: 'José Saramago', isbn: '9789722015981' }),
+      book('2', { title: 'Another', authors: 'Someone Else' }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search' }), 'JOSE')
+    expect(titles()).toEqual(['Ensaio sobre a Cegueira'])
+
+    await user.clear(screen.getByRole('searchbox', { name: 'Search' }))
+    await user.type(screen.getByRole('searchbox', { name: 'Search' }), 'cegueira saramago')
+    expect(titles()).toEqual(['Ensaio sobre a Cegueira'])
+
+    await user.clear(screen.getByRole('searchbox', { name: 'Search' }))
+    await user.type(screen.getByRole('searchbox', { name: 'Search' }), '9789722015981')
+    expect(titles()).toEqual(['Ensaio sobre a Cegueira'])
+
+    await user.clear(screen.getByRole('searchbox', { name: 'Search' }))
+    await user.type(screen.getByRole('searchbox', { name: 'Search' }), 'nothing like it')
+    expect(titles()).toEqual([])
+  }, T)
+
+  it('sortsByEveryColumn', async () => {
+    const store = await open([
+      book('a', {
+        title: 'Alpha', authors: 'Zed', status: 'READ', rating: 2, tags: ['zeta'], series: 'Saga', seriesNumber: '2',
+        dateStarted: 300, dateRead: 100, publisher: 'Zeta', publishedYear: 2001, pageCount: 100, lentTo: null,
+        dateAdded: 30, coverUrl: 'https://example.com/a.jpg',
+      }),
+      book('b', {
+        title: 'Bravo', authors: 'Anna', status: 'READING', rating: null, tags: [], series: 'Saga', seriesNumber: '10',
+        dateStarted: 100, dateRead: null, publisher: 'Alfa', publishedYear: 1999, pageCount: 300, lentTo: 'Zoe',
+        dateAdded: 10, coverUrl: null,
+      }),
+      book('c', {
+        title: 'Charlie', authors: 'Mia', status: 'WISHLIST', rating: 5, tags: ['alpha'], series: null,
+        seriesNumber: null, dateStarted: null, dateRead: 50, publisher: 'Mid', publishedYear: 2010, pageCount: 200,
+        lentTo: 'Ann', dateAdded: 20, coverUrl: 'https://example.com/c.jpg',
+      }),
+    ])
+    const everything = Object.fromEntries(
+      ['cover', 'title', 'authors', 'status', 'score', 'tags', 'series', 'started', 'read', 'publisher', 'year',
+        'pages', 'lentTo', 'added'].map((id) => [id, true]),
+    )
+    window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(everything))
+    const user = userEvent.setup()
+    show(store)
+
+    // Newest first until a column is chosen.
+    expect(titles()).toEqual(['Alpha', 'Charlie', 'Bravo'])
+
+    const name = { a: 'Alpha', b: 'Bravo', c: 'Charlie' }
+    const order = (ids: string) => ids.split('').map((i) => name[i as 'a'])
+    const cases: [header: string, asc: string, desc: string][] = [
+      ['Cover', 'acb', 'bac'],
+      ['Title', 'abc', 'cba'],
+      ['Authors', 'bca', 'acb'],
+      ['Status', 'bac', 'cab'], // Reading, Read, To buy
+      ['Score', 'acb', 'cab'], // no score always last
+      ['Tags', 'cab', 'acb'], // no tags always last
+      ['Series #', 'abc', 'bac'], // 2 before 10; no series last
+      ['Started', 'bac', 'abc'], // never started last
+      ['Read', 'cab', 'acb'], // not read last
+      ['Publisher', 'bca', 'acb'],
+      ['Year', 'bac', 'cab'],
+      ['Pages', 'acb', 'bca'],
+      ['Lent to', 'cba', 'bca'], // not lent last
+      ['Added', 'bca', 'acb'],
+    ]
+    for (const [header, asc, desc] of cases) {
+      const button = screen.getByRole('button', { name: header })
+      await user.click(button)
+      expect(titles(), `${header} ascending`).toEqual(order(asc))
+      expect(button.closest('th')).toHaveAttribute('aria-sort', 'ascending')
+      await user.click(button)
+      expect(titles(), `${header} descending`).toEqual(order(desc))
+      expect(button.closest('th')).toHaveAttribute('aria-sort', 'descending')
+      await user.click(button)
+      expect(titles(), `${header} unsorted`).toEqual(['Alpha', 'Charlie', 'Bravo'])
+    }
+  }, T)
+
+  it('filtersByStatusTagAndLending', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', status: 'READING', tags: ['sf'], dateAdded: 3 }),
+      book('b', { title: 'Bravo', status: 'READ', tags: ['sf', 'old'], lentTo: 'Ana', dateAdded: 2 }),
+      book('c', { title: 'Charlie', status: 'READ', tags: ['old'], dateAdded: 1 }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+
+    await user.selectOptions(screen.getByLabelText('Filter by status'), 'READ')
+    expect(titles()).toEqual(['Bravo', 'Charlie'])
+    await user.selectOptions(screen.getByLabelText('Filter by tag'), 'sf')
+    expect(titles()).toEqual(['Bravo'])
+    await user.selectOptions(screen.getByLabelText('Filter by status'), '')
+    expect(titles()).toEqual(['Alpha', 'Bravo'])
+    await user.selectOptions(screen.getByLabelText('Filter by tag'), '')
+    await user.selectOptions(screen.getByLabelText('Filter by lending'), 'out')
+    expect(titles()).toEqual(['Bravo'])
+    await user.selectOptions(screen.getByLabelText('Filter by lending'), 'in')
+    expect(titles()).toEqual(['Alpha', 'Charlie'])
+  }, T)
+
+  it('countsTheBooksByStatus', async () => {
+    const store = await open([
+      book('a', { status: 'READING' }), book('b', { status: 'READ' }), book('c', { status: 'READ' }),
+    ])
+    show(store)
+    const counts = screen.getByLabelText('Counts')
+    expect(counts).toHaveTextContent('3 books')
+    expect(counts).toHaveTextContent('Reading · 1 book')
+    expect(counts).toHaveTextContent('Read · 2 books')
+    expect(counts).toHaveTextContent('To buy · 0 books')
+  }, T)
+
+  it('bulkSetStatusEditsEachSelectedBook', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', dateAdded: 3 }),
+      book('b', { title: 'Bravo', dateAdded: 2 }),
+      book('c', { title: 'Charlie', dateAdded: 1 }),
+    ])
+    const edit = vi.spyOn(store, 'edit')
+    const user = userEvent.setup()
+    show(store)
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Bravo' }))
+    expect(screen.getByText('2 selected')).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Set status'), 'READING')
+
+    expect(edit.mock.calls).toEqual([
+      ['books', 'a', { status: 'READING' }],
+      ['books', 'b', { status: 'READING' }],
+    ])
+    expect(store.book('a')?.status).toBe('READING')
+    expect(store.book('b')?.status).toBe('READING')
+    expect(store.book('c')?.status).toBe('TO_READ')
+
+    // Again to the same status: nothing to change, nothing stamped.
+    edit.mockClear()
+    await user.selectOptions(screen.getByLabelText('Set status'), 'READING')
+    expect(edit).not.toHaveBeenCalled()
+  }, T)
+
+  it('bulkAddTagKeepsExistingTags', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', tags: ['x'], dateAdded: 3 }),
+      book('b', { title: 'Bravo', tags: ['x', 'new'], dateAdded: 2 }),
+      book('c', { title: 'Charlie', dateAdded: 1 }),
+    ])
+    const edit = vi.spyOn(store, 'edit')
+    const user = userEvent.setup()
+    show(store)
+
+    for (const t of ['Alpha', 'Bravo', 'Charlie']) await user.click(screen.getByRole('checkbox', { name: `Select ${t}` }))
+    await user.type(screen.getByLabelText('Tag'), 'new')
+    await user.click(screen.getByRole('button', { name: 'Add tag' }))
+
+    expect(store.book('a')?.tags).toEqual(['x', 'new'])
+    expect(store.book('b')?.tags).toEqual(['x', 'new'])
+    expect(store.book('c')?.tags).toEqual(['new'])
+    // Bravo had it already: not touched.
+    expect(edit.mock.calls).toEqual([
+      ['books', 'a', { tags: ['x', 'new'] }],
+      ['books', 'c', { tags: ['new'] }],
+    ])
+
+    edit.mockClear()
+    await user.click(screen.getByRole('button', { name: 'Remove tag' }))
+    expect(store.book('a')?.tags).toEqual(['x'])
+    expect(store.book('b')?.tags).toEqual(['x'])
+    expect(store.book('c')?.tags).toEqual([])
+    expect(edit).toHaveBeenCalledTimes(3)
+  }, T)
+
+  it('bulkSeriesAndLending', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', dateAdded: 3, lentTo: 'Ana', lentOn: 5 }),
+      book('b', { title: 'Bravo', dateAdded: 2 }),
+    ])
+    const edit = vi.spyOn(store, 'edit')
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Bravo' }))
+
+    await user.type(screen.getByLabelText('Series name'), 'Saga')
+    await user.click(screen.getByRole('button', { name: 'Set series' }))
+    expect(store.book('a')?.series).toBe('Saga')
+    expect(store.book('b')?.series).toBe('Saga')
+
+    // Alpha is lent to Ana already: only Bravo changes, and Alpha's date stays.
+    edit.mockClear()
+    await user.type(screen.getByLabelText('Lend to'), 'Ana')
+    await user.click(screen.getByRole('button', { name: 'Lend' }))
+    expect(edit).toHaveBeenCalledTimes(1)
+    expect(edit.mock.calls[0].slice(0, 2)).toEqual(['books', 'b'])
+    expect(store.book('a')?.lentOn).toBe(5)
+    expect(store.book('b')?.lentTo).toBe('Ana')
+    expect(store.book('b')?.lentOn).not.toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Mark returned' }))
+    expect(store.book('a')?.lentTo).toBeNull()
+    expect(store.book('a')?.lentOn).toBeNull()
+    expect(store.book('b')?.lentTo).toBeNull()
+  }, T)
+
+  it('deleteAsksFirst', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', dateAdded: 3 }),
+      book('b', { title: 'Bravo', dateAdded: 2 }),
+      book('c', { title: 'Charlie', dateAdded: 1 }),
+    ])
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const user = userEvent.setup()
+    show(store)
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Bravo' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(confirm).toHaveBeenCalledWith('Delete 2 books?')
+    expect(store.books()).toHaveLength(3)
+
+    // The Delete key asks the same.
+    await user.keyboard('{Delete}')
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect(store.books()).toHaveLength(3)
+
+    confirm.mockReturnValue(true)
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(store.books().map((b) => b.id)).toEqual(['c'])
+    expect(titles()).toEqual(['Charlie'])
+    // The selection is gone with the books.
+    expect(screen.queryByText('2 selected')).not.toBeInTheDocument()
+  }, T)
+
+  it('goalIsEditable', async () => {
+    const store = await open([
+      book('a', { status: 'READ', dateRead: new Date(2026, 2, 1).getTime() }),
+      book('b', { status: 'READ', dateRead: new Date(2025, 2, 1).getTime() }),
+    ])
+    const edit = vi.spyOn(store, 'edit')
+    const user = userEvent.setup()
+    show(store)
+
+    const goal = screen.getByRole('spinbutton', { name: '2026 goal' })
+    expect(goal).toHaveValue(null)
+    expect(screen.getByText('1 read in 2026')).toBeInTheDocument()
+    await user.type(goal, '30{Enter}')
+
+    expect(edit).toHaveBeenCalledWith('challenges', '2026', { goal: 30 })
+    expect(store.goal(2026)).toBe(30)
+    expect(screen.getByRole('spinbutton', { name: '2026 goal' })).toHaveValue(30)
+
+    // Leaving it as it is writes nothing; a bad value goes back.
+    edit.mockClear()
+    await user.click(goal)
+    await user.tab()
+    expect(edit).not.toHaveBeenCalled()
+    await user.clear(goal)
+    await user.tab()
+    expect(edit).not.toHaveBeenCalled()
+    expect(screen.getByRole('spinbutton', { name: '2026 goal' })).toHaveValue(30)
+  }, T)
+
+  it('keysFocusSearchAddABookAndOpenOne', async () => {
+    const store = await open([book('a', { title: 'Alpha' })])
+    const user = userEvent.setup()
+    const { onAdd, onOpen } = show(store)
+
+    await user.keyboard('/')
+    expect(screen.getByRole('searchbox', { name: 'Search' })).toHaveFocus()
+    // Typed into the search, the keys are letters.
+    await user.keyboard('n')
+    expect(onAdd).not.toHaveBeenCalled()
+    expect(screen.getByRole('searchbox', { name: 'Search' })).toHaveValue('n')
+
+    await user.clear(screen.getByRole('searchbox', { name: 'Search' }))
+    await user.click(document.body)
+    await user.keyboard('n')
+    expect(onAdd).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('link', { name: 'Alpha' }))
+    expect(onOpen).toHaveBeenCalledWith('a')
+  }, T)
+
+  it('remembersTheVisibleColumns', async () => {
+    const store = await open([book('a', { title: 'Alpha', publisher: 'Pub House' })])
+    const user = userEvent.setup()
+    show(store)
+
+    expect(screen.queryByText('Pub House')).not.toBeInTheDocument()
+    await user.click(screen.getByText('Columns'))
+    await user.click(screen.getByRole('checkbox', { name: 'Publisher' }))
+    expect(screen.getByText('Pub House')).toBeInTheDocument()
+    expect(JSON.parse(window.localStorage.getItem(COLUMN_STORAGE_KEY) ?? '{}').publisher).toBe(true)
+  }, T)
+})

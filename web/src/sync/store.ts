@@ -94,6 +94,8 @@ export class LibraryStore {
 
   /** Writes to the cache, in the order the memory changed. */
   private writes: Promise<void> = Promise.resolve()
+  /** Cache writes started and not yet finished. */
+  private pendingWrites = 0
 
   // The worker: one pass at a time.
   private running: Promise<void> | null = null
@@ -194,6 +196,14 @@ export class LibraryStore {
 
   get status(): SaveStatus {
     return this._status
+  }
+
+  /**
+   * Whether closing the tab now could lose a change: a cache write is unfinished, or a change is being sent. (Changes
+   * waiting offline are in the cache, so they survive and go at the next visit.)
+   */
+  hasPendingWrites(): boolean {
+    return this.pendingWrites > 0 || this._status === 'saving'
   }
 
   /** Called after any change: data or status. Returns the way to stop. */
@@ -578,8 +588,11 @@ export class LibraryStore {
   private persist(w: Parameters<LocalDb['write']>[0]) {
     const db = this.db
     if (!db) return
+    this.pendingWrites++
     this.writes = this.writes.then(() => db.write(w)).catch((e) => {
       console.error('LibraryStore: could not write the cache', e)
+    }).then(() => {
+      this.pendingWrites--
     })
   }
 

@@ -716,4 +716,24 @@ describe('LibraryStore', () => {
     await store.refresh()
     expect(store.books()).toEqual([])
   }, T)
+
+  it('knowsWhileChangesAreNotSafeYet', async () => {
+    const server = new FakeServer()
+    const store = open(server)
+    await store.load()
+    expect(store.hasPendingWrites()).toBe(false)
+
+    // At once after an edit: the cache write and the push are still on their way.
+    store.create(newBook('b1'))
+    expect(store.hasPendingWrites()).toBe(true)
+    await store.idle()
+    expect(store.hasPendingWrites()).toBe(false)
+
+    // Offline: the change is in the cache, so closing the tab loses nothing.
+    server.pushError = new SyncError('offline', 'down')
+    store.edit('books', 'b1', { rating: 3 })
+    await store.idle()
+    expect(store.status).toEqual({ offline: 1 })
+    expect(store.hasPendingWrites()).toBe(false)
+  }, T)
 })

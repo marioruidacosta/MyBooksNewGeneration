@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -23,12 +24,19 @@ vi.mock('./supabase', () => ({
 }))
 
 import { App } from './App'
+import { rowKey, type SyncApi } from './sync/api'
+
+const api: SyncApi = {
+  pull: async () => ({ rows: [], last: 0 }),
+  push: async (changes) => ({ applied: changes.map((c) => rowKey(c.table, c.id)), rejected: [] }),
+  onPing: () => () => {},
+}
 
 describe('App', () => {
   it('signingInOpensTheLibrary', async () => {
     window.history.pushState({}, '', '/MyBooksNewGeneration/sign-in')
     const user = userEvent.setup()
-    render(<App />)
+    render(<App createApi={() => api} />)
 
     await user.type(await screen.findByLabelText('Email'), 'reader@example.com')
     await user.click(screen.getByRole('button', { name: 'Send code' }))
