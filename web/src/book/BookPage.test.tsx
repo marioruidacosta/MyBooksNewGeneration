@@ -8,7 +8,6 @@ import { rowKey, type SyncApi } from '../sync/api'
 import type { Book, SyncRow } from '../sync/model'
 import { LibraryStore } from '../sync/store'
 import { BookPage } from './BookPage'
-import { dayText } from './parse'
 
 const T = 15_000
 
@@ -128,15 +127,31 @@ describe('BookPage', () => {
     show(store)
 
     const same: [string, string][] = [
-      ['Finished', dayText(read)], ['Started', dayText(started)], ['Pages', '310'], ['Year', '1995'], ['Tags', 'a, b'],
+      // Written out: 23:30 UTC on 2 Jan is 3 Jan in Auckland; the other is local midnight on 5 Mar.
+      ['Finished', '2026-01-03'], ['Started', '2026-03-05'], ['Pages', '310'], ['Year', '1995'], ['Tags', 'a, b'],
     ]
     for (const [label, text] of same) {
       const box = screen.getByLabelText(label)
+      // The page shows exactly this text to begin with.
+      expect(box, label).toHaveValue(label === 'Pages' || label === 'Year' ? Number(text) : text)
       await user.clear(box)
       await user.type(box, text)
       await user.tab()
     }
     expect(edit).not.toHaveBeenCalled()
+  }, T)
+
+  it('typingANewDateStoresLocalMidnight', async () => {
+    const store = await open()
+    const edit = vi.spyOn(store, 'edit')
+    const user = userEvent.setup()
+    show(store)
+
+    await user.type(screen.getByLabelText('Started'), '2026-03-06')
+    await user.tab()
+
+    expect(edit).toHaveBeenCalledTimes(1)
+    expect(edit.mock.calls[0][2]).toEqual({ date_started: new Date(2026, 2, 6).getTime() })
   }, T)
 
   it('clearingAFieldSavesNullOrEmptyAsTheRowHasIt', async () => {
