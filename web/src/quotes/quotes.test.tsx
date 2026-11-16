@@ -40,7 +40,7 @@ describe('QuoteOfTheDay', () => {
     const fetchImpl = vi.fn().mockResolvedValue(summary('https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/330px-Jane.jpg'))
     const url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/500px-Jane.jpg'
     expect(await portraitUrl('en:Jane_Austen', fetchImpl, 1000)).toBe(url)
-    expect(fetchImpl).toHaveBeenCalledWith('https://en.wikipedia.org/api/rest_v1/page/summary/Jane_Austen')
+    expect(fetchImpl).toHaveBeenCalledWith('https://en.wikipedia.org/api/rest_v1/page/summary/Jane_Austen', { referrerPolicy: 'no-referrer' })
     expect(await portraitUrl('en:Jane_Austen', fetchImpl, 2000)).toBe(url)
     expect(fetchImpl).toHaveBeenCalledTimes(1)
     // After 30 days it asks again.
@@ -48,19 +48,29 @@ describe('QuoteOfTheDay', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2)
     // The title is encoded.
     await portraitUrl('pt:Luís_de_Camões', fetchImpl, 1000)
-    expect(fetchImpl).toHaveBeenLastCalledWith('https://pt.wikipedia.org/api/rest_v1/page/summary/Lu%C3%ADs_de_Cam%C3%B5es')
+    expect(fetchImpl).toHaveBeenLastCalledWith('https://pt.wikipedia.org/api/rest_v1/page/summary/Lu%C3%ADs_de_Cam%C3%B5es', {
+      referrerPolicy: 'no-referrer',
+    })
   })
 
-  it('aPortraitThatFailsToLoadIsDroppedAndForgotten', async () => {
+  it('aPortraitImageThatFailsIsNotRetriedForADay', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(summary('https://upload.wikimedia.org/x/330px-P.jpg'))
     const day = new Date(2026, 10, 16, 12)
-    const { container } = render(<QuoteOfTheDay now={day} fetchImpl={fetchImpl} />)
-    await waitFor(() => expect(container.querySelector('img')).not.toBeNull())
-    fireEvent.error(container.querySelector('img')!)
-    expect(container.querySelector('img')).toBeNull()
-    // The quote stays, and the address is asked for again next time.
+    const first = render(<QuoteOfTheDay now={day} fetchImpl={fetchImpl} />)
+    await waitFor(() => expect(first.container.querySelector('img')).not.toBeNull())
+    fireEvent.error(first.container.querySelector('img')!)
+    expect(first.container.querySelector('img')).toBeNull()
+    // The quote stays.
     expect(screen.getByRole('blockquote')).toBeInTheDocument()
-    expect(Object.keys(window.localStorage).filter((k) => k.startsWith('mybooks.portrait'))).toEqual([])
+    first.unmount()
+
+    // The next visit asks nobody and shows no picture: the miss is remembered for a day, as a failed lookup is.
+    const second = render(<QuoteOfTheDay now={day} fetchImpl={fetchImpl} />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(second.container.querySelector('img')).toBeNull()
+    expect(await portraitUrl(quoteOfTheDay(day).wiki, fetchImpl, Date.now() + 2 * 864e5)).not.toBeNull()
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
   })
 
   it('showsThePortraitWhenThereIsOne', async () => {

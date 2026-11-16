@@ -15,7 +15,7 @@ export function quoteOfTheDay(date: Date = new Date()): BookQuote {
 /** What the portrait lookup needs of `fetch`. */
 export type PortraitFetch = (
   url: string,
-  init?: { signal?: AbortSignal },
+  init?: { signal?: AbortSignal; referrerPolicy?: 'no-referrer' },
 ) => Promise<{ ok: boolean; json: () => Promise<unknown> }>
 
 // v2: the first version kept 640px addresses, which Wikimedia does not serve.
@@ -46,13 +46,9 @@ function writeCache(wiki: string, url: string | null, now: number) {
   }
 }
 
-/** Forgets a remembered portrait (its picture would not load). */
-export function forgetPortrait(wiki: string): void {
-  try {
-    window.localStorage.removeItem(CACHE_PREFIX + wiki)
-  } catch {
-    // Nothing to forget.
-  }
+/** Remembers that this portrait's picture would not load, so it is not asked for again until the miss expires (a day). */
+export function missPortrait(wiki: string, now: number = Date.now()): void {
+  writeCache(wiki, null, now)
 }
 
 /**
@@ -72,7 +68,8 @@ export async function portraitUrl(
     const lang = wiki.slice(0, colon)
     const title = wiki.slice(colon + 1)
     const address = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`
-    const res = await (signal ? fetchImpl(address, { signal }) : fetchImpl(address))
+    // No referrer, as for the picture itself: the page's address is nobody else's business.
+    const res = await fetchImpl(address, signal ? { signal, referrerPolicy: 'no-referrer' } : { referrerPolicy: 'no-referrer' })
     const body = res.ok ? ((await res.json()) as { thumbnail?: { source?: unknown } } | null) : null
     const source = body?.thumbnail?.source
     if (typeof source !== 'string' || !/^https:\/\//.test(source)) {

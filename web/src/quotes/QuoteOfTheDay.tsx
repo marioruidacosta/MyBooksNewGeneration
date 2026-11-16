@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { articleUrl, forgetPortrait, portraitUrl, quoteOfTheDay, type PortraitFetch } from './daily'
+import { articleUrl, missPortrait, portraitUrl, quoteOfTheDay, type PortraitFetch } from './daily'
 
 type Place = 'library' | 'sign-in'
 
@@ -58,7 +58,8 @@ export function QuoteOfTheDay({ place = 'library', now, fetchImpl }: Props) {
           alt=""
           referrerPolicy="no-referrer"
           onError={() => {
-            forgetPortrait(quote.wiki)
+            // Not asked for again for a day (the same miss as a failed lookup), not on every visit.
+            missPortrait(quote.wiki)
             setPortrait(null)
           }}
         />
