@@ -20,7 +20,9 @@ export function duplicateGroups(books: Book[]): Book[][] {
     const keys: string[] = []
     if (b.isbn) keys.push(`isbn:${b.isbn}`)
     const title = catalogTitleKey(b.title)
-    if (title !== '') keys.push(`ta:${title}|${firstAuthorKey(b.authors)}`)
+    const author = firstAuthorKey(b.authors)
+    // Without an author a title alone proves nothing: such books group only by ISBN.
+    if (title !== '' && author !== '') keys.push(`ta:${title}|${author}`)
     for (const k of keys) {
       const first = seen.get(k)
       if (first === undefined) seen.set(k, i)

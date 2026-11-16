@@ -38,11 +38,15 @@ async function open() {
   return store
 }
 
-function fakeStorage(copyError: string | null = null) {
+function fakeStorage(copyError: string | null = null, fail: { download?: boolean; upload?: boolean } = {}) {
   const copy = vi.fn(async () => ({ error: copyError ? { message: copyError } : null }))
   const remove = vi.fn()
-  const storage = { from: () => ({ copy, remove }) } as unknown as PhotoStorage
-  return { storage, copy, remove }
+  const download = vi.fn(async () =>
+    fail.download ? { data: null, error: { message: 'no file' } } : { data: new Blob(['jpeg']), error: null },
+  )
+  const upload = vi.fn(async () => ({ error: fail.upload ? { message: 'denied' } : null }))
+  const storage = { from: () => ({ copy, remove, download, upload }) } as unknown as PhotoStorage
+  return { storage, copy, remove, download, upload }
 }
 
 beforeEach(() => {
@@ -77,6 +81,25 @@ describe('tidy lists', () => {
     ]
     const groups = duplicateGroups(books).map((g) => g.map((b) => b.id))
     expect(groups).toEqual([['a', 'b'], ['c', 'd']])
+  })
+
+  it('booksWithoutAnAuthorDontGroupByTitle', () => {
+    const books = [
+      book({ id: 'a', title: 'Poems', authors: '' }),
+      book({ id: 'b', title: 'Poems', authors: ' , ' }),
+      book({ id: 'c', title: 'Essays', authors: '', isbn: '9780156007757' }),
+      book({ id: 'd', title: 'Other essays', authors: '', isbn: '9780156007757' }),
+    ]
+    expect(duplicateGroups(books).map((g) => g.map((b) => b.id))).toEqual([['c', 'd']])
+  })
+
+  it('aChainOfMatchesIsOneGroup', () => {
+    const books = [
+      book({ id: 'a', title: 'One', authors: 'P Q', isbn: '9780156007757' }),
+      book({ id: 'b', title: 'Two', authors: 'R S', isbn: '9780156007757' }),
+      book({ id: 'c', title: 'Two: sub', authors: 'S R', isbn: null }),
+    ]
+    expect(duplicateGroups(books).map((g) => g.map((b) => b.id))).toEqual([['a', 'b', 'c']])
   })
 })
 
@@ -140,6 +163,48 @@ describe('mergeBooks', () => {
     expect(result.coverKept).toBe(false)
   })
 
+  it('mergingTwoPhotosTakesTheNewerOne', async () => {
+    const store = await open()
+    store.create(book({ id: 'keep', coverUrl: 'photo' }))
+    clock = 2000
+    store.create(book({ id: 'drop', coverUrl: 'photo' }))
+    const { storage, copy, remove, download, upload } = fakeStorage()
+    clock = 3000
+
+    const plan = planMerge(store, store.book('keep') as Book, store.book('drop') as Book)
+    expect(plan.photoFromDrop).toBe(true)
+    expect(plan.replacesPhoto).toBe(true)
+    const result = await mergeBooks(store, store.book('keep') as Book, store.book('drop') as Book, { owner: 'u1', storage })
+
+    expect(download).toHaveBeenCalledWith('u1/drop.jpg')
+    expect(upload).toHaveBeenCalledTimes(1)
+    expect(upload.mock.calls[0]).toMatchObject(['u1/keep.jpg', expect.any(Blob), { upsert: true, contentType: 'image/jpeg' }])
+    expect(copy).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    expect(store.bookTimes('keep').cover_url).toBe(3000)
+    expect((store.book('keep') as Book).coverUrl).toBe('photo')
+    expect(result.coverKept).toBe(false)
+  })
+
+  it('aFailedPhotoReplaceKeepsTheKeptPhoto', async () => {
+    for (const fail of [{ download: true }, { upload: true }]) {
+      const store = await open()
+      store.create(book({ id: 'keep', coverUrl: 'photo' }))
+      clock = 2000
+      store.create(book({ id: 'drop', coverUrl: 'photo' }))
+      const { storage, remove } = fakeStorage(null, fail)
+      clock = 3000
+
+      const result = await mergeBooks(store, store.book('keep') as Book, store.book('drop') as Book, { owner: 'u1', storage })
+
+      expect(result.coverKept).toBe(true)
+      expect(remove).not.toHaveBeenCalled()
+      expect(store.bookTimes('keep').cover_url).toBe(1000)
+      expect((store.book('keep') as Book).coverUrl).toBe('photo')
+      expect(store.book('drop')).toBeUndefined()
+    }
+  })
+
   it('mergeKeepsItsOwnCoverWhenTheCopyFails', async () => {
     const store = await open()
     store.create(book({ id: 'keep', coverUrl: 'https://x.example/own.jpg' }))
@@ -170,6 +235,8 @@ describe('mergeBooks', () => {
     expect(plan.changes).toEqual(['pages', 'cover'])
     expect(plan.quotes).toBe(1)
     expect(plan.photoFromDrop).toBe(true)
+    expect(plan.replacesPhoto).toBe(false)
+    expect(plan.phoneData).toBe(false)
     expect((store.book('keep') as Book).pageCount).toBeNull()
     expect(store.book('drop')).toBeDefined()
   })

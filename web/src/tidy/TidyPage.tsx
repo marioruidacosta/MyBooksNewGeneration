@@ -121,7 +121,7 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
       const title = store.book(keepId)?.title ?? 'the book'
       setMessage(
         `Merged ${String(done)} ${done === 1 ? 'book' : 'books'} into ${title}.` +
-          (coverKept ? ' A cover photo could not be copied, so the book keeps its own cover.' : ''),
+          (coverKept ? ' The other book’s cover photo could not be used, so the book keeps its own cover.' : ''),
       )
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : 'The books could not be merged.')
@@ -204,7 +204,12 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
                   <li key={o.id}>
                     {o.title}: {plan.changes.length > 0 ? `fills ${plan.changes.join(', ')}` : 'adds no new details'}.{' '}
                     {quoteText(plan.quotes)}.
-                    {plan.photoFromDrop ? ' Its cover photo is copied.' : ''}
+                    {plan.photoFromDrop
+                      ? plan.replacesPhoto
+                        ? ' Its newer cover photo replaces the photo of the kept book.'
+                        : ' Its cover photo is copied.'
+                      : ''}
+                    {plan.phoneData ? ' Its bookmarks and e-book on your phone are removed.' : ''}
                   </li>
                 )
               })}

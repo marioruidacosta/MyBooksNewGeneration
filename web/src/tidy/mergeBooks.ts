@@ -8,6 +8,7 @@ import { combineRows } from '../sync/twin'
 export type PhotoStorage = {
   from(bucket: string): ReturnType<CoverStorage['from']> & {
     copy(from: string, to: string): PromiseLike<{ error: { message: string } | null }>
+    download(path: string): PromiseLike<{ data: Blob | null; error: { message: string } | null }>
   }
 }
 
@@ -30,6 +31,10 @@ export type MergePlan = {
   quotes: number
   /** The merged cover is the dropped book's photo, which has to be copied to the kept book's own file. */
   photoFromDrop: boolean
+  /** ...and [keep] has a photo of its own, which that replaces (so the file is downloaded and uploaded over it). */
+  replacesPhoto: boolean
+  /** [drop] has bookmarks or an e-book record, which go with it. */
+  phoneData: boolean
 }
 
 const rowOf = (store: LibraryStore, b: Book): SyncRow => ({
@@ -54,6 +59,8 @@ export function planMerge(store: LibraryStore, keep: Book, drop: Book): MergePla
     changes: fields.map((f) => LABELS[f] ?? f),
     quotes: store.quotes(drop.id).length,
     photoFromDrop,
+    replacesPhoto: photoFromDrop && keep.coverUrl === 'photo',
+    phoneData: store.hasPhoneData(drop.id),
   }
 }
 
@@ -80,16 +87,29 @@ export async function mergeBooks(
     let copied = false
     if (photos) {
       const to = photoPath(photos.owner, keep.id)
+      const from = photoPath(photos.owner, drop.id)
+      const bucket = photos.storage.from(BUCKET)
       try {
-        const { error } = await photos.storage.from(BUCKET).copy(photoPath(photos.owner, drop.id), to)
-        copied = !error
+        if (plan.replacesPhoto) {
+          // A copy won't overwrite: take the other photo's bytes and upload them over the kept file. The kept file is
+          // never deleted first, so a failure leaves it as it was.
+          const { data, error } = await bucket.download(from)
+          if (error || !data) throw new Error(error?.message ?? 'no photo')
+          const up = await bucket.upload(to, data, { upsert: true, contentType: 'image/jpeg' })
+          copied = !up.error
+        } else {
+          copied = !(await bucket.copy(from, to)).error
+        }
         if (copied) forgetSignedUrl(photos.storage, to)
       } catch {
         copied = false
       }
     }
-    if (copied) restamp.push('cover_url')
-    else {
+    if (copied) {
+      // Always set, so the cover's time moves even when the marker was already 'photo' and phones fetch the new file.
+      changes.cover_url = 'photo'
+      restamp.push('cover_url')
+    } else {
       coverKept = true
       delete changes.cover_url
     }

@@ -273,6 +273,15 @@ export class LibraryStore {
     }
   }
 
+  /** Whether a live book has bookmarks or an e-book record from a phone (removing the book removes them). */
+  hasPhoneData(bookId: string): boolean {
+    for (const row of this.rows.values()) {
+      if (isDeleted(row)) continue
+      if ((row.table === 'bookmarks' && row.fields.book_id === bookId) || (row.table === 'ebooks' && row.id === bookId)) return true
+    }
+    return false
+  }
+
   /** The reading goal for [year], or null. Rows whose id isn't a year are skipped. */
   goal(year: number): number | null {
     if (!Number.isInteger(year)) return null

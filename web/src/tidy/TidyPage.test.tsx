@@ -5,15 +5,16 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Found, Lookup } from '../add/lookup'
 import { rowKey, type SyncApi } from '../sync/api'
-import type { Book } from '../sync/model'
+import type { Book, SyncRow } from '../sync/model'
 import { LibraryStore } from '../sync/store'
 import type { PhotoStorage } from './mergeBooks'
 import { TidyPage } from './TidyPage'
 
 const T = 15_000
 
+let pulled: SyncRow[] = []
 const api: SyncApi = {
-  pull: async (after) => ({ rows: [], last: after }),
+  pull: async (after) => (after === 0 ? { rows: pulled, last: pulled.length } : { rows: [], last: after }),
   push: async (changes) => ({ applied: changes.map((c) => rowKey(c.table, c.id)), rejected: [] }),
   onPing: () => () => {},
 }
@@ -44,6 +45,7 @@ function fakeLookup(found: Found | null): Lookup {
 
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
+  pulled = []
 })
 afterEach(async () => {
   await Promise.all(stores.splice(0).map((s) => s.close()))
@@ -102,5 +104,37 @@ describe('TidyPage', () => {
     await waitFor(() => expect(store.book('b')).toBeUndefined())
     expect((store.book('a') as Book).publisher).toBe('House')
     expect(store.quotes('a')).toHaveLength(1)
+  }, T)
+})
+
+describe('TidyPage merging, more', () => {
+  it('mergePreviewWarnsAboutBookmarks', async () => {
+    const user = userEvent.setup()
+    pulled = [{ table: 'bookmarks', id: 'm1', fields: { book_id: 'b', deleted: false }, times: { book_id: 1 }, seq: 1 }]
+    const store = await open(book({ id: 'a' }), book({ id: 'b', title: 'Blindness: a novel' }))
+    render(<TidyPage store={store} owner="u1" storage={storage} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
+    await user.click(screen.getByRole('button', { name: 'Merge' }))
+
+    expect(screen.getByText(/bookmarks and e-book on your phone are removed/i)).toBeInTheDocument()
+  }, T)
+
+  it('mergingAGroupOfThreeKeepsTheChosenOne', async () => {
+    const user = userEvent.setup()
+    const store = await open(
+      book({ id: 'a', title: 'Blindness' }),
+      book({ id: 'b', title: 'Blindness: one' }),
+      book({ id: 'c', title: 'Blindness: two', publisher: 'House' }),
+    )
+    render(<TidyPage store={store} owner="u1" storage={storage} />)
+
+    await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
+    await user.click(screen.getByRole('radio', { name: /Blindness: one/ }))
+    await user.click(screen.getByRole('button', { name: 'Merge' }))
+    await user.click(screen.getByRole('button', { name: 'Merge and delete' }))
+
+    await waitFor(() => expect(store.books().map((b) => b.id)).toEqual(['b']))
+    expect((store.book('b') as Book).publisher).toBe('House')
   }, T)
 })
