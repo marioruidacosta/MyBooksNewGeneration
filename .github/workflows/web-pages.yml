@@ -11,9 +11,12 @@ on:
       - '.github/pages/**'
       - '.github/workflows/web-pages.yml'
   workflow_dispatch:
-  # Every night the book news feed is rebuilt and the whole site is published again with it.
+  # Every 3 hours the book news feed is rebuilt and the whole site is published again with it: this is the same
+  # single build-and-deploy job as a push, so a scheduled run also publishes docs/ and the website unchanged. The busy
+  # general feeds only hold a few hours of items, and each run merges with the live file to keep what earlier runs caught.
+  # The concurrency group below queues overlapping runs; it never cancels one.
   schedule:
-    - cron: '15 5 * * *'
+    - cron: '15 */3 * * *'
 
 permissions:
   pages: write
