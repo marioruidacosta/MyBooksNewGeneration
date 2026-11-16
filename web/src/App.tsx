@@ -17,6 +17,7 @@ import { CoverContext } from './covers/storage'
 import { ImportPage } from './io/ImportPage'
 import { LibraryPage } from './library/LibraryPage'
 import { supabase } from './supabase'
+import { TidyPage } from './tidy/TidyPage'
 import { createSupabaseSyncApi, type SyncApi } from './sync/api'
 import { SaveBadge } from './sync/SaveBadge'
 import { LibraryStore } from './sync/store'
@@ -25,16 +26,6 @@ import { useLibraryStore, useWarnBeforeClosing } from './sync/useLibraryStore'
 
 interface RouterContext {
   signedIn: boolean
-}
-
-function page(title: string) {
-  return function Page() {
-    return (
-      <main>
-        <h1>{title}</h1>
-      </main>
-    )
-  }
 }
 
 function Shell() {
@@ -78,6 +69,13 @@ function ImportRoute() {
   const store = useStore()
   const covers = useContext(CoverContext)
   return <ImportPage store={store} owner={covers?.owner} storage={covers?.storage} />
+}
+
+function TidyRoute() {
+  const store = useStore()
+  const covers = useContext(CoverContext)
+  if (!covers) throw new Error('TidyRoute: no signed-in account')
+  return <TidyPage store={store} owner={covers.owner} storage={supabase.storage} />
 }
 
 function BookRoute() {
@@ -131,7 +129,7 @@ const tidyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/tidy',
   beforeLoad: requireSession,
-  component: page('Tidy up'),
+  component: TidyRoute,
 })
 
 const routeTree = rootRoute.addChildren([signInRoute, libraryRoute, bookRoute, addRoute, importRoute, tidyRoute])

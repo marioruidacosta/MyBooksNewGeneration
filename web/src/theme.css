@@ -170,3 +170,15 @@ button.star { padding: 0.15rem 0.4rem; font-size: 1.25rem; line-height: 1; }
   .book-layout { grid-template-columns: 1fr; }
   .quote { grid-template-columns: 1fr; }
 }
+
+/* Tidy */
+.tidy-tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1rem 0; }
+.tidy-tabs [aria-selected='true'] { font-weight: 600; border-color: var(--primary, currentColor); }
+.tidy-list { list-style: none; margin: 0; padding: 0; }
+.tidy-row, .tidy-choice { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0; }
+.tidy-row { border-bottom: 1px solid var(--outline-variant); }
+.tidy-title { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.tidy-cover { width: 2rem; height: 3rem; flex: none; }
+.tidy-group { padding: 0.75rem 0; border-bottom: 1px solid var(--outline-variant); }
+.tidy-group fieldset { border: 0; padding: 0; margin: 0 0 0.5rem; }
+.tidy-confirm { padding: 0.75rem; border: 1px solid var(--outline); border-radius: 0.5rem; }
