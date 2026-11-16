@@ -276,8 +276,8 @@ export type ApplyDeps = {
  * nothing here batches. Photos go up last, one by one; one that fails is counted and its book stays as imported.
  */
 export async function applyPlan(plan: Plan, store: LibraryStore, deps: ApplyDeps): Promise<{ coverFailures: number }> {
-  for (const book of plan.added) store.create(book)
-  for (const m of plan.merged) if (Object.keys(m.changes).length > 0) store.edit('books', m.id, m.changes)
+  for (const book of plan.added) store.create(book, { origin: 'import' })
+  for (const m of plan.merged) if (Object.keys(m.changes).length > 0) store.edit('books', m.id, m.changes, { origin: 'import' })
   for (const q of plan.quotes) store.createQuote(q)
   for (const g of plan.goals) store.edit('challenges', String(g.year), { goal: g.goal })
 

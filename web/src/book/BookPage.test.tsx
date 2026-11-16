@@ -7,6 +7,8 @@ import type { CoverStorage } from '../covers/storage'
 import { rowKey, type SyncApi } from '../sync/api'
 import type { Book, SyncRow } from '../sync/model'
 import { LibraryStore } from '../sync/store'
+import { Publisher } from '../share/publisher'
+import { SharingContext } from '../share/SharingContext'
 import { BookPage } from './BookPage'
 
 const T = 15_000
@@ -338,5 +340,31 @@ describe('BookPage', () => {
     const store = await open()
     render(<BookPage store={store} owner="u1" id="nope" storage={fakeStorage().storage} onBack={() => {}} />)
     expect(screen.getByText(/isn.t in your library/)).toBeInTheDocument()
+  }, T)
+
+  it('saysWhetherTheBookIsSharedWithFriends', async () => {
+    const store = await open()
+    const shared = ['1']
+    const client = { rpc: async () => ({ data: shared, error: null }) }
+    const publisher = new Publisher({ store, client, debounceMs: 0 })
+    await publisher.start()
+    const fake = fakeStorage()
+    const { unmount } = render(
+      <SharingContext.Provider value={publisher}>
+        <BookPage store={store} owner="u1" id="1" storage={fake.storage} onBack={() => {}} />
+      </SharingContext.Provider>,
+    )
+    expect(screen.getByText('Shared with friends')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /shared/i })).not.toBeInTheDocument()
+    unmount()
+    shared.length = 0
+    await publisher.start()
+    render(
+      <SharingContext.Provider value={publisher}>
+        <BookPage store={store} owner="u1" id="1" storage={fake.storage} onBack={() => {}} />
+      </SharingContext.Provider>,
+    )
+    expect(screen.getByText('Not shared')).toBeInTheDocument()
+    publisher.stop()
   }, T)
 })

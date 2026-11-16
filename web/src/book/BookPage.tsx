@@ -4,6 +4,7 @@ import { shrinkToJpeg, uploadCover } from '../covers/coverUpload'
 import { CoverContext, type CoverStorage } from '../covers/storage'
 import { STATUS_LABELS } from '../library/filters'
 import { supabase } from '../supabase'
+import { useIsShared } from '../share/SharingContext'
 import { STATUSES, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { Field } from './Field'
@@ -33,6 +34,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
   const [coverLink, setCoverLink] = useState('')
   const [coverError, setCoverError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const shared = useIsShared(id)
 
   if (!book) {
     return (
@@ -118,6 +120,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
             </button>
           )}
           <h1>{book.title}</h1>
+          {shared !== null && <p className="share-state">{shared ? 'Shared with friends' : 'Not shared'}</p>}
         </header>
 
         <div className="book-layout">

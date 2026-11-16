@@ -74,7 +74,8 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
         setMessage(`Nothing to add to ${b.title}.`)
         return
       }
-      store.edit('books', b.id, fill)
+      // Like the phone's "fill in details", this isn't posted to the community.
+      store.edit('books', b.id, fill, { origin: 'import' })
       setMessage(`Added to ${b.title}: ${Object.keys(fill).length} ${Object.keys(fill).length === 1 ? 'field' : 'fields'}.`)
     } catch (e) {
       setError(

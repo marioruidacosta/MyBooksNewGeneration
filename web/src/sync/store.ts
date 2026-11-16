@@ -21,6 +21,17 @@ export type LocalChangeArgs = {
   [T in EditableTable]: [table: T, before: Entity[T] | null, after: Entity[T] | null]
 }[EditableTable]
 
+/**
+ * Where a local change comes from, when it isn't an ordinary edit: `import` is a bulk write (a backup or Goodreads
+ * import, filling in details) that, as on the phone, is never posted to the community.
+ */
+export type ChangeOrigin = 'import'
+
+/** What [LibraryStore.onLocalChangeWithOrigin] calls: the change, then its [ChangeOrigin] (undefined for an ordinary edit). */
+export type LocalChangeWithOrigin = (...args: [...LocalChangeArgs, origin: ChangeOrigin | undefined]) => void
+
+type WriteOptions = { restamp?: string[]; origin?: ChangeOrigin }
+
 export type StoreOptions = {
   api: SyncApi
   /** The signed-in account's id: the cache is this account's own database. */
@@ -91,6 +102,7 @@ export class LibraryStore {
 
   private listeners = new Set<() => void>()
   private localListeners = new Set<(...args: LocalChangeArgs) => void>()
+  private originListeners = new Set<LocalChangeWithOrigin>()
 
   /** Writes to the cache, in the order the memory changed. */
   private writes: Promise<void> = Promise.resolve()
@@ -222,6 +234,14 @@ export class LibraryStore {
     }
   }
 
+  /** Like [onLocalChange], with where the change came from (`import` for a bulk write that isn't posted to the community). */
+  onLocalChangeWithOrigin(cb: LocalChangeWithOrigin): () => void {
+    this.originListeners.add(cb)
+    return () => {
+      this.originListeners.delete(cb)
+    }
+  }
+
   /** The live books. */
   books(): Book[] {
     if (!this.booksMemo) {
@@ -312,18 +332,18 @@ export class LibraryStore {
    * cover photo under the same `"photo"` marker). A book or quote that isn't here does nothing (use [create] or
    * [createQuote]); a challenge row is made when its year's goal is first set.
    */
-  edit(table: EditableTable, id: string, fields: Record<string, unknown>, options: { restamp?: string[] } = {}): void {
+  edit(table: EditableTable, id: string, fields: Record<string, unknown>, options: WriteOptions = {}): void {
     if (table === 'challenges') {
       // Setting a year's goal brings back its row if it was deleted, as the app's upsert does.
-      this.write(table, id, { deleted: false, ...fields }, options.restamp ?? [], true)
+      this.write(table, id, { deleted: false, ...fields }, options.restamp ?? [], true, options.origin)
       return
     }
-    this.write(table, id, fields, options.restamp ?? [], false)
+    this.write(table, id, fields, options.restamp ?? [], false, options.origin)
   }
 
   /** Adds a book (or, when its id is here already, sets every field of it). */
-  create(book: Book): void {
-    this.write('books', book.id, bookToFields(book), [], true)
+  create(book: Book, options: { origin?: ChangeOrigin } = {}): void {
+    this.write('books', book.id, bookToFields(book), [], true, options.origin)
   }
 
   /** Adds a quote (or, when its id is here already, sets every field of it). */
@@ -344,7 +364,10 @@ export class LibraryStore {
     this.write(table, id, { deleted: true }, [], false)
   }
 
-  private write(table: SyncTable, id: string, fields: Record<string, unknown>, restamp: string[], allowNew: boolean) {
+  private write(
+    table: SyncTable, id: string, fields: Record<string, unknown>, restamp: string[], allowNew: boolean,
+    origin?: ChangeOrigin,
+  ) {
     if (!this.loaded || this.closed) throw new Error('LibraryStore: not loaded')
     const key = rowKey(table, id)
     const current = this.rows.get(key)
@@ -388,12 +411,12 @@ export class LibraryStore {
     // Waiting out a failure, the change waits too (and is counted); otherwise it is on its way.
     this._status = isOffline(this._status) ? { offline: this.queue.size } : 'saving'
     this.dataChanged()
-    this.fireLocal(table, current, next)
+    this.fireLocal(table, current, next, origin)
     this.request(false)
   }
 
-  private fireLocal(table: SyncTable, before: SyncRow | undefined, after: SyncRow) {
-    if (this.localListeners.size === 0) return
+  private fireLocal(table: SyncTable, before: SyncRow | undefined, after: SyncRow, origin?: ChangeOrigin) {
+    if (this.localListeners.size === 0 && this.originListeners.size === 0) return
     const live = (row: SyncRow | undefined) => (row && !isDeleted(row) ? row : null)
     const b = live(before)
     const a = live(after)
@@ -410,6 +433,13 @@ export class LibraryStore {
     for (const cb of [...this.localListeners]) {
       try {
         cb(...args)
+      } catch (e) {
+        console.error('LibraryStore: a local change listener failed', e)
+      }
+    }
+    for (const cb of [...this.originListeners]) {
+      try {
+        cb(...args, origin)
       } catch (e) {
         console.error('LibraryStore: a local change listener failed', e)
       }

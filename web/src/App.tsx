@@ -1,4 +1,4 @@
-import { useCallback, useContext, useMemo } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import {
   Link,
   Outlet,
@@ -16,6 +16,8 @@ import { BookPage } from './book/BookPage'
 import { CoverContext } from './covers/storage'
 import { ImportPage } from './io/ImportPage'
 import { LibraryPage } from './library/LibraryPage'
+import { Publisher } from './share/publisher'
+import { SharingContext } from './share/SharingContext'
 import { supabase } from './supabase'
 import { TidyPage } from './tidy/TidyPage'
 import { createSupabaseSyncApi, type SyncApi } from './sync/api'
@@ -157,6 +159,21 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
   // One store for the signed-in account; closed on sign-out and when the account changes.
   const { store, error } = useLibraryStore(userId, (id) => new LibraryStore({ api: createApi(id), owner: id }))
   useWarnBeforeClosing(store)
+  // Posts this account's changes to the community like the phone does; one per open library.
+  const [publisher, setPublisher] = useState<Publisher | null>(null)
+  useEffect(() => {
+    if (!store) return
+    const next = new Publisher({ store, client: supabase })
+    let live = true
+    void next.start().then(() => {
+      if (live) setPublisher(next)
+    })
+    return () => {
+      live = false
+      next.stop()
+      setPublisher(null)
+    }
+  }, [store])
   // Whose cover photos to show, and where they are kept.
   const covers = useMemo(() => (userId ? { owner: userId, storage: supabase.storage } : null), [userId])
 
@@ -177,9 +194,11 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
   }
   return (
     <StoreContext.Provider value={store}>
-      <CoverContext.Provider value={covers}>
-        <RouterProvider key={session ? 'in' : 'out'} router={router} context={{ signedIn: session !== null }} />
-      </CoverContext.Provider>
+      <SharingContext.Provider value={publisher}>
+        <CoverContext.Provider value={covers}>
+          <RouterProvider key={session ? 'in' : 'out'} router={router} context={{ signedIn: session !== null }} />
+        </CoverContext.Provider>
+      </SharingContext.Provider>
     </StoreContext.Provider>
   )
 }
