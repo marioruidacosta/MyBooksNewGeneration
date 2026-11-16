@@ -662,6 +662,29 @@ describe('LibraryPage', () => {
     expect(within(shelf).queryByRole('spinbutton')).not.toBeInTheDocument()
   }, T)
 
+  it('closingTheShelfEditorReturnsFocus', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', status: 'READING', dateStarted: 1, pageCount: 200, currentPage: 50, progressPercent: 25 }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+    const shelf = screen.getByRole('region', { name: 'Reading now' })
+
+    await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
+    await user.keyboard('60{Enter}')
+    expect(within(shelf).queryByRole('spinbutton')).not.toBeInTheDocument()
+    expect(within(shelf).getByRole('button', { name: 'Update progress for Alpha' })).toHaveFocus()
+
+    await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
+    await user.keyboard('{Escape}')
+    expect(within(shelf).getByRole('button', { name: 'Update progress for Alpha' })).toHaveFocus()
+
+    // Leaving the field for somewhere else keeps focus there.
+    await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
+    await user.click(screen.getByRole('button', { name: 'Add a book' }))
+    expect(within(shelf).getByRole('button', { name: 'Update progress for Alpha' })).not.toHaveFocus()
+  }, T)
+
   it('changingStatusInTheTableAppliesTheDates', async () => {
     const store = await open([
       book('a', { title: 'Alpha', status: 'TO_READ', currentPage: null }),

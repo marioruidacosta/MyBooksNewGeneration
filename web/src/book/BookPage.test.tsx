@@ -578,6 +578,16 @@ describe('BookPage', () => {
     expect(screen.queryByLabelText('Current page of Blindness')).not.toBeInTheDocument()
   }, T)
 
+  it('closingTheProgressEditorReturnsFocusToItsButton', async () => {
+    const store = await open(book({ status: 'READING', pageCount: 200 }))
+    const user = userEvent.setup()
+    show(store)
+
+    await user.click(screen.getByRole('button', { name: "I'm on page…" }))
+    await user.keyboard('50{Enter}')
+    expect(screen.getByRole('button', { name: "I'm on page…" })).toHaveFocus()
+  }, T)
+
   it('aCommittedFieldShowsSaved', async () => {
     const store = await open(book({ publisher: 'Caminho', tags: ['a'] }))
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })

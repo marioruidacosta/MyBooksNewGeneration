@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { progressOf, type ProgressInput } from '../book/progress'
 import { ProgressEditor } from '../book/ProgressEditor'
 import { CoverImage } from '../covers/CoverImage'
@@ -16,6 +16,15 @@ export function ReadingShelf({
   onProgress: (book: Book, input: ProgressInput) => void
 }) {
   const [editing, setEditing] = useState<string | null>(null)
+  const buttons = useRef(new Map<string, HTMLButtonElement>())
+  // The book whose editor was closed from the keyboard: its button takes focus back.
+  const refocus = useRef<string | null>(null)
+  useEffect(() => {
+    if (editing === null && refocus.current !== null) {
+      buttons.current.get(refocus.current)?.focus()
+      refocus.current = null
+    }
+  }, [editing])
   const reading = books
     .filter((b) => b.status === 'READING')
     .sort((a, b) => (b.dateStarted ?? 0) - (a.dateStarted ?? 0))
@@ -59,12 +68,19 @@ export function ReadingShelf({
                 <ProgressEditor
                   book={b}
                   onSave={(input) => onProgress(b, input)}
-                  onClose={() => setEditing(null)}
+                  onClose={(back) => {
+                    refocus.current = back ? b.id : null
+                    setEditing(null)
+                  }}
                 />
               ) : (
                 <button
                   type="button"
                   className="shelf-meta"
+                  ref={(el) => {
+                    if (el) buttons.current.set(b.id, el)
+                    else buttons.current.delete(b.id)
+                  }}
                   aria-label={`Update progress for ${b.title}`}
                   onClick={() => setEditing(b.id)}
                 >

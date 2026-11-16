@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Book } from '../sync/model'
 import { formatDay } from '../text/dates'
 import { ProgressEditor } from './ProgressEditor'
@@ -28,6 +28,15 @@ function progressText(book: Book, percent: number): string {
  */
 export function AtAGlance({ book, shared, ebook, onMarkRead, onProgress }: Props) {
   const [editing, setEditing] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  // Set when the editor closes from the keyboard: the button (disabled while it was open) takes focus back.
+  const refocus = useRef(false)
+  useEffect(() => {
+    if (!editing && refocus.current) {
+      refocus.current = false
+      trigger.current?.focus()
+    }
+  }, [editing])
   const reading = book.status === 'READING'
   // Not reading any more (changed elsewhere): the editor is closed, and stays closed if reading starts again.
   if (!reading && editing) setEditing(false)
@@ -81,7 +90,7 @@ export function AtAGlance({ book, shared, ebook, onMarkRead, onProgress }: Props
       {(book.status !== 'READ' || reading) && (
         <div className="glance__actions">
           {reading && (
-            <button type="button" aria-expanded={editing} disabled={editing} onClick={() => setEditing(true)}>
+            <button ref={trigger} type="button" aria-expanded={editing} disabled={editing} onClick={() => setEditing(true)}>
               I&apos;m on page…
             </button>
           )}
@@ -93,7 +102,16 @@ export function AtAGlance({ book, shared, ebook, onMarkRead, onProgress }: Props
         </div>
       )}
       {/* After the buttons, so closing it (it saves and closes when it loses focus) moves nothing the pointer is on. */}
-      {reading && editing && <ProgressEditor book={book} onSave={onProgress} onClose={() => setEditing(false)} />}
+      {reading && editing && (
+        <ProgressEditor
+          book={book}
+          onSave={onProgress}
+          onClose={(back) => {
+            refocus.current = back
+            setEditing(false)
+          }}
+        />
+      )}
     </aside>
   )
 }

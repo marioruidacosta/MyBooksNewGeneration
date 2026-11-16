@@ -4,9 +4,9 @@ import { parseProgress, type ProgressInput } from './progress'
 
 /**
  * "Page [ ] of N" (a percentage when the page count is unknown) for one book. Enter or leaving the field saves, Escape
- * cancels; a value that isn't a page or a percentage is not saved, and the editor stays open and says what to type.
+ * cancels (both hand focus back to the button that opened it: [onClose] is told so; leaving by blur doesn't);  a value that isn't a page or a percentage is not saved, and the editor stays open and says what to type.
  */
-export function ProgressEditor({ book, onSave, onClose }: { book: Book; onSave: (input: ProgressInput) => void; onClose: () => void }) {
+export function ProgressEditor({ book, onSave, onClose }: { book: Book; onSave: (input: ProgressInput) => void; onClose: (returnFocus: boolean) => void }) {
   const byPages = book.pageCount !== null && book.pageCount > 0
   const start = byPages ? book.currentPage : book.progressPercent
   const [text, setText] = useState(start === null ? '' : String(start))
@@ -20,7 +20,7 @@ export function ProgressEditor({ book, onSave, onClose }: { book: Book; onSave: 
     input.current?.select()
   }, [])
 
-  const finish = (save: boolean) => {
+  const finish = (save: boolean, byKey = false) => {
     if (settled.current) return
     if (save && text.trim() !== '') {
       const n = parseProgress(text, byPages)
@@ -31,7 +31,7 @@ export function ProgressEditor({ book, onSave, onClose }: { book: Book; onSave: 
       onSave(byPages ? { page: n } : { percent: n })
     }
     settled.current = true
-    onClose()
+    onClose(byKey)
   }
 
   return (
@@ -55,10 +55,10 @@ export function ProgressEditor({ book, onSave, onClose }: { book: Book; onSave: 
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault()
-            finish(true)
+            finish(true, true)
           } else if (e.key === 'Escape') {
             e.preventDefault()
-            finish(false)
+            finish(false, true)
           }
         }}
       />
