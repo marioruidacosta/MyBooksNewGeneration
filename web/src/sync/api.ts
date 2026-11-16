@@ -35,11 +35,14 @@ export function rowKey(table: string, id: string): string {
 
 /**
  * - `offline`: no answer (network down, timeout); retried later.
- * - `auth`: the session is missing, expired, or isn't the library's owner; retried later (the app signs out).
- * - `refused`: the server took the request and refused it (a 4xx); sending it again can't work.
- * - `other`: the server failed (a 5xx); retried later.
+ * - `auth`: the session is missing, expired, or isn't the library's owner (401, 403); retried later (the app signs
+ *   out).
+ * - `refused`: the request itself couldn't be read (a 400; `sync_push` sets a bad row aside on its own, so a 400 for
+ *   the whole request means its body): sending it again can't work, but each row alone may.
+ * - `tooLarge`: the request was too big (413): sent again in smaller parts, never set aside.
+ * - `other`: anything else (a 5xx, 404 while the schema reloads, 408, 429); retried later.
  */
-export type SyncErrorKind = 'offline' | 'auth' | 'refused' | 'other'
+export type SyncErrorKind = 'offline' | 'auth' | 'refused' | 'tooLarge' | 'other'
 
 export class SyncError extends Error {
   readonly kind: SyncErrorKind
@@ -59,11 +62,16 @@ export const PUSH_BATCH = 100
 
 type RpcError = { message?: string; code?: string } | null
 
-function toSyncError(error: RpcError, status: number): SyncError {
+/** The [SyncError] a failed RPC answer stands for. */
+export function syncErrorOf(error: RpcError, status: number): SyncError {
   const message = error?.message ?? 'error'
   if (status === 0) return new SyncError('offline', message)
-  if (status === 401 || error?.code === 'PGRST301' || /JWT expired/i.test(message)) return new SyncError('auth', message)
-  if (status >= 400 && status < 500) return new SyncError('refused', message)
+  if (status === 401 || status === 403 || error?.code === 'PGRST301' || /JWT expired/i.test(message)) {
+    return new SyncError('auth', message)
+  }
+  if (status === 400) return new SyncError('refused', message)
+  if (status === 413) return new SyncError('tooLarge', message)
+  // Not about the data (a 404 while the schema reloads, 408, 429, a 5xx): the rows wait for a retry.
   return new SyncError('other', message)
 }
 
@@ -98,7 +106,7 @@ export function createSupabaseSyncApi(client: SupabaseClient, owner: string): Sy
     } catch (e) {
       throw new SyncError('offline', e instanceof Error ? e.message : String(e))
     }
-    if (result.error) throw toSyncError(result.error, result.status)
+    if (result.error) throw syncErrorOf(result.error, result.status)
     return (result.data ?? {}) as Record<string, unknown>
   }
 

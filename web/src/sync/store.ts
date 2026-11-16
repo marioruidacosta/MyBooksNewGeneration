@@ -2,9 +2,9 @@ import { PULL_MAX, PUSH_BATCH, rowKey, SyncError, type PushResult, type SyncApi 
 import {
   bookToFields, quoteToFields, rowToBook, rowToChallenge, rowToQuote,
 } from './codec'
-import { mergeFields, stamp } from './merge'
+import { mergeFields } from './merge'
 import { TAG_SEPARATOR, type Book, type Challenge, type Quote, type SyncRow, type SyncTable } from './model'
-import { LocalDb, type QueueEntry } from './queue'
+import { LocalDb, sameRow, sameValue, type QueueEntry } from './queue'
 
 /** What the save badge shows. `rejected`: the server refused a change (the site keeps its value); its reason. */
 export type SaveStatus = 'saved' | 'saving' | { offline: number } | { rejected: string }
@@ -41,22 +41,6 @@ const isOffline = (s: SaveStatus): s is { offline: number } => typeof s === 'obj
 
 const splitTags = (v: unknown): string[] =>
   (typeof v === 'string' ? v.split(TAG_SEPARATOR) : Array.isArray(v) ? v.map(String) : []).filter((t) => t.length > 0)
-
-function sameValue(a: unknown, b: unknown): boolean {
-  if (a === b) return true
-  if (a === undefined || b === undefined) return (a ?? null) === (b ?? null)
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
-  return JSON.stringify(a) === JSON.stringify(b)
-}
-
-function sameRecord(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
-  for (const k of keys) if (!sameValue(a[k], b[k])) return false
-  return true
-}
-
-/** Same values and times: nothing changed. */
-const sameRow = (a: SyncRow, b: SyncRow): boolean => sameRecord(a.fields, b.fields) && sameRecord(a.times, b.times)
 
 /** The field's value as it travels: tags as one text. */
 function encode(field: string, table: SyncTable, value: unknown): unknown {
@@ -334,9 +318,13 @@ export class LibraryStore {
     }
     if (changed.length === 0) return
 
-    const next: SyncRow = {
-      table, id, fields: nextFields, times: { ...(current?.times ?? {}), ...stamp(changed, this.now()) },
-    }
+    // Each stamp moves its field's time forward even when the clock doesn't (the same millisecond, a clock set back,
+    // or a time from a phone whose clock runs ahead): an edit no newer than the field would be ignored by the cache
+    // and the server alike, and lost while showing "Saved". Unchanged fields keep their times.
+    const now = this.now()
+    const old = current?.times ?? {}
+    const stamped = Object.fromEntries(changed.map((f) => [f, Math.max(now, (old[f] ?? 0) + 1)]))
+    const next: SyncRow = { table, id, fields: nextFields, times: { ...old, ...stamped } }
     this.rows.set(key, next)
 
     // Queued once per row; the stored entry is this tab's own, so another tab never removes it.
@@ -482,32 +470,41 @@ export class LibraryStore {
       if (this.closed) return
       const done = new Set([...result.applied, ...result.rejected.map((r) => r.id)])
       const dequeue: string[] = []
+      const dequeueIfStored: { table: SyncTable; id: string; keys: string[]; sent: SyncRow | null }[] = []
+      const own = `${this.writer}|`
       for (const [key, held] of batch) {
         const current = this.rows.get(key)
         const sentRow = sent.get(key)
         const finished = sentRow ? done.has(key) && current !== undefined && sameRow(current, sentRow) : !current
         if (!finished || this.queue.get(key) !== held) continue
         this.queue.delete(key)
-        dequeue.push(...held.keys)
+        dequeue.push(...held.keys.filter((k) => k.startsWith(own)))
+        // Entries another tab queued (seen at load) may stand for a newer change of its own, cached but not sent.
+        const others = held.keys.filter((k) => !k.startsWith(own))
+        if (others.length > 0) {
+          dequeueIfStored.push({ table: held.entry.table, id: held.entry.id, keys: others, sent: sentRow ?? null })
+        }
       }
       if (result.rejected.length > 0) this.refusal = result.rejected[0].reason
-      if (dequeue.length > 0) this.persist({ dequeue })
+      if (dequeue.length > 0 || dequeueIfStored.length > 0) this.persist({ dequeue, dequeueIfStored })
       // Nothing could be confirmed (every row changed meanwhile): their own requests send them again.
-      if (dequeue.length === 0) return
+      if (dequeue.length === 0 && dequeueIfStored.length === 0) return
     }
   }
 
   /**
-   * Pushes [rows]. When the server refuses the request as a whole (a value it can't even parse), resends them one at
-   * a time; a row refused on its own is set aside, so the rest goes through. Any other failure is thrown: the rows
-   * aren't to blame, and the batch is retried later.
+   * Pushes [rows]. When the server can't read the request as a whole (a 400: a value it can't even parse) or finds it
+   * too large (413), resends them one at a time. A row refused on its own (400) is set aside, so the rest goes
+   * through; a row too large on its own waits, like any other failure. Any other failure is thrown: the rows aren't
+   * to blame, and the batch is retried later.
    */
   private async pushOrSplit(rows: SyncRow[]): Promise<PushResult> {
     const changes = (rs: SyncRow[]) => rs.map((r) => ({ table: r.table, id: r.id, fields: r.fields, times: r.times }))
     try {
       return await this.api.push(changes(rows))
     } catch (e) {
-      if (!(e instanceof SyncError && e.kind === 'refused')) throw e
+      const splittable = e instanceof SyncError && (e.kind === 'refused' || e.kind === 'tooLarge')
+      if (!splittable || rows.length === 1 && e.kind === 'tooLarge') throw e
     }
     const out: PushResult = { applied: [], rejected: [] }
     for (const row of rows) {

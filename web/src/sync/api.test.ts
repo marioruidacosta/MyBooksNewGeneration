@@ -89,6 +89,17 @@ describe('createSupabaseSyncApi', () => {
     await expect(api.push([])).rejects.toMatchObject({ kind: 'auth' })
     next = { data: null, error: { message: 'boom' }, status: 503 }
     await expect(api.push([])).rejects.toMatchObject({ kind: 'other' })
+    // require_user() raises 28000: PostgREST answers 403. Not the data's fault.
+    next = { data: null, error: { message: 'not signed in', code: '28000' }, status: 403 }
+    await expect(api.push([])).rejects.toMatchObject({ kind: 'auth' })
+    // A request too big to take: split, never set aside.
+    next = { data: null, error: { message: 'Payload Too Large' }, status: 413 }
+    await expect(api.push([])).rejects.toMatchObject({ kind: 'tooLarge' })
+    // The schema cache reloading, a timeout, too many requests: retried later.
+    for (const status of [404, 408, 429]) {
+      next = { data: null, error: { message: `status ${status}`, code: status === 404 ? 'PGRST202' : '' }, status }
+      await expect(api.push([])).rejects.toMatchObject({ kind: 'other' })
+    }
   })
 
   it('listensOnTheOwnersPrivateChannel', () => {

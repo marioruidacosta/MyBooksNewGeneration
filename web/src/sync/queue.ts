@@ -15,6 +15,25 @@ interface LibraryDb extends DBSchema {
   state: { key: string; value: number }
 }
 
+/** Equal values, a missing one counting as null. */
+export function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (a === undefined || b === undefined) return (a ?? null) === (b ?? null)
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+function sameRecord(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)])
+  for (const k of keys) if (!sameValue(a[k], b[k])) return false
+  return true
+}
+
+/** Same values and times: nothing changed. */
+export function sameRow(a: SyncRow, b: SyncRow): boolean {
+  return sameRecord(a.fields, b.fields) && sameRecord(a.times, b.times)
+}
+
 /** One database per account, so two accounts on one browser never mix (nothing is cleared at sign-out). */
 export function databaseName(owner: string): string {
   return `mybooks-library-${owner}`
@@ -76,6 +95,7 @@ export class LocalDb {
     drop?: string[]
     enqueue?: { key: string; entry: QueueEntry }[]
     dequeue?: string[]
+    dequeueIfStored?: { table: SyncTable; id: string; keys: string[]; sent: SyncRow | null }[]
     seq?: number
   }): Promise<void> {
     const tx = this.db.transaction(['rows', 'queue', 'state'], 'readwrite')
@@ -91,6 +111,13 @@ export class LocalDb {
     const queue = tx.objectStore('queue')
     for (const { key, entry } of w.enqueue ?? []) await queue.put(entry, key)
     for (const key of w.dequeue ?? []) await queue.delete(key)
+    // Another tab's entries: removed only when what was sent is the stored row (null: no row). Otherwise the cached
+    // row holds that tab's newer change, and its entry stays for that tab, or for the next visit, to send.
+    for (const { table, id, keys, sent } of w.dequeueIfStored ?? []) {
+      const stored = (await rows.get(rowKey(table, id))) ?? null
+      const same = stored === null || sent === null ? stored === sent : sameRow(stored, sent)
+      if (same) for (const key of keys) await queue.delete(key)
+    }
     if (w.seq !== undefined) {
       const state = tx.objectStore('state')
       const stored = (await state.get('seq')) ?? 0

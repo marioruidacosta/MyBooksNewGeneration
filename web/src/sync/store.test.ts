@@ -1,7 +1,9 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { rowKey, SyncError, type Change, type PullPage, type PushResult, type SyncApi } from './api'
+import {
+  rowKey, SyncError, syncErrorOf, type Change, type PullPage, type PushResult, type SyncApi,
+} from './api'
 import { mergeFields } from './merge'
 import type { Book, SyncRow, SyncTable } from './model'
 import { LibraryStore, type SaveStatus } from './store'
@@ -16,6 +18,8 @@ class FakeServer implements SyncApi {
   pushes: Change[][] = []
   /** Thrown by every push while set. */
   pushError: Error | null = null
+  /** Thrown once each, in order, by the next pushes. */
+  pushErrors: Error[] = []
   /** Thrown by every pull while set. */
   pullError: Error | null = null
   /** Rows the server sets aside, with the reason. */
@@ -50,6 +54,8 @@ class FakeServer implements SyncApi {
   async push(changes: Change[]): Promise<PushResult> {
     this.pushes.push(structuredClone(changes))
     if (this.pushError) throw this.pushError
+    const once = this.pushErrors.shift()
+    if (once) throw once
     if (changes.length > 1 && changes.some((c) => this.refuseWhole.has(rowKey(c.table, c.id)))) {
       throw new SyncError('refused', 'invalid input syntax')
     }
@@ -253,6 +259,13 @@ describe('LibraryStore', () => {
     expect(server.rows.get('books:b1')?.fields.rating).toBe(5)
     expect(second.book('b1')?.rating).toBe(5)
     expect(second.status).toBe('saved')
+
+    // Sent and confirmed: the visit after that has nothing waiting.
+    await second.close()
+    const third = open(server)
+    await third.load()
+    await third.idle()
+    expect(server.pushes).toHaveLength(1)
   }, T)
 
   it('rejectedChangesAreShownAndDropped', async () => {
@@ -536,5 +549,171 @@ describe('LibraryStore', () => {
     expect(store.books()).not.toBe(books)
     expect(store.book('b2')).toBe(b2)
     await store.idle()
+  }, T)
+
+  it('aStampAlwaysMovesForward', async () => {
+    const server = new FakeServer()
+    // Last written by a phone whose clock runs ahead of this computer's.
+    serverBook(server, 'b1', { rating: 1 }, 2_000)
+    const store = open(server)
+    await store.load()
+
+    clock = 1_000
+    store.edit('books', 'b1', { rating: 4 })
+    await store.idle()
+
+    const sent = server.pushes[0][0]
+    expect(sent.times.rating).toBeGreaterThan(2_000)
+    expect(server.rows.get('books:b1')?.fields.rating).toBe(4)
+    // Same millisecond, same field: the second value wins too.
+    store.edit('books', 'b1', { rating: 5 })
+    await store.idle()
+    expect(server.rows.get('books:b1')?.fields.rating).toBe(5)
+    await store.close()
+
+    // The cache alone (nothing pulled) has the last value.
+    const cacheOnly: SyncApi = {
+      pull: async (after) => ({ rows: [], last: after }),
+      push: async () => ({ applied: [], rejected: [] }),
+      onPing: () => () => {},
+    }
+    const again = open(server, OWNER, { api: cacheOnly })
+    await again.load()
+    expect(again.book('b1')?.rating).toBe(5)
+  }, T)
+
+  it('aServerHiccupKeepsTheQueue', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    serverBook(server, 'b2')
+    const store = open(server, OWNER, { retryDelays: [20] })
+    await store.load()
+
+    // A 404 while the API reloads its schema, then a 429 from the gateway: neither is about the data.
+    server.pushErrors = [
+      syncErrorOf({ message: 'Could not find the function public.sync_push', code: 'PGRST202' }, 404),
+      syncErrorOf({ message: 'Too Many Requests' }, 429),
+    ]
+    store.edit('books', 'b1', { rating: 1 })
+    store.edit('books', 'b2', { rating: 2 })
+    await store.idle()
+    expect(store.status).toEqual({ offline: 2 })
+
+    await new Promise((r) => setTimeout(r, 150))
+    await store.idle()
+    expect(server.rows.get('books:b1')?.fields.rating).toBe(1)
+    expect(server.rows.get('books:b2')?.fields.rating).toBe(2)
+    expect(store.status).toBe('saved')
+  }, T)
+
+  it('aTooLargeBatchIsSplitAndNothingIsDropped', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    serverBook(server, 'b2')
+    const store = open(server)
+    await store.load()
+
+    // The batch is too big; sent one at a time, both arrive.
+    server.pushErrors = [syncErrorOf({ message: 'Payload Too Large' }, 413)]
+    store.edit('books', 'b1', { rating: 1 })
+    store.edit('books', 'b2', { rating: 2 })
+    await store.idle()
+    expect(server.rows.get('books:b1')?.fields.rating).toBe(1)
+    expect(server.rows.get('books:b2')?.fields.rating).toBe(2)
+    expect(store.status).toBe('saved')
+
+    // One row alone too big: it waits for a retry, never set aside.
+    server.pushError = syncErrorOf({ message: 'Payload Too Large' }, 413)
+    store.edit('books', 'b1', { rating: 3 })
+    await store.idle()
+    expect(store.status).toEqual({ offline: 1 })
+  }, T)
+
+  it('anotherTabsNewerEditStaysQueued', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1', { rating: 1, notes: 'old' })
+    server.pushError = new SyncError('offline', 'Failed to fetch')
+
+    // Tab B queues a change while offline.
+    const b = open(server)
+    await b.load()
+    clock = 2_000
+    b.edit('books', 'b1', { rating: 5 })
+    await b.idle()
+
+    // Tab A opens and sees B's waiting change; still offline.
+    const a = open(server)
+    await a.load()
+    expect(a.book('b1')?.rating).toBe(5)
+
+    // B changes the notes, then is closed before it can push.
+    clock = 3_000
+    b.edit('books', 'b1', { notes: 'newer' })
+    await b.idle()
+    await b.close()
+
+    // A pushes its own (older) copy of the row: B's entry is not A's to remove.
+    server.pushError = null
+    await a.refresh()
+    await a.idle()
+    expect(server.rows.get('books:b1')?.fields.rating).toBe(5)
+    expect(server.rows.get('books:b1')?.fields.notes).toBe('old')
+    await a.close()
+
+    // The next visit sends B's notes.
+    const c = open(server)
+    await c.load()
+    await c.idle()
+    expect(server.rows.get('books:b1')?.fields.notes).toBe('newer')
+  }, T)
+
+  it('aPushedRowSettlesWithoutRequeuing', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    const store = open(server)
+    await store.load()
+
+    clock = 2_000
+    store.edit('books', 'b1', { rating: 3, tags: ['x'] })
+    await store.idle()
+    expect(server.pushes).toHaveLength(1)
+
+    // The push came back in the pull (its seq moved): nothing is queued again.
+    await store.refresh()
+    await store.refresh()
+    expect(server.pushes).toHaveLength(1)
+    expect(store.status).toBe('saved')
+    expect(store.book('b1')?.rating).toBe(3)
+  }, T)
+
+  it('aRemoteEditLeavesADeletedBookDeleted', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    const store = open(server)
+    await store.load()
+
+    // Deleted here while a pull is under way; meanwhile a phone renames it.
+    const gate = deferred()
+    server.holdPull = gate.promise
+    const pulling = store.refresh()
+    await new Promise((r) => setTimeout(r, 10))
+    clock = 800
+    store.remove('books', 'b1')
+    server.write('books', 'b1', { title: 'Renamed on the phone' }, { title: 900 })
+    gate.resolve()
+    await pulling
+    expect(store.book('b1')).toBeUndefined()
+    expect(store.books()).toEqual([])
+
+    await store.idle()
+    expect(server.rows.get('books:b1')?.fields.deleted).toBe(true)
+    expect(server.rows.get('books:b1')?.fields.title).toBe('Renamed on the phone')
+    await store.refresh()
+    expect(store.book('b1')).toBeUndefined()
+
+    // Renamed again later on the phone: still deleted.
+    server.write('books', 'b1', { title: 'Again' }, { title: 5_000 })
+    await store.refresh()
+    expect(store.books()).toEqual([])
   }, T)
 })
