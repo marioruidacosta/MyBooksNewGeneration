@@ -1,4 +1,4 @@
-import { searchKey } from '../text/keys'
+import { authorKey } from '../text/keys'
 import type { Book } from '../sync/model'
 
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
@@ -32,7 +32,7 @@ export function yearStats(books: Book[], year: number, topCount = 5): YearStats 
     else withoutPages++
     if (b.rating !== null) scores.push(b.rating)
     for (const name of b.authors.split(',').map((n) => n.trim()).filter((n) => n !== '')) {
-      const key = searchKey(name)
+      const key = authorKey(name)
       const entry = authors.get(key)
       if (entry) entry.count++
       else authors.set(key, { name, count: 1 })

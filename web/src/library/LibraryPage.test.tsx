@@ -932,6 +932,11 @@ describe('LibraryPage', () => {
     )
     expect(screen.getByRole('blockquote')).toHaveAttribute('lang', quote.lang)
     expect(screen.getByRole('link', { name: quote.author })).toBeInTheDocument()
+    // It lives in the band of the header and the shelf, which holds it in; not a layer over the whole page.
+    const band = screen.getByRole('blockquote').closest('.library-band')
+    expect(band).not.toBeNull()
+    expect(band).toContainElement(screen.getByRole('heading', { name: 'Library' }))
+    expect(band).not.toContainElement(screen.getByRole('searchbox', { name: 'Search' }))
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled())
   }, T)
 })

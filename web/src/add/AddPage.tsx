@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { LibraryStore } from '../sync/store'
 import { addBook, inLibrary } from './addBook'
 import { defaultLookup, isbnQuery, NotFoundWithErrors, type Found, type Lookup } from './lookup'
@@ -72,8 +72,13 @@ export function AddPage({ store, lookup = defaultLookup, onOpen, initialIsbn }: 
   }
 
   // Each ISBN the jump box hands over is looked up once, as the page opens.
+  const lookedUp = useRef<string | null>(null)
   useEffect(() => {
-    if (initialIsbn) void search(initialIsbn)
+    // StrictMode runs this twice; the ref remembers the ISBN already asked for.
+    if (initialIsbn && lookedUp.current !== initialIsbn) {
+      lookedUp.current = initialIsbn
+      void search(initialIsbn)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialIsbn])
 

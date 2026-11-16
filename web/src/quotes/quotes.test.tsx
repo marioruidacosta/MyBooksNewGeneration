@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QuoteOfTheDay } from './QuoteOfTheDay'
 import { dayNumber, portraitUrl, quoteOfTheDay } from './daily'
@@ -38,7 +38,7 @@ describe('QuoteOfTheDay', () => {
 
   it('thePortraitUrlIsCached', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(summary('https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/330px-Jane.jpg'))
-    const url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/640px-Jane.jpg'
+    const url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/500px-Jane.jpg'
     expect(await portraitUrl('en:Jane_Austen', fetchImpl, 1000)).toBe(url)
     expect(fetchImpl).toHaveBeenCalledWith('https://en.wikipedia.org/api/rest_v1/page/summary/Jane_Austen')
     expect(await portraitUrl('en:Jane_Austen', fetchImpl, 2000)).toBe(url)
@@ -51,10 +51,60 @@ describe('QuoteOfTheDay', () => {
     expect(fetchImpl).toHaveBeenLastCalledWith('https://pt.wikipedia.org/api/rest_v1/page/summary/Lu%C3%ADs_de_Cam%C3%B5es')
   })
 
+  it('aPortraitThatFailsToLoadIsDroppedAndForgotten', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(summary('https://upload.wikimedia.org/x/330px-P.jpg'))
+    const day = new Date(2026, 10, 16, 12)
+    const { container } = render(<QuoteOfTheDay now={day} fetchImpl={fetchImpl} />)
+    await waitFor(() => expect(container.querySelector('img')).not.toBeNull())
+    fireEvent.error(container.querySelector('img')!)
+    expect(container.querySelector('img')).toBeNull()
+    // The quote stays, and the address is asked for again next time.
+    expect(screen.getByRole('blockquote')).toBeInTheDocument()
+    expect(Object.keys(window.localStorage).filter((k) => k.startsWith('mybooks.portrait'))).toEqual([])
+  })
+
   it('showsThePortraitWhenThereIsOne', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(summary('https://upload.wikimedia.org/x/330px-P.jpg'))
     const { container } = render(<QuoteOfTheDay now={new Date(2026, 10, 16, 12)} fetchImpl={fetchImpl} />)
     await waitFor(() => expect(container.querySelector('img')).not.toBeNull())
     expect(container.querySelector('img')).toHaveAttribute('alt', '')
+  })
+
+  it('aFailedLookupIsNotRetriedForADay', async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error('offline'))
+    expect(await portraitUrl('en:Jane_Austen', fetchImpl, 1000)).toBeNull()
+    expect(await portraitUrl('en:Jane_Austen', fetchImpl, 5000)).toBeNull()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(await portraitUrl('en:Jane_Austen', fetchImpl, 1000 + 2 * 864e5)).toBeNull()
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('anOldCachedAddressIsIgnored', async () => {
+    window.localStorage.setItem('mybooks.portrait.en:Jane_Austen', JSON.stringify({ url: 'https://x/640px-Old.jpg', at: 1000 }))
+    const fetchImpl = vi.fn().mockResolvedValue(summary('https://upload.wikimedia.org/x/330px-P.jpg'))
+    expect(await portraitUrl('en:Jane_Austen', fetchImpl, 2000)).toBe('https://upload.wikimedia.org/x/500px-P.jpg')
+  })
+
+  it('leavingTheKnownPageAbortsTheLookup', async () => {
+    let signal: AbortSignal | undefined
+    const fetchImpl = vi.fn((_url: string, init?: { signal?: AbortSignal }) => {
+      signal = init?.signal
+      return new Promise<never>(() => {})
+    })
+    const { unmount } = render(<QuoteOfTheDay now={new Date(2026, 10, 16, 12)} fetchImpl={fetchImpl} />)
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalled())
+    expect(signal?.aborted).toBe(false)
+    unmount()
+    expect(signal?.aborted).toBe(true)
+  })
+
+  it('aNarrowScreenDoesNotDownloadThePortrait', async () => {
+    window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia
+    const fetchImpl = vi.fn().mockResolvedValue(summary('https://upload.wikimedia.org/x/330px-P.jpg'))
+    const { container } = render(<QuoteOfTheDay now={new Date(2026, 10, 16, 12)} fetchImpl={fetchImpl} />)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(container.querySelector('img')).toBeNull()
+    expect(screen.getByRole('blockquote')).toBeInTheDocument()
+    delete (window as { matchMedia?: unknown }).matchMedia
   })
 })

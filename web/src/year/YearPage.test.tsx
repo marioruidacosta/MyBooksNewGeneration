@@ -116,4 +116,23 @@ describe('YearPage', () => {
     expect(screen.getByRole('list', { name: 'Books read in 2026' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next year' })).toBeDisabled()
   })
+
+  it('authorsWhoseNamesComeInEitherOrderAreOne', async () => {
+    const store = await open([
+      read('a', 2026, 0, { authors: 'José Saramago' }),
+      read('b', 2026, 1, { authors: 'Saramago Jose' }),
+    ])
+    show(store)
+    const items = within(screen.getByRole('list', { name: 'Top authors' })).getAllByRole('listitem')
+    expect(items).toHaveLength(1)
+    expect(items[0]).toHaveTextContent('José Saramago')
+    expect(items[0]).toHaveTextContent('2 books')
+  })
+
+  it('aHalfScoreDoesNotShowFullStars', async () => {
+    const store = await open([read('a', 2026, 0, { rating: 5 }), read('b', 2026, 1, { rating: 4 })])
+    const { container } = show(store)
+    expect(container.querySelectorAll('.year-star--on')).toHaveLength(4)
+    expect(container.querySelectorAll('.year-star--half')).toHaveLength(1)
+  })
 })

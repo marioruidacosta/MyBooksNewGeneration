@@ -292,6 +292,7 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
 
   return (
     <main className="library-page">
+      <div className="library-band">
       <header className="library-head">
         <div className="library-title">
           <h1>Library</h1>
@@ -318,6 +319,7 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
         onOpen={onOpen}
         onProgress={(b, input) => store.edit('books', b.id, progressChange(b, input))}
       />
+      </div>
 
       <div className="toolbar">
         <input

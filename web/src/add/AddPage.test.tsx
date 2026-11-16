@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
+import { StrictMode } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -309,5 +310,17 @@ describe('AddPage', () => {
     expect(await screen.findByText('Blindness')).toBeInTheDocument()
     expect(lookupIsbn).toHaveBeenCalledWith('9789722015981')
     expect(screen.getByLabelText('ISBN or title')).toHaveValue('9789722015981')
+  })
+
+  it('addIsbnFromTheJumpBoxLooksUpOnceUnderStrictMode', async () => {
+    const store = await open()
+    const lookupIsbn = vi.fn().mockResolvedValue(found())
+    render(
+      <StrictMode>
+        <AddPage store={store} lookup={lookupOf({ lookupIsbn })} onOpen={vi.fn()} initialIsbn="9789722015981" />
+      </StrictMode>,
+    )
+    expect(await screen.findByText('Blindness')).toBeInTheDocument()
+    expect(lookupIsbn).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,13 +1,33 @@
 import { useEffect, useMemo, useState } from 'react'
-import { articleUrl, portraitUrl, quoteOfTheDay, type PortraitFetch } from './daily'
+import { articleUrl, forgetPortrait, portraitUrl, quoteOfTheDay, type PortraitFetch } from './daily'
+
+type Place = 'library' | 'sign-in'
 
 type Props = {
   /** Where it sits: behind the library's header, or behind the sign-in form. */
-  place?: 'library' | 'sign-in'
+  place?: Place
   /** The day to quote; today when left out. */
   now?: Date
   /** Brings the portrait; the browser's `fetch` when left out. */
   fetchImpl?: PortraitFetch
+}
+
+/** The width from which the portrait shows (theme.css uses the same two): below it only the quote line is shown. */
+const PORTRAIT_FROM: Record<Place, string> = { library: '52rem', 'sign-in': '70rem' }
+
+/** Whether the screen is wide enough for the portrait; true where the browser can't say. */
+function useRoomForPortrait(place: Place): boolean {
+  const query = `(min-width: ${PORTRAIT_FROM[place]})`
+  const [room, setRoom] = useState(() => (typeof window.matchMedia === 'function' ? window.matchMedia(query).matches : true))
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const list = window.matchMedia(query)
+    const update = () => setRoom(list.matches)
+    update()
+    list.addEventListener('change', update)
+    return () => list.removeEventListener('change', update)
+  }, [query])
+  return room
 }
 
 /**
@@ -17,22 +37,31 @@ type Props = {
 export function QuoteOfTheDay({ place = 'library', now, fetchImpl }: Props) {
   const day = useMemo(() => now ?? new Date(), [now])
   const quote = quoteOfTheDay(day)
+  const room = useRoomForPortrait(place)
   const [portrait, setPortrait] = useState<{ wiki: string; url: string } | null>(null)
 
   useEffect(() => {
-    let live = true
-    void portraitUrl(quote.wiki, fetchImpl).then((url) => {
-      if (live && url !== null) setPortrait({ wiki: quote.wiki, url })
+    if (!room) return
+    const abort = new AbortController()
+    void portraitUrl(quote.wiki, fetchImpl, Date.now(), abort.signal).then((url) => {
+      if (!abort.signal.aborted && url !== null) setPortrait({ wiki: quote.wiki, url })
     })
-    return () => {
-      live = false
-    }
-  }, [quote.wiki, fetchImpl])
+    return () => abort.abort()
+  }, [quote.wiki, fetchImpl, room])
 
   return (
     <figure className={`quote-day quote-day--${place}`}>
-      {portrait?.wiki === quote.wiki && (
-        <img className="quote-day__portrait" src={portrait.url} alt="" referrerPolicy="no-referrer" />
+      {room && portrait?.wiki === quote.wiki && (
+        <img
+          className="quote-day__portrait"
+          src={portrait.url}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={() => {
+            forgetPortrait(quote.wiki)
+            setPortrait(null)
+          }}
+        />
       )}
       <blockquote lang={quote.lang}>{quote.text}</blockquote>
       <figcaption>

@@ -602,8 +602,8 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
 
 /* ---------- The quote of the day ---------- */
 
-/* Behind the page, never in the way: it takes no clicks (but its credit) and sits under every row of text. */
-main.library-page { position: relative; isolation: isolate; }
+/* Behind the text, never in the way: it takes no clicks (but its credit) and sits under every line of text. */
+.library-band { position: relative; isolation: isolate; }
 .quote-day { margin: 0; pointer-events: none; animation: quote-in 1.4s ease-out both; }
 .quote-day a { pointer-events: auto; color: inherit; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
 .quote-day blockquote {
@@ -624,22 +624,29 @@ main.library-page { position: relative; isolation: isolate; }
 [data-theme='night'] .quote-day blockquote { color: #f3dca6; opacity: 0.62; text-shadow: 0 0 26px rgb(255 196 110 / 0.3); }
 [data-theme='night'] .quote-day figcaption { color: var(--ink-soft); }
 
+/* Library: the empty right-hand side of the band that holds the header and the shelf, and no further. */
 @media (min-width: 52rem) {
-  /* Library: the empty right-hand side of the header and the shelf below it. */
-  .quote-day--library { position: absolute; top: 1rem; right: 2rem; width: 34rem; height: 26rem; z-index: -1; display: flex; flex-direction: column; justify-content: center; padding: 0 1rem 0 0; }
-  .quote-day--library .quote-day__portrait { right: -2rem; z-index: -1; }
-  .quote-day--library blockquote, .quote-day--library figcaption { max-width: 20rem; text-align: left; margin-left: 0; }
-  /* Sign in: a backdrop beside the form. */
-  .quote-day--sign-in { position: fixed; top: 5rem; right: 0; bottom: 0; width: calc(50vw - 13rem); min-width: 18rem; z-index: -1; display: flex; flex-direction: column; justify-content: center; padding: 0 3rem 0 1rem; }
+  .library-band { overflow: hidden; min-height: 17rem; margin-inline: -0.5rem; padding-inline: 0.5rem; padding-bottom: 0.5rem; }
+  .quote-day--library { position: absolute; top: 0; right: 1rem; width: 34rem; height: 100%; z-index: -1; display: flex; flex-direction: column; justify-content: center; padding-right: 1rem; }
+  .quote-day--library .quote-day__portrait { right: -1rem; }
+  .quote-day--library blockquote, .quote-day--library figcaption { max-width: 20rem; }
+}
+/* Sign in: a backdrop beside the form, only where it can't reach it (the form is 26rem, centred). */
+@media (min-width: 70rem) {
+  .quote-day--sign-in { position: fixed; top: 5rem; right: 0; bottom: 0; width: calc(50vw - 15rem); z-index: -1; display: flex; flex-direction: column; justify-content: center; padding: 0 3rem 0 1rem; }
   .quote-day--sign-in .quote-day__portrait { height: 28rem; right: 0; top: 50%; transform: translateY(-50%); }
 }
 
-/* Narrow screens: a quiet line under the title, no portrait. */
-@media (max-width: 52rem) {
-  .quote-day__portrait { display: none; }
-  .quote-day { margin: 0.75rem 0 0; }
-  .quote-day blockquote { font-size: 1rem; }
-  .quote-day figcaption { margin-top: 0.25rem; }
+/* Narrower: a quiet line under the title, no portrait. */
+@media (max-width: 51.99rem) {
+  .quote-day--library { margin: 0.75rem 0 0; }
+  .quote-day--library blockquote { font-size: 1rem; }
+  .quote-day--library figcaption { margin-top: 0.25rem; }
+}
+@media (max-width: 69.99rem) {
+  .quote-day--sign-in { margin: 0 0 1.5rem; }
+  .quote-day--sign-in blockquote { font-size: 1rem; }
+  .quote-day--sign-in figcaption { margin-top: 0.25rem; }
 }
 
 @keyframes quote-in { from { opacity: 0; } to { opacity: 1; } }
@@ -689,12 +696,16 @@ main.library-page { position: relative; isolation: isolate; }
 .year-chart { margin: 0; max-width: 40rem; }
 .year-chart svg { display: block; width: 100%; height: auto; }
 .year-bar { fill: var(--teal); }
-.year-bar-value { fill: var(--ink); font: 600 11px var(--sans); }
-.year-bar-month { fill: var(--ink-soft); font: 400 10px var(--sans); }
+.year-bar-value { fill: var(--ink); font: 600 15px var(--sans); }
+.year-bar-month { fill: var(--ink-soft); font: 400 15px var(--sans); }
 .year-score { display: inline-flex; align-items: center; gap: 0.625rem; }
 .year-stars { display: inline-flex; font-size: 1.375rem; line-height: 1; letter-spacing: 0.1em; }
 .year-star { color: var(--rule-strong); opacity: 0.55; }
 .year-star--on { color: var(--gold); opacity: 1; }
+.year-star--half {
+  opacity: 1; color: transparent;
+  background: linear-gradient(90deg, var(--gold) 50%, var(--rule-strong) 50%); -webkit-background-clip: text; background-clip: text;
+}
 .year-score__value { font-weight: 600; color: var(--ink-soft); }
 .year-authors { list-style: none; margin: 0; padding: 0; max-width: 28rem; display: grid; }
 .year-authors li { display: flex; justify-content: space-between; gap: 1rem; padding: 0.5rem 0; border-bottom: 1px solid var(--rule); }

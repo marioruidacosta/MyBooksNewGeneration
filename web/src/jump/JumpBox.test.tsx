@@ -88,4 +88,36 @@ describe('JumpBox', () => {
     expect(screen.getAllByRole('option')[0]).toHaveTextContent('Blindness')
     expect(screen.queryByText(/Add ISBN/)).not.toBeInTheDocument()
   })
+
+  it('aHyphenatedIsbnFindsTheBook', async () => {
+    const user = userEvent.setup()
+    render(<JumpBox books={books} onOpen={vi.fn()} onAddIsbn={vi.fn()} />)
+    await user.keyboard('{Control>}k{/Control}')
+    await user.type(screen.getByRole('combobox'), '978-972-20-1598-1')
+    expect(screen.getAllByRole('option')[0]).toHaveTextContent('Blindness')
+    expect(screen.queryByText(/Add ISBN/)).not.toBeInTheDocument()
+  })
+
+  it('keepsFocusAndSaysHowManyMatch', async () => {
+    const user = userEvent.setup()
+    render(<JumpBox books={books} onOpen={vi.fn()} onAddIsbn={vi.fn()} />)
+    await user.keyboard('{Control>}k{/Control}')
+    await user.type(screen.getByRole('combobox'), 'jose')
+    expect(screen.getByRole('status')).toHaveTextContent('2 books')
+    // A click on the box's own text does not take the focus away.
+    await user.click(screen.getByRole('listbox', { name: 'Matching books' }).parentElement!)
+    expect(screen.getByRole('combobox')).toHaveFocus()
+    await user.clear(screen.getByRole('combobox'))
+    await user.type(screen.getByRole('combobox'), 'zzz')
+    expect(screen.getByRole('status')).toHaveTextContent('No book matches.')
+  })
+
+  it('escapeClosesEvenWhenTheFocusIsElsewhere', async () => {
+    const user = userEvent.setup()
+    render(<><button>Elsewhere</button><JumpBox books={books} onOpen={vi.fn()} onAddIsbn={vi.fn()} /></>)
+    await user.keyboard('{Control>}k{/Control}')
+    screen.getByRole('button', { name: 'Elsewhere' }).focus()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
 })

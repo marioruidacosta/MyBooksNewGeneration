@@ -15,7 +15,8 @@ type Props = {
   onLibrary?: () => void
 }
 
-const CHART = { width: 480, height: 150, top: 22, bottom: 24 }
+// Text is 15 units on a 480-unit chart: about 11px when the chart is as wide as a phone.
+const CHART = { width: 480, height: 170, top: 26, bottom: 28 }
 
 /** Books read per month as bars: the values are written on them, and the same numbers are in a table for screen readers. */
 function MonthChart({ perMonth, year }: { perMonth: number[]; year: number }) {
@@ -34,7 +35,7 @@ function MonthChart({ perMonth, year }: { perMonth: number[]; year: number }) {
               <text className="year-bar-value" x={i * slot + slot / 2} y={CHART.top + plotHeight - h - 5} textAnchor="middle">
                 {n}
               </text>
-              <text className="year-bar-month" x={i * slot + slot / 2} y={CHART.height - 7} textAnchor="middle">
+              <text className="year-bar-month" x={i * slot + slot / 2} y={CHART.height - 8} textAnchor="middle">
                 {MONTHS[i]}
               </text>
             </g>
@@ -63,13 +64,14 @@ function MonthChart({ perMonth, year }: { perMonth: number[]; year: number }) {
 }
 
 function Stars({ score }: { score: number }) {
-  const on = Math.round(score)
+  const on = Math.floor(score)
+  const half = score - on >= 0.5
   const text = Number.isInteger(score) ? String(score) : score.toFixed(1)
   return (
     <span className="year-score">
       <span role="img" aria-label={`${text} out of 5`} className="year-stars">
         {[1, 2, 3, 4, 5].map((n) => (
-          <span key={n} className={n <= on ? 'year-star year-star--on' : 'year-star'} aria-hidden="true">
+          <span key={n} className={n <= on ? 'year-star year-star--on' : half && n === on + 1 ? 'year-star year-star--half' : 'year-star'} aria-hidden="true">
             ★
           </span>
         ))}
