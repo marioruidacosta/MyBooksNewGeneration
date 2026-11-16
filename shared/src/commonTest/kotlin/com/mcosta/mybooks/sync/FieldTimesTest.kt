@@ -26,6 +26,25 @@ class FieldTimesTest {
     }
 
     @Test
+    fun aChangedFieldGetsALaterTimeThanTheOldOneEvenWhenTheClockIsBehind() {
+        val old = mapOf<String, JsonElement>("title" to JsonPrimitive("T"), "rating" to JsonPrimitive(3))
+        val new = mapOf<String, JsonElement>("title" to JsonPrimitive("T"), "rating" to JsonPrimitive(4))
+        val times = stamp(old, new, mapOf("title" to 50_000L, "rating" to 20_000L), 9000)
+        assertEquals(20_001L, times["rating"])
+        assertEquals(50_000L, times["title"])
+        // A field with no time yet gets now; a clock ahead still wins.
+        assertEquals(9000L, stamp(old, new, emptyMap(), 9000)["rating"])
+        assertEquals(30_000L, stamp(old, new, mapOf("rating" to 20_000L), 30_000)["rating"])
+    }
+
+    @Test
+    fun anUnchangedFieldKeepsItsTime() {
+        val old = mapOf<String, JsonElement>("title" to JsonPrimitive("T"), "rating" to JsonPrimitive(3))
+        val times = stamp(old, old, mapOf("title" to 50_000L, "rating" to 20_000L), 9000)
+        assertEquals(mapOf("title" to 50_000L, "rating" to 20_000L), times)
+    }
+
+    @Test
     fun stampLeavesUntimedUnchangedFieldsUntimed() {
         val old = mapOf<String, JsonElement>("title" to JsonPrimitive("T"), "rating" to JsonPrimitive(3))
         val new = mapOf<String, JsonElement>("title" to JsonPrimitive("T"), "rating" to JsonPrimitive(4))

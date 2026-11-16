@@ -457,13 +457,21 @@ internal suspend fun pushQueue(api: SyncApi, db: SyncDatabase, applier: RemoteAp
 /**
  * Pushes [rows]. When the server refuses the request as a whole ([SyncException.rejected]: a value it can't even
  * parse, say), resends them one at a time; a row refused on its own is set aside here, as if the server had set it
- * aside, so it leaves the queue (the device keeps its value) and the rest goes through. Any other failure (offline,
- * the server down) is thrown as it is: the rows aren't to blame, and the batch is retried later.
+ * aside, so it leaves the queue (the device keeps its value) and the rest goes through. When the request is too large
+ * (a 413, [SyncException.Kind.STORAGE_FULL]) it is sent again in two halves, down to a single row; a row too large on
+ * its own is never set aside, the failure is thrown and the batch retried later. Any other failure (offline, the
+ * server down) is thrown as it is: the rows aren't to blame, and the batch is retried later.
  */
 private suspend fun pushOrSplit(api: SyncApi, rows: List<SyncRow>): PushResult {
     try {
         return api.push(rows)
     } catch (e: SyncException) {
+        if (e.kind == SyncException.Kind.STORAGE_FULL && rows.size > 1) {
+            val half = rows.size / 2
+            val first = pushOrSplit(api, rows.subList(0, half))
+            val second = pushOrSplit(api, rows.subList(half, rows.size))
+            return PushResult(first.applied + second.applied, first.setAside + second.setAside)
+        }
         if (!e.isRefusal()) throw e
     }
     val applied = mutableListOf<Pair<SyncTable, String>>()

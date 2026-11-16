@@ -179,6 +179,20 @@ class SupabaseSyncTest : MainDispatcherTest() {
     }
 
     @Test
+    fun onlyA400IsRefused() = runTest {
+        suspend fun rejected(status: Int) =
+            assertFailsWith<SyncException> { sync(status, """{"message":"x"}""").push(listOf(row("A", 1))) }.rejected
+        assertTrue(rejected(400))
+        for (status in listOf(403, 404, 409, 429, 500)) assertFalse(rejected(status), "status $status")
+    }
+
+    @Test
+    fun a403IsAuthLikeA401() = runTest {
+        val e = assertFailsWith<SyncException> { sync(403, """{"message":"forbidden"}""").pull(0) }
+        assertEquals(SyncException.Kind.AUTH, e.kind)
+    }
+
+    @Test
     fun nulCharactersAreStrippedOnTheWire() = runTest {
         // Postgres's jsonb can't hold U+0000: one in any value would make the server refuse the whole request.
         val api = sync(json = """{"applied":[],"set_aside":[],"ids":{}}""")

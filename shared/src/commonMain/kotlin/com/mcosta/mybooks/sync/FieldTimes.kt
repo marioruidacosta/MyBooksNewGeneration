@@ -17,10 +17,14 @@ fun parseTimes(json: String): Map<String, Long> = try {
 fun timesJson(times: Map<String, Long>): String =
     JsonObject(times.entries.sortedBy { it.key }.associate { it.key to JsonPrimitive(it.value) }).toString()
 
-/** Times after a local edit: every field whose value changed (all of them when [old] is null) gets [now]; an unchanged field keeps its time, or stays untimed. */
+/**
+ * Times after a local edit: every field whose value changed (all of them when [old] is null) gets [now], or one more than
+ * its old time when the clock is not past that (a corrected clock, or another device stamped it later), so an edit is
+ * never older than the value it replaces; an unchanged field keeps its time, or stays untimed.
+ */
 fun stamp(old: Map<String, JsonElement>?, new: Map<String, JsonElement>, oldTimes: Map<String, Long>, now: Long): Map<String, Long> =
     new.keys.mapNotNull { f ->
-        val t = if (old == null || old[f] != new[f]) now else oldTimes[f]
+        val t = if (old == null || old[f] != new[f]) oldTimes[f]?.let { maxOf(now, it + 1) } ?: now else oldTimes[f]
         t?.let { f to it }
     }.toMap()
 
