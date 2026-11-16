@@ -1,10 +1,12 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mergeBooks } from '../tidy/mergeBooks'
 import { applyPlan, type Plan } from '../io/importPlan'
 import type { PullPage, PushResult, SyncApi } from '../sync/api'
 import type { Book, SyncRow } from '../sync/model'
+import { openDB } from 'idb'
+import { databaseName } from '../sync/queue'
 import { LibraryStore } from '../sync/store'
 import { Publisher, publicFieldsDiffer, publicState, type RpcClient } from './publisher'
 
@@ -566,6 +568,121 @@ describe('the publisher', () => {
     publishers.push(p3)
     await p3.start()
     expect(p3.hasPending()).toBe(false)
+  }, T)
+
+  /** A tab: a store and a publisher on the shared browser database. */
+  async function tab(rpc: FakeRpc, api: FakeApi, owner = 'u1') {
+    const store = new LibraryStore({ api, owner, pollMs: 0, retryDelays: [60_000] })
+    stores.push(store)
+    await store.load()
+    const publisher = new Publisher({ store, client: rpc, debounceMs: 0, retryDelays: [60_000], owner, currentOwner: () => owner })
+    publishers.push(publisher)
+    return { store, publisher }
+  }
+
+  /** A first tab that leaves a failed post for b1 (to_read -> read) waiting, then is closed. */
+  async function leaveOnePending(rpc: FakeRpc, api: FakeApi) {
+    rpc.shared = ['b1']
+    const first = await tab(rpc, api)
+    first.store.create(book('b1'))
+    await first.publisher.start()
+    rpc.failures = [new Error('offline')]
+    first.store.edit('books', 'b1', { status: 'READ' })
+    while (rpc.of('publish_book').length === 0) await new Promise((r) => setTimeout(r, 1))
+    first.publisher.stop()
+    await first.store.close()
+  }
+
+  it('aRestoredPublishForADeletedBookIsDropped', async () => {
+    const api = new FakeApi()
+    const rpc = new FakeRpc()
+    await leaveOnePending(rpc, api)
+    // The phone deleted the book while the tab was closed.
+    const second = await tab(rpc, api)
+    second.store.remove('books', 'b1')
+    await second.publisher.start()
+    expect(second.publisher.hasPending()).toBe(false)
+    await new Promise((r) => setTimeout(r, 30))
+    expect(rpc.of('publish_book')).toHaveLength(1)
+    expect(rpc.of('unpublish_book')).toHaveLength(0)
+  }, T)
+
+  it('aRestoredPublishSendsTheCurrentBook', async () => {
+    const api = new FakeApi()
+    const rpc = new FakeRpc()
+    await leaveOnePending(rpc, api)
+    // Changed again (on the phone) while the tab was closed: the post carries what the book is now.
+    const second = await tab(rpc, api)
+    second.store.edit('books', 'b1', { status: 'READING', rating: 4 })
+    await second.publisher.start()
+    await second.publisher.idle()
+    const sent = rpc.of('publish_book')
+    expect(sent).toHaveLength(2)
+    expect((sent[1].args.book as { status: string }).status).toBe('reading')
+    expect((sent[1].args.book as { rating: number }).rating).toBe(4)
+    expect((sent[1].args.before as { status: string }).status).toBe('to_read')
+  }, T)
+
+  it('aRestoredPublishThatNoLongerDiffersSendsNothing', async () => {
+    const api = new FakeApi()
+    const rpc = new FakeRpc()
+    await leaveOnePending(rpc, api)
+    const second = await tab(rpc, api)
+    second.store.edit('books', 'b1', { status: 'TO_READ' })
+    await second.publisher.start()
+    await second.publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+    expect(second.publisher.hasPending()).toBe(false)
+  }, T)
+
+  async function storedPublishes() {
+    const raw = await openDB(databaseName('u1'), 2)
+    try {
+      return await raw.getAll('publishes')
+    } finally {
+      raw.close()
+    }
+  }
+
+  it('twoTabsKeepEachOthersPublishes', async () => {
+    const api = new FakeApi()
+    const rpc = new FakeRpc()
+    rpc.failures = [new Error('offline'), new Error('offline')]
+    const a = await tab(rpc, api)
+    const b = await tab(rpc, api)
+    await a.publisher.start()
+    await b.publisher.start()
+    a.store.create(book('b1'))
+    b.store.create(book('b2'))
+    while (rpc.of('publish_book').length < 2) await new Promise((r) => setTimeout(r, 1))
+    await new Promise((r) => setTimeout(r, 30))
+    const kept = await storedPublishes()
+    expect(kept.map((k) => k.id).sort()).toEqual(['b1', 'b2'])
+  }, T)
+
+  it('aClosedTabsPublishesAreAdoptedOnce', async () => {
+    const api = new FakeApi()
+    const rpc = new FakeRpc()
+    rpc.shared = ['b1']
+    const a = await tab(rpc, api)
+    a.store.create(book('b1'))
+    await a.publisher.start()
+    rpc.failures = [new Error('offline')]
+    a.store.edit('books', 'b1', { status: 'READ' })
+    while (rpc.of('publish_book').length === 0) await new Promise((r) => setTimeout(r, 1))
+    // The tab dies without closing (no clean goodbye); minutes pass.
+    const later = Date.now() + 3 * 60_000
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => later)
+    try {
+      const b = await tab(rpc, api)
+      const c = await tab(rpc, api)
+      await Promise.all([b.publisher.start(), c.publisher.start()])
+      await Promise.all([b.publisher.idle(), c.publisher.idle()])
+      expect(rpc.of('publish_book')).toHaveLength(2) // the failed one, and one adoption
+      expect(await storedPublishes()).toHaveLength(0)
+    } finally {
+      now.mockRestore()
+    }
   }, T)
 
   it('anUnsharedEditDoesNotWarnOnClose', async () => {

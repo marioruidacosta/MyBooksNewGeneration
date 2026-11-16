@@ -169,7 +169,7 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
   const { session, loading } = useSession()
   const userId = session?.user.id ?? null
   // One store for the signed-in account; closed on sign-out and when the account changes.
-  const { store, error } = useLibraryStore(userId, (id) => new LibraryStore({ api: createApi(id), owner: id }))
+  const { store, error, notice } = useLibraryStore(userId, (id) => new LibraryStore({ api: createApi(id), owner: id }))
   // Posts this account's changes to the community like the phone does; one per open library.
   const [publisher, setPublisher] = useState<Publisher | null>(null)
   useEffect(() => {
@@ -214,7 +214,10 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
         </button>
       </main>
     ) : (
-      <p className="loading">Loading…</p>
+      <>
+        <p className="loading">Loading…</p>
+        {notice && <p role="alert">{notice}</p>}
+      </>
     )
   }
   return (

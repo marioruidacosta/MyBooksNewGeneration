@@ -10,8 +10,10 @@ type Opened = { userId: string; store: LibraryStore | null; error: string | null
 export function useLibraryStore(
   userId: string | null,
   create: (userId: string) => LibraryStore,
-): { store: LibraryStore | null; error: string | null } {
+): { store: LibraryStore | null; error: string | null; notice: string | null } {
   const [opened, setOpened] = useState<Opened | null>(null)
+  // What the store being opened says about the browser's copy (another tab in the way), so a wait isn't silent.
+  const [notice, setNotice] = useState<string | null>(null)
   const makeStore = useRef(create)
   makeStore.current = create
 
@@ -19,6 +21,9 @@ export function useLibraryStore(
     if (userId === null) return
     const store = makeStore.current(userId)
     let live = true
+    const stopNotice = store.subscribe?.(() => {
+      if (live) setNotice(store.notice ?? null)
+    })
     store.load().then(
       () => {
         if (live) setOpened({ userId, store, error: null })
@@ -31,6 +36,8 @@ export function useLibraryStore(
     )
     return () => {
       live = false
+      stopNotice?.()
+      setNotice(null)
       void store.close()
     }
   }, [userId])
@@ -40,7 +47,7 @@ export function useLibraryStore(
 
   // What was opened for another account (or before signing out) is never handed out.
   const current = opened !== null && opened.userId === userId ? opened : null
-  return { store: current?.store ?? null, error: current?.error ?? null }
+  return { store: current?.store ?? null, error: current?.error ?? null, notice: userId === null ? null : notice }
 }
 
 /** Asks the browser to confirm closing the tab while the store has changes not yet safe (see `hasPendingWrites`), or the community publisher has changes not yet sent. */

@@ -49,6 +49,24 @@ describe('CoverImage', () => {
     expect(createSignedUrls).toHaveBeenCalledTimes(2)
   })
 
+  it('aCoverThatFailsAgainFallsBackToTheGeneratedOne', async () => {
+    // The storage signs the very same link every time: a retry can't change what the picture loads.
+    const createSignedUrls = vi.fn(async (paths: string[]) => ({
+      data: paths.map((path) => ({ path, signedUrl: `https://signed.example/${path}?same`, error: null })),
+      error: null,
+    }))
+    const storage: CoverStorage = { from: () => ({ upload: vi.fn(), createSignedUrls }) }
+    render(
+      <CoverContext.Provider value={{ owner: 'u-same-1', storage }}>
+        <CoverImage book={book} />
+      </CoverContext.Provider>,
+    )
+    const img = await photo()
+    fireEvent.error(img)
+    await waitFor(() => expect(createSignedUrls).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(document.querySelector('img')).toBeNull())
+  })
+
   it('aMountedCoverIsSignedAgainBeforeItsLinkExpires', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const { storage, createSignedUrls } = fakeStorage()

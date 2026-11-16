@@ -4,7 +4,10 @@ import {
 } from './codec'
 import { mergeFields } from './merge'
 import { TAG_SEPARATOR, type Book, type Challenge, type Quote, type SyncRow, type SyncTable } from './model'
-import { LocalDb, sameRow, type Cached, sameValue, type QueueEntry, type StoredPublish } from './queue'
+import {
+  BLOCKED_MESSAGE, LEASE_HEARTBEAT_MS, LocalDb, sameRow, SUPERSEDED_MESSAGE, type Cached, sameValue, type QueueEntry,
+  type StoredPublish,
+} from './queue'
 
 /**
  * What the save badge shows. `offline`: no answer, with the changes waiting. `signedOut`: the server doesn't know the
@@ -111,6 +114,9 @@ export class LibraryStore {
   private lastError: SyncErrorKind | null = null
   /** The browser's copy of the library wouldn't open: everything works from the cloud, nothing is kept here. */
   private _localCopyFailed = false
+  /** Something the person must know about the browser's copy (another tab in the way, or a newer version); null: nothing. */
+  private _notice: string | null = null
+  private heartbeat: ReturnType<typeof setInterval> | null = null
 
   private _status: SaveStatus = 'saved'
   /** How many changes the server refused that the person hasn't dismissed (kept with the queue). */
@@ -166,6 +172,7 @@ export class LibraryStore {
     }
     if (opened) {
       this.db = opened.db
+      this.startLease(opened.db)
       this.rows = opened.cached.rows
       this.queue = opened.cached.queue
       this.seq = opened.cached.seq
@@ -187,7 +194,16 @@ export class LibraryStore {
       if (this.closed) return null
       let db: LocalDb | null = null
       try {
-        db = await LocalDb.open(this.owner)
+        db = await LocalDb.open(this.owner, {
+          onBlocked: () => this.setNotice(BLOCKED_MESSAGE),
+          onBlocking: () => {
+            // The connection is closed already: nothing more is kept here, and the person must reload.
+            this.db = null
+            this.stopLease()
+            this.setNotice(SUPERSEDED_MESSAGE)
+          },
+        })
+        if (this._notice === BLOCKED_MESSAGE) this.setNotice(null)
         return { db, cached: await db.read() }
       } catch (e) {
         console.error('LibraryStore: could not open the browser copy of the library', e)
@@ -210,6 +226,7 @@ export class LibraryStore {
     this.retryTimer = this.pollTimer = null
     this.stopPings?.()
     this.stopPings = null
+    this.stopLease()
     if (typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline)
       window.removeEventListener('focus', this.onFocus)
@@ -217,8 +234,35 @@ export class LibraryStore {
     // A pass still waiting on the network stops at its next step; nothing it gets is applied or cached.
     await this.writes
     this.passWaiters.splice(0).forEach((w) => w())
+    // Said goodbye: another tab may take up the community posts left waiting.
+    await this.db?.write({ lease: { writer: this.writer, at: null } }).catch(() => undefined)
     this.db?.close()
     this.db = null
+  }
+
+  /** Says this tab is alive now and every [LEASE_HEARTBEAT_MS], so another tab leaves its community posts alone. */
+  private startLease(db: LocalDb) {
+    const beat = () => {
+      void db.write({ lease: { writer: this.writer, at: Date.now() } }).catch(() => undefined)
+    }
+    beat()
+    this.heartbeat = setInterval(beat, LEASE_HEARTBEAT_MS)
+  }
+
+  private stopLease() {
+    if (this.heartbeat) clearInterval(this.heartbeat)
+    this.heartbeat = null
+  }
+
+  /** What the person must know about the browser's copy (see the messages in `queue.ts`); null when nothing. */
+  get notice(): string | null {
+    return this._notice
+  }
+
+  private setNotice(next: string | null) {
+    if (this._notice === next) return
+    this._notice = next
+    this.emit()
   }
 
   /** Pushes and pulls now (cutting a retry wait short); resolves when that pass is over. */
@@ -269,7 +313,7 @@ export class LibraryStore {
   dismissRefused(): void {
     if (this.refused === 0) return
     this.refused = 0
-    this.persist({ refused: 0 })
+    this.persist({ refusedClear: true })
     if (isRejected(this._status)) this.setStatus(this.queue.size > 0 ? 'saving' : 'saved')
   }
 
@@ -387,19 +431,28 @@ export class LibraryStore {
     return out.sort((a, b) => a.year - b.year)
   }
 
-  /** The community posts left waiting by an earlier visit (the publisher takes them up again). */
-  async loadPublishes(): Promise<StoredPublish[]> {
+  /**
+   * The community posts left waiting by a tab that is gone (the publisher takes them up again), now this tab's. Those
+   * of a tab still open stay with it; those of another account are forgotten.
+   */
+  async loadPublishes(owner: string): Promise<StoredPublish[]> {
     try {
-      return (await this.db?.readPublishes()) ?? []
+      await this.writes
+      return (await this.db?.adoptPublishes(this.writer, owner, Date.now())) ?? []
     } catch (e) {
       console.error('LibraryStore: could not read the waiting community posts', e)
       return []
     }
   }
 
-  /** Keeps exactly these community posts for the next visit (an empty list forgets them all). */
-  savePublishes(publishes: StoredPublish[]): void {
-    this.persist({ publishes })
+  /** Keeps this community post for the next visit, replacing this tab's earlier one for the book. */
+  putPublish(publish: StoredPublish): void {
+    this.persist({ writer: this.writer, publishPut: [publish] })
+  }
+
+  /** This tab no longer keeps a community post for the book (it was sent or dropped). */
+  deletePublish(id: string): void {
+    this.persist({ writer: this.writer, publishDelete: [id] })
   }
 
   // ---- changing ----
@@ -649,7 +702,7 @@ export class LibraryStore {
       for (const r of result.rejected) console.warn(`LibraryStore: the server refused ${r.id}: ${r.reason}`)
       if (refusedNow > 0) this.refused += refusedNow
       if (dequeue.length > 0 || dequeueIfStored.length > 0 || refusedNow > 0) {
-        this.persist({ dequeue, dequeueIfStored, ...(refusedNow > 0 ? { refused: this.refused } : {}) })
+        this.persist({ dequeue, dequeueIfStored, ...(refusedNow > 0 ? { refusedAdd: refusedNow } : {}) })
       }
       // Nothing could be confirmed (every row changed meanwhile): their own requests send them again.
       if (dequeue.length === 0 && dequeueIfStored.length === 0) return

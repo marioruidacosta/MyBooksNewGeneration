@@ -75,7 +75,10 @@ export type RpcClient = {
 }
 
 export type PublisherOptions = {
-  store: Pick<LibraryStore, 'onLocalChangeWithOrigin' | 'loadPublishes' | 'savePublishes'>
+  store: Pick<
+    LibraryStore,
+    'onLocalChangeWithOrigin' | 'loadPublishes' | 'putPublish' | 'deletePublish' | 'book'
+  >
   client: RpcClient
   /** Waits after the last change before sending (dragging a slider sends one update); the phone waits 2 s. */
   debounceMs?: number
@@ -206,44 +209,54 @@ export class Publisher {
     }
   }
 
-  /** Takes up the posts a closed tab left waiting; those of another account are forgotten. */
+  /**
+   * Takes up the posts a closed tab left waiting (the store hands over only those of tabs that are gone, each once;
+   * another account's are forgotten). A post for a book that is gone (the phone deleted it meanwhile) is dropped, as
+   * a ghost of it must not reach the community; a removal is still sent.
+   */
   private async restore(): Promise<void> {
+    if (this.owner === undefined) return
     let kept: StoredPublish[]
     try {
-      kept = await this.store.loadPublishes()
+      kept = await this.store.loadPublishes(this.owner)
     } catch {
       return
     }
-    if (this.stopped || kept.length === 0) return
-    for (const { id, owner, entry } of kept) {
-      if (owner !== this.owner) continue
+    if (this.stopped) return
+    for (const { id, entry } of kept) {
+      if (entry.kind === 'publish' && !this.store.book(id)) {
+        this.store.deletePublish(id)
+        continue
+      }
       this.pending.set(id, entry)
       if (entry.kind === 'publish' && entry.created) this.created.add(id)
     }
-    // Other accounts' posts (and any that were taken up) are written back as they are now.
-    this.save()
   }
 
   private setPending(id: string, entry: Entry) {
     this.pending.set(id, entry)
-    this.save()
+    this.save(id, entry)
   }
 
   private deletePending(id: string) {
-    if (this.pending.delete(id)) this.save()
+    if (this.pending.delete(id)) this.forget(id)
   }
 
   private clearPending() {
-    if (this.pending.size === 0) return
+    const ids = [...this.pending.keys()]
     this.pending.clear()
-    this.save()
+    for (const id of ids) this.forget(id)
   }
 
-  /** Keeps the waiting posts in the browser's copy of the library. */
-  private save() {
+  /** Keeps a waiting post in the browser's copy of the library (only this tab's entry for the book is touched). */
+  private save(id: string, entry: Entry) {
     if (this.stopped || this.owner === undefined) return
-    const owner = this.owner
-    this.store.savePublishes([...this.pending].map(([id, entry]) => ({ id, owner, entry })))
+    this.store.putPublish({ id, owner: this.owner, entry })
+  }
+
+  private forget(id: string) {
+    if (this.stopped || this.owner === undefined) return
+    this.store.deletePublish(id)
   }
 
   private onBook(before: Book | null, after: Book | null, origin: string | undefined) {
@@ -362,10 +375,25 @@ export class Publisher {
         if (!(await this.sessionIsOurs()) || this.stopped) return
         // The session check was a wait: what is queued for this book may have changed.
         if (this.pending.get(id) !== entry) continue
+        // What is sent is the book as it is now (a restored post may be old), measured from the saved "before".
+        let current: Book | undefined
+        if (entry.kind === 'publish') {
+          current = this.store.book(id)
+          if (!current) {
+            // Deleted meanwhile: nothing to post.
+            this.created.delete(id)
+            this.deletePending(id)
+            continue
+          }
+          if (!entry.created && entry.before && !publicFieldsDiffer(entry.before, current)) {
+            this.deletePending(id)
+            continue
+          }
+        }
         this.sendingId = id
         let outcome: 'sent' | 'dropped' | 'retry'
         try {
-          outcome = await this.send(id, entry)
+          outcome = await this.send(id, entry, current)
         } finally {
           this.sendingId = null
         }
@@ -379,7 +407,7 @@ export class Publisher {
           // Changed while this went out: the server has it now (when it worked), so the next send is measured from
           // there, and the book is no longer "new": a delete must take it down.
           this.setPending(id, {
-            ...newer, before: entry.after, created: outcome === 'sent' ? false : newer.created,
+            ...newer, before: current ?? entry.after, created: outcome === 'sent' ? false : newer.created,
           })
         }
         if (outcome === 'sent') {
@@ -394,7 +422,7 @@ export class Publisher {
           }
         } else if (entry.kind === 'publish') {
           // Refused: a book the site created stays "shared" here, and goes again once what it shows changes.
-          if (entry.created) this.refused.set(id, entry.after)
+          if (entry.created) this.refused.set(id, current ?? entry.after)
         } else {
           this.created.delete(id)
         }
@@ -404,12 +432,12 @@ export class Publisher {
     }
   }
 
-  private async send(id: string, entry: Entry): Promise<'sent' | 'dropped' | 'retry'> {
+  private async send(id: string, entry: Entry, current: Book | undefined): Promise<'sent' | 'dropped' | 'retry'> {
     try {
       const { error } =
         entry.kind === 'publish'
           ? await this.client.rpc('publish_book', {
-              book: publicState(entry.after),
+              book: publicState(current ?? entry.after),
               before: entry.before ? publicState(entry.before) : null,
             })
           : await this.client.rpc('unpublish_book', { id })

@@ -6,6 +6,7 @@ import type { SaveStatus } from './store'
 type StatusSource = {
   readonly status: SaveStatus
   readonly localCopyFailed?: boolean
+  readonly notice?: string | null
   dismissRefused?: () => void
   subscribe: (cb: () => void) => () => void
 }
@@ -29,6 +30,7 @@ function label(status: SaveStatus): string {
 export function SaveBadge({ store }: { store: StatusSource }) {
   const status = useSyncExternalStore(store.subscribe, () => store.status)
   const brokenCopy = useSyncExternalStore(store.subscribe, () => store.localCopyFailed === true)
+  const notice = useSyncExternalStore(store.subscribe, () => store.notice ?? null)
   const tone =
     status === 'saved' ? 'saved' : status === 'saving' ? 'saving' : 'offline' in status || 'signedOut' in status ? 'offline' : 'rejected'
   return (
@@ -44,6 +46,11 @@ export function SaveBadge({ store }: { store: StatusSource }) {
           </>
         )}
       </span>
+      {notice && (
+        <span role="alert" className="save-badge save-badge--rejected">
+          {notice}
+        </span>
+      )}
       {brokenCopy && (
         <span role="alert" className="save-badge save-badge--rejected">
           Couldn't open this browser's copy of your library. Your changes can't be saved here.

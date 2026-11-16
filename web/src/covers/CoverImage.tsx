@@ -40,6 +40,11 @@ export function CoverImage({ book, compact = false, className = '' }: Props) {
     signedUrl(storage, path).then(
       (url) => {
         if (!live) return
+        // The new link is the one that just failed: loading it again can't help, so the generated cover shows.
+        if (retried.current !== null && url === retried.current) {
+          setBroken(url)
+          return
+        }
         setPhoto({ path, revision, url })
         // Shortly before the link expires, sign a new one (the shared cache has let go of the old one by then).
         timer = setTimeout(() => {

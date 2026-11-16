@@ -14,15 +14,40 @@ export type PendingPublish =
 /** A [PendingPublish] as kept in the cache, with the book it is about and the account that made it. */
 export type StoredPublish = { id: string; owner: string; entry: PendingPublish }
 
+/** A [StoredPublish] as stored: by `<writer>|<book id>`, with the tab (writer) that queued it. */
+type DbPublish = StoredPublish & { writer?: string }
+
+/** How often a tab says it is alive, and how long after its last sign a tab counts as gone. */
+export const LEASE_HEARTBEAT_MS = 30_000
+export const LEASE_MS = 120_000
+
+/** What the person is told when version changes of the browser database get in the way (see [LocalDb.open]). */
+export const BLOCKED_MESSAGE = 'Close your other MyBooks tabs to finish updating.'
+export const SUPERSEDED_MESSAGE = 'MyBooks was updated in another tab. Reload this page.'
+
+/** Called when the database version change involves other tabs. */
+export type VersionHooks = {
+  /** An older tab keeps the database open, so an upgrade waits. */
+  onBlocked?: () => void
+  /** A newer version wants in: this connection has been closed already. */
+  onBlocking?: () => void
+}
+
+/** The database version: raise it only together with an `upgrade` step in [LocalDb.open]. */
+const DB_VERSION = 2
+
 interface LibraryDb extends DBSchema {
   /** The cached library: every pulled or edited row by its key (`rowKey`). */
   rows: { key: string; value: SyncRow }
   /** Rows waiting to be pushed, by `<writer>|<row key>`, so two tabs never remove each other's entries. */
   queue: { key: string; value: QueueEntry }
-  /** `seq`: the last pull cursor. `refused`: how many changes the server refused, until the person dismisses the notice. */
+  /**
+   * `seq`: the last pull cursor. `refused`: how many changes the server refused, until the person dismisses the
+   * notice. `lease:<writer>`: when that tab last said it was alive.
+   */
   state: { key: string; value: number }
-  /** Community posts not yet sent, by book id (added in version 2). */
-  publishes: { key: string; value: StoredPublish }
+  /** Community posts not yet sent, by `<writer>|<book id>` (added in version 2). */
+  publishes: { key: string; value: DbPublish }
 }
 
 /** Equal values, a missing one counting as null. */
@@ -65,8 +90,14 @@ export type Cached = {
 export class LocalDb {
   private constructor(private readonly db: IDBPDatabase<LibraryDb>) {}
 
-  static async open(owner: string): Promise<LocalDb> {
-    const db = await openDB<LibraryDb>(databaseName(owner), 2, {
+  /**
+   * Every database version change goes through here, so it is handled once: a tab on an older version that holds the
+   * database open makes this wait ([VersionHooks.onBlocked]), and this connection lets go when a newer version is
+   * wanted ([VersionHooks.onBlocking]), so no tab can hang another.
+   */
+  static async open(owner: string, hooks: VersionHooks = {}): Promise<LocalDb> {
+    let opened: LocalDb | null = null
+    const db = await openDB<LibraryDb>(databaseName(owner), DB_VERSION, {
       upgrade(d, oldVersion) {
         if (oldVersion < 1) {
           d.createObjectStore('rows')
@@ -75,8 +106,16 @@ export class LocalDb {
         }
         if (oldVersion < 2) d.createObjectStore('publishes')
       },
+      blocked() {
+        hooks.onBlocked?.()
+      },
+      blocking() {
+        opened?.close()
+        hooks.onBlocking?.()
+      },
     })
-    return new LocalDb(db)
+    opened = new LocalDb(db)
+    return opened
   }
 
   async read(): Promise<Cached> {
@@ -102,9 +141,40 @@ export class LocalDb {
     return { rows, queue, seq, refused }
   }
 
-  /** The community posts kept for the next visit. */
-  async readPublishes(): Promise<StoredPublish[]> {
-    return this.db.getAll('publishes')
+  /**
+   * Takes up the community posts of tabs that are gone (no writer, or a lease older than [LEASE_MS], or released): in
+   * one transaction they become this tab's and are returned, so two tabs never take the same one. Another account's
+   * are forgotten. A live tab's stay where they are.
+   */
+  async adoptPublishes(writer: string, owner: string, now: number): Promise<StoredPublish[]> {
+    const tx = this.db.transaction(['publishes', 'state'], 'readwrite')
+    const kept = tx.objectStore('publishes')
+    const state = tx.objectStore('state')
+    const adopted: StoredPublish[] = []
+    const alive = new Map<string, boolean>()
+    let cursor = await kept.openCursor()
+    while (cursor) {
+      const { writer: other, ...publish } = cursor.value
+      const key = cursor.key
+      if (other !== writer) {
+        let live = other !== undefined && alive.get(other)
+        if (other !== undefined && live === undefined) {
+          const at = await state.get(`lease:${other}`)
+          live = at !== undefined && now - at < LEASE_MS
+          alive.set(other, live)
+        }
+        if (!live) {
+          await kept.delete(key)
+          if (publish.owner === owner) {
+            await kept.put({ ...publish, writer }, `${writer}|${publish.id}`)
+            adopted.push(publish)
+          }
+        }
+      }
+      cursor = await cursor.continue()
+    }
+    await tx.done
+    return adopted
   }
 
   /**
@@ -118,10 +188,18 @@ export class LocalDb {
     dequeue?: string[]
     dequeueIfStored?: { table: SyncTable; id: string; keys: string[]; sent: SyncRow | null }[]
     seq?: number
-    /** The number of refused changes shown to the person (0 clears it). */
-    refused?: number
-    /** Replaces every kept community post with these. */
-    publishes?: StoredPublish[]
+    /** More refused changes: added to the stored count inside the transaction, so tabs add up. */
+    refusedAdd?: number
+    /** The person dismissed the notice: the count is 0. */
+    refusedClear?: boolean
+    /** The tab that keeps the community posts below. */
+    writer?: string
+    /** Community posts to keep for [writer], by book id: each replaces that book's entry, no other is touched. */
+    publishPut?: StoredPublish[]
+    /** Books whose community post [writer] no longer keeps (sent or dropped). */
+    publishDelete?: string[]
+    /** Says [writer] is alive at `at`, or (null) that it has closed. */
+    lease?: { writer: string; at: number | null }
   }): Promise<void> {
     const tx = this.db.transaction(['rows', 'queue', 'state', 'publishes'], 'readwrite')
     const rows = tx.objectStore('rows')
@@ -148,11 +226,21 @@ export class LocalDb {
       const stored = (await state.get('seq')) ?? 0
       if (w.seq > stored) await state.put(w.seq, 'seq')
     }
-    if (w.refused !== undefined) await tx.objectStore('state').put(w.refused, 'refused')
-    if (w.publishes) {
+    if (w.refusedAdd || w.refusedClear) {
+      const state = tx.objectStore('state')
+      const stored = w.refusedClear ? 0 : (await state.get('refused')) ?? 0
+      await state.put(stored + (w.refusedAdd ?? 0), 'refused')
+    }
+    if (w.writer !== undefined) {
       const kept = tx.objectStore('publishes')
-      await kept.clear()
-      for (const p of w.publishes) await kept.put(p, p.id)
+      for (const p of w.publishPut ?? []) await kept.put({ ...p, writer: w.writer }, `${w.writer}|${p.id}`)
+      for (const id of w.publishDelete ?? []) await kept.delete(`${w.writer}|${id}`)
+    }
+    if (w.lease) {
+      const state = tx.objectStore('state')
+      const key = `lease:${w.lease.writer}`
+      if (w.lease.at === null) await state.delete(key)
+      else await state.put(w.lease.at, key)
     }
     await tx.done
   }

@@ -6,6 +6,8 @@ import {
 } from './api'
 import { mergeFields } from './merge'
 import type { Book, SyncRow, SyncTable } from './model'
+import { openDB } from 'idb'
+import { databaseName } from './queue'
 import { LibraryStore, type SaveStatus } from './store'
 
 const T = 5_000 // every async test fails fast instead of hanging
@@ -760,6 +762,53 @@ describe('LibraryStore', () => {
     await store.idle()
     expect(store.status).toBe('saved')
     expect(server.rows.get('books:b1')?.fields.rating).toBe(3)
+  }, T)
+
+  it('refusedCountAddsUpAcrossTabs', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    serverBook(server, 'b2')
+    const a = open(server)
+    const b = open(server)
+    await a.load()
+    await b.load()
+    server.setAside.set('books:b1', 'invalid input syntax')
+    server.setAside.set('books:b2', 'invalid input syntax')
+    a.edit('books', 'b1', { rating: 1 })
+    await a.idle()
+    b.edit('books', 'b2', { rating: 2 })
+    await b.idle()
+    await a.close()
+    await b.close()
+    const later = open(server)
+    await later.load()
+    expect(later.status).toEqual({ rejected: 2 })
+  }, T)
+
+  it('anOlderTabBlockingTheUpgradeShowsAMessage', async () => {
+    // A tab still on version 1 (it knows nothing of version changes) keeps its connection open.
+    const older = await openDB(databaseName(OWNER), 1, {
+      upgrade(d) {
+        d.createObjectStore('rows')
+        d.createObjectStore('queue')
+        d.createObjectStore('state')
+      },
+    })
+    const store = open(new FakeServer())
+    const loading = store.load()
+    await vi.waitFor(() => expect(store.notice).toBe('Close your other MyBooks tabs to finish updating.'), { timeout: 2_000 })
+    older.close()
+    await loading
+    expect(store.notice).toBeNull()
+  }, T)
+
+  it('thisTabStepsAsideForANewerVersion', async () => {
+    const store = open(new FakeServer())
+    await store.load()
+    // A newer tab wants version 3: this one lets go of its connection and says so.
+    const newer = await openDB(databaseName(OWNER), 3, { upgrade() {} })
+    expect(store.notice).toBe('MyBooks was updated in another tab. Reload this page.')
+    newer.close()
   }, T)
 
   it('refusedChangesStayVisibleUntilDismissed', async () => {
