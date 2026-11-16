@@ -3,11 +3,15 @@ import { parseBnp } from "./bnp.ts";
 import { googleUrl, mapGoogle } from "./google.ts";
 
 export interface Deps {
-  fetch: (input: string) => Promise<Response>;
+  fetch: (input: string, signal?: AbortSignal) => Promise<Response>;
   env: (name: string) => string | undefined;
   /** True when the bearer token belongs to a signed-in user. */
   verifyJwt: (token: string) => Promise<boolean>;
+  /** Upstream timeout in ms (default 8000). */
+  timeoutMs?: number;
 }
+
+const DEFAULT_TIMEOUT_MS = 8000;
 
 const ALLOWED_ORIGINS = ["https://marioruidacosta.github.io", "http://localhost:5173"];
 
@@ -31,15 +35,23 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
   if (req.method !== "GET") return json({ error: "Method not allowed" }, 405);
 
   const token = /^Bearer\s+(.+)$/i.exec(req.headers.get("Authorization") ?? "")?.[1];
-  if (!token || !(await deps.verifyJwt(token))) return json({ error: "Unauthorized" }, 401);
+  let signedIn = false;
+  try {
+    signedIn = !!token && (await deps.verifyJwt(token));
+  } catch {
+    // Auth being down is answered like a bad token, with CORS so the browser can read it.
+  }
+  if (!signedIn) return json({ error: "Unauthorized" }, 401);
+
+  const upstream = (url: string) => deps.fetch(url, AbortSignal.timeout(deps.timeoutMs ?? DEFAULT_TIMEOUT_MS));
 
   const params = new URL(req.url).searchParams;
   try {
     switch (params.get("source")) {
       case "bnp": {
-        const isbn = (params.get("isbn") ?? "").replace(/[\s-]/g, "");
-        if (!/^\d{9}[\dXx]$|^\d{13}$/.test(isbn)) return json({ error: "A valid isbn is required" }, 400);
-        const res = await deps.fetch(`https://urn.porbase.org/isbn/dc/xml?id=${isbn}`);
+        const isbn = (params.get("isbn") ?? "").replace(/[\s-]/g, "").toUpperCase();
+        if (!/^\d{9}[\dX]$|^\d{13}$/.test(isbn)) return json({ error: "A valid isbn is required" }, 400);
+        const res = await upstream(`https://urn.porbase.org/isbn/dc/xml?id=${isbn}`);
         if (!res.ok) {
           await res.body?.cancel();
           return json({ error: "BNP is unavailable" }, 502);
@@ -50,7 +62,7 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       case "google": {
         const q = (params.get("q") ?? "").trim();
         if (q === "") return json({ error: "q is required" }, 400);
-        const res = await deps.fetch(googleUrl(q, deps.env("GOOGLE_BOOKS_API_KEY")));
+        const res = await upstream(googleUrl(q, deps.env("GOOGLE_BOOKS_API_KEY")));
         if (!res.ok) {
           await res.body?.cancel();
           return json({ error: "Google Books is unavailable" }, 502);
@@ -60,7 +72,10 @@ export async function handle(req: Request, deps: Deps): Promise<Response> {
       default:
         return json({ error: "source must be bnp or google" }, 400);
     }
-  } catch {
+  } catch (e) {
+    if (e instanceof DOMException && (e.name === "TimeoutError" || e.name === "AbortError")) {
+      return json({ error: "Upstream timed out" }, 504);
+    }
     // An upstream answered with something that isn't what it should be (or the network failed).
     return json({ error: "Lookup failed" }, 502);
   }

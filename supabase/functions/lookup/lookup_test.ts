@@ -195,3 +195,36 @@ Deno.test("unauthorizedAnswersStillCarryCors", async () => {
   assertEquals(res.headers.get("Access-Control-Allow-Origin"), PAGES);
   await res.body?.cancel();
 });
+
+Deno.test("aThrowingAuthCheckIs401WithCors", async () => {
+  const { d, calls } = deps("{}");
+  d.verifyJwt = () => Promise.reject(new Error("auth is down"));
+  const res = await handle(request("source=bnp&isbn=9789722089876", { Authorization: "Bearer good-token", Origin: PAGES }), d);
+  assertEquals(res.status, 401);
+  assertEquals(res.headers.get("access-control-allow-origin"), PAGES);
+  assertEquals(calls, []);
+  await res.body?.cancel();
+});
+
+Deno.test("aSlowUpstreamIs504", async () => {
+  const { d } = deps("{}");
+  d.timeoutMs = 5;
+  d.fetch = (_input, signal) =>
+    new Promise<Response>((_resolve, reject) => {
+      signal?.addEventListener("abort", () => reject(signal.reason));
+    });
+  for (const query of ["source=bnp&isbn=9789722089876", "source=google&q=dune"]) {
+    const res = await handle(request(query, { Authorization: "Bearer good-token", Origin: PAGES }), d);
+    assertEquals(res.status, 504);
+    assertEquals(res.headers.get("access-control-allow-origin"), PAGES);
+    await res.body?.cancel();
+  }
+});
+
+Deno.test("isbnTenWithLowerXIsNormalised", async () => {
+  const xml = fixture("bnp_tinta_e_sangue.xml");
+  const { d, calls } = deps(xml, { status: 200 });
+  const res = await handle(request("source=bnp&isbn=0-306-40615-x"), d);
+  assertEquals(calls, ["https://urn.porbase.org/isbn/dc/xml?id=030640615X"]);
+  assertEquals((await res.json()).book.isbn, "030640615X");
+});
