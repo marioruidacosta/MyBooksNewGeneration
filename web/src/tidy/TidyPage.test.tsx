@@ -37,7 +37,7 @@ async function open(...books: Book[]) {
   return store
 }
 
-const storage = { from: () => ({ copy: vi.fn(), upload: vi.fn(), createSignedUrl: vi.fn() }) } as unknown as PhotoStorage
+const storage = { from: () => ({ copy: vi.fn(), upload: vi.fn(), createSignedUrls: vi.fn() }) } as unknown as PhotoStorage
 
 function fakeLookup(found: Found | null): Lookup {
   return { lookupIsbn: vi.fn(async () => found), searchTitle: vi.fn(async () => (found ? [found] : [])) }

@@ -99,7 +99,7 @@ describe('covers on a merge', () => {
 
   it('mergeKeepsAnExistingCoverOverABackupPhoto', async () => {
     const upload = vi.fn(async () => ({ error: null }))
-    const storage: CoverStorage = { from: () => ({ upload, createSignedUrl: vi.fn() }) }
+    const storage: CoverStorage = { from: () => ({ upload, createSignedUrls: vi.fn() }) }
     const store = await open([book('a', { isbn: '9780441013593', title: 'Dune', authors: 'F', coverUrl: 'https://x/y.jpg' })])
     const plan = planImport(backupItems(zipWith('cover:p.jpg')), store, NOW)
     await applyPlan(plan, store, { owner: 'u1', storage, decode })
@@ -109,7 +109,7 @@ describe('covers on a merge', () => {
 
   it('aFailedPhotoUploadLeavesNoMarker', async () => {
     const storage: CoverStorage = {
-      from: () => ({ upload: async () => ({ error: { message: 'full' } }), createSignedUrl: vi.fn() }),
+      from: () => ({ upload: async () => ({ error: { message: 'full' } }), createSignedUrls: vi.fn() }),
     }
     const store = await open([book('a', { isbn: '9780441013593', title: 'Dune', authors: 'F' })])
     const plan = planImport(backupItems(zipWith('cover:p.jpg')), store, NOW)

@@ -1,13 +1,17 @@
-import { PULL_MAX, PUSH_BATCH, rowKey, SyncError, type PushResult, type SyncApi } from './api'
+import { PULL_MAX, PUSH_BATCH, rowKey, SyncError, type PushResult, type SyncApi, type SyncErrorKind } from './api'
 import {
   bookToFields, quoteToFields, rowToBook, rowToChallenge, rowToQuote,
 } from './codec'
 import { mergeFields } from './merge'
 import { TAG_SEPARATOR, type Book, type Challenge, type Quote, type SyncRow, type SyncTable } from './model'
-import { LocalDb, sameRow, sameValue, type QueueEntry } from './queue'
+import { LocalDb, sameRow, type Cached, sameValue, type QueueEntry, type StoredPublish } from './queue'
 
-/** What the save badge shows. `rejected`: the server refused a change (the site keeps its value); its reason. */
-export type SaveStatus = 'saved' | 'saving' | { offline: number } | { rejected: string }
+/**
+ * What the save badge shows. `offline`: no answer, with the changes waiting. `signedOut`: the server doesn't know the
+ * session any more (sign in again; the changes wait). `rejected`: how many changes the server refused (the site keeps
+ * its values); the person dismisses the notice.
+ */
+export type SaveStatus = 'saved' | 'saving' | { offline: number } | { signedOut: true } | { rejected: number }
 
 /** The tables the site edits, and what each row reads as. */
 export type EditableTable = 'books' | 'quotes' | 'challenges'
@@ -41,14 +45,19 @@ export type StoreOptions = {
   retryDelays?: number[]
   /** Pull this often while the page is visible; 0 never. */
   pollMs?: number
+  /** Waits before trying once more when the browser's copy of the library won't open. */
+  openRetryMs?: number
 }
 
 const RETRY_DELAYS = [5_000, 15_000, 60_000, 300_000]
 const POLL_MS = 60_000
+const OPEN_RETRY_MS = 500
 
 const isDeleted = (row: SyncRow): boolean => row.fields.deleted === true
 
 const isOffline = (s: SaveStatus): s is { offline: number } => typeof s === 'object' && 'offline' in s
+const isSignedOut = (s: SaveStatus): boolean => typeof s === 'object' && 'signedOut' in s
+const isRejected = (s: SaveStatus): boolean => typeof s === 'object' && 'rejected' in s
 
 const splitTags = (v: unknown): string[] =>
   (typeof v === 'string' ? v.split(TAG_SEPARATOR) : Array.isArray(v) ? v.map(String) : []).filter((t) => t.length > 0)
@@ -85,6 +94,7 @@ export class LibraryStore {
   private readonly now: () => number
   private readonly retryDelays: number[]
   private readonly pollMs: number
+  private readonly openRetryMs: number
   /** Names this store's queue entries apart from other tabs'. */
   private readonly writer = Math.random().toString(36).slice(2)
 
@@ -95,10 +105,16 @@ export class LibraryStore {
   private rows = new Map<string, SyncRow>()
   private queue = new Map<string, { entry: QueueEntry; keys: string[] }>()
   private seq = 0
+  /** Whether a pull has worked since this store opened. */
+  private pulled = false
+  /** What stopped the last pass (null: it worked). */
+  private lastError: SyncErrorKind | null = null
+  /** The browser's copy of the library wouldn't open: everything works from the cloud, nothing is kept here. */
+  private _localCopyFailed = false
 
   private _status: SaveStatus = 'saved'
-  /** The reason of the last change refused since the last local change. */
-  private refusal: string | null = null
+  /** How many changes the server refused that the person hasn't dismissed (kept with the queue). */
+  private refused = 0
 
   private listeners = new Set<() => void>()
   private localListeners = new Set<(...args: LocalChangeArgs) => void>()
@@ -131,6 +147,7 @@ export class LibraryStore {
     this.now = options.now ?? Date.now
     this.retryDelays = options.retryDelays?.length ? options.retryDelays : RETRY_DELAYS
     this.pollMs = options.pollMs ?? POLL_MS
+    this.openRetryMs = options.openRetryMs ?? OPEN_RETRY_MS
   }
 
   // ---- lifecycle ----
@@ -142,21 +159,46 @@ export class LibraryStore {
   }
 
   private async open(): Promise<void> {
-    const db = await LocalDb.open(this.owner)
+    const opened = await this.openLocalCopy()
     if (this.closed) {
-      db.close()
+      opened?.db.close()
       return
     }
-    this.db = db
-    const cached = await db.read()
-    if (this.closed) return
-    this.rows = cached.rows
-    this.queue = cached.queue
-    this.seq = cached.seq
+    if (opened) {
+      this.db = opened.db
+      this.rows = opened.cached.rows
+      this.queue = opened.cached.queue
+      this.seq = opened.cached.seq
+      this.refused = opened.cached.refused
+      if (this.refused > 0) this._status = { rejected: this.refused }
+    } else {
+      this._localCopyFailed = true
+    }
     this.loaded = true
     this.dataChanged()
     this.listen()
     await this.refresh()
+  }
+
+  /** Opens and reads the browser's copy of the library; once more after a short wait when that fails; null when it can't. */
+  private async openLocalCopy(): Promise<{ db: LocalDb; cached: Cached } | null> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, this.openRetryMs))
+      if (this.closed) return null
+      let db: LocalDb | null = null
+      try {
+        db = await LocalDb.open(this.owner)
+        return { db, cached: await db.read() }
+      } catch (e) {
+        console.error('LibraryStore: could not open the browser copy of the library', e)
+        try {
+          db?.close()
+        } catch {
+          // Nothing more to do with it.
+        }
+      }
+    }
+    return null
   }
 
   /** Stops syncing; the cache, queue included, stays for the next visit (or sign-in). */
@@ -208,6 +250,27 @@ export class LibraryStore {
 
   get status(): SaveStatus {
     return this._status
+  }
+
+  /** The browser's copy of the library wouldn't open (twice): nothing is kept here, so changes can't be saved here. */
+  get localCopyFailed(): boolean {
+    return this._localCopyFailed
+  }
+
+  /**
+   * A first visit with no answer: nothing is kept in this browser and the cloud hasn't answered yet, so an empty library
+   * means "not here yet", not "no books".
+   */
+  get firstVisitOffline(): boolean {
+    return this.loaded && this.seq === 0 && !this.pulled && this.lastError === 'offline'
+  }
+
+  /** The person has read the notice about refused changes. */
+  dismissRefused(): void {
+    if (this.refused === 0) return
+    this.refused = 0
+    this.persist({ refused: 0 })
+    if (isRejected(this._status)) this.setStatus(this.queue.size > 0 ? 'saving' : 'saved')
   }
 
   /**
@@ -324,6 +387,21 @@ export class LibraryStore {
     return out.sort((a, b) => a.year - b.year)
   }
 
+  /** The community posts left waiting by an earlier visit (the publisher takes them up again). */
+  async loadPublishes(): Promise<StoredPublish[]> {
+    try {
+      return (await this.db?.readPublishes()) ?? []
+    } catch (e) {
+      console.error('LibraryStore: could not read the waiting community posts', e)
+      return []
+    }
+  }
+
+  /** Keeps exactly these community posts for the next visit (an empty list forgets them all). */
+  savePublishes(publishes: StoredPublish[]): void {
+    this.persist({ publishes })
+  }
+
   // ---- changing ----
 
   /**
@@ -407,9 +485,8 @@ export class LibraryStore {
     else if (enqueue) held.keys.push(mine)
     this.persist({ put: [next], enqueue: enqueue ? [{ key: mine, entry }] : [] })
 
-    this.refusal = null
     // Waiting out a failure, the change waits too (and is counted); otherwise it is on its way.
-    this._status = isOffline(this._status) ? { offline: this.queue.size } : 'saving'
+    this._status = isOffline(this._status) ? { offline: this.queue.size } : isSignedOut(this._status) ? this._status : 'saving'
     this.dataChanged()
     this.fireLocal(table, current, next, origin)
     this.request(false)
@@ -497,7 +574,7 @@ export class LibraryStore {
           this.failures = 0
           continue
         }
-        this.setStatus({ offline: this.queue.size })
+        this.setStatus(this.lastError === 'auth' ? { signedOut: true } : { offline: this.queue.size })
         if (this.urgent) continue // a retry-now came in meanwhile
         const wait = this.retryDelays[Math.min(this.failures, this.retryDelays.length - 1)]
         this.failures++
@@ -522,10 +599,12 @@ export class LibraryStore {
       await this.pull()
       if (this.closed) return null
       await this.writes
-      this.setStatus(this.refusal !== null ? { rejected: this.refusal } : this.queue.size > 0 ? 'saving' : 'saved')
+      this.lastError = null
+      this.setStatus(this.refused > 0 ? { rejected: this.refused } : this.queue.size > 0 ? 'saving' : 'saved')
       return null
     } catch (e) {
       if (!(e instanceof SyncError)) console.error('LibraryStore: sync failed', e)
+      this.lastError = e instanceof SyncError ? e.kind : 'other'
       return e
     }
   }
@@ -550,12 +629,15 @@ export class LibraryStore {
       const dequeue: string[] = []
       const dequeueIfStored: { table: SyncTable; id: string; keys: string[]; sent: SyncRow | null }[] = []
       const own = `${this.writer}|`
+      const refusedKeys = new Set(result.rejected.map((r) => r.id))
+      let refusedNow = 0
       for (const [key, held] of batch) {
         const current = this.rows.get(key)
         const sentRow = sent.get(key)
         const finished = sentRow ? done.has(key) && current !== undefined && sameRow(current, sentRow) : !current
         if (!finished || this.queue.get(key) !== held) continue
         this.queue.delete(key)
+        if (refusedKeys.has(key)) refusedNow++
         dequeue.push(...held.keys.filter((k) => k.startsWith(own)))
         // Entries another tab queued (seen at load) may stand for a newer change of its own, cached but not sent.
         const others = held.keys.filter((k) => !k.startsWith(own))
@@ -563,8 +645,12 @@ export class LibraryStore {
           dequeueIfStored.push({ table: held.entry.table, id: held.entry.id, keys: others, sent: sentRow ?? null })
         }
       }
-      if (result.rejected.length > 0) this.refusal = result.rejected[0].reason
-      if (dequeue.length > 0 || dequeueIfStored.length > 0) this.persist({ dequeue, dequeueIfStored })
+      // The server's own words are for the log; the person is told how many.
+      for (const r of result.rejected) console.warn(`LibraryStore: the server refused ${r.id}: ${r.reason}`)
+      if (refusedNow > 0) this.refused += refusedNow
+      if (dequeue.length > 0 || dequeueIfStored.length > 0 || refusedNow > 0) {
+        this.persist({ dequeue, dequeueIfStored, ...(refusedNow > 0 ? { refused: this.refused } : {}) })
+      }
       // Nothing could be confirmed (every row changed meanwhile): their own requests send them again.
       if (dequeue.length === 0 && dequeueIfStored.length === 0) return
     }
@@ -604,6 +690,7 @@ export class LibraryStore {
     for (;;) {
       const page = await this.api.pull(after, PULL_MAX)
       if (this.closed) return
+      this.pulled = true
       this.apply(page.rows, page.last)
       if (page.rows.length < PULL_MAX || page.last <= after) return
       after = page.last

@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   rowKey, SyncError, syncErrorOf, type Change, type PullPage, type PushResult, type SyncApi,
 } from './api'
@@ -280,7 +280,7 @@ describe('LibraryStore', () => {
     store.edit('books', 'b2', { rating: 3 })
     await store.idle()
 
-    expect(store.status).toEqual({ rejected: 'value too long for type character varying(300)' })
+    expect(store.status).toEqual({ rejected: 1 })
     // The site keeps its value (as the phone does); the change leaves the queue.
     expect(store.book('b1')?.title).toBe('x'.repeat(400))
     expect(server.rows.get('books:b2')?.fields.rating).toBe(3)
@@ -288,10 +288,12 @@ describe('LibraryStore', () => {
     await store.refresh()
     expect(server.pushes).toHaveLength(pushed)
 
-    // The next change clears the notice.
+    // The notice stays through the next change, until the person dismisses it.
     store.edit('books', 'b2', { rating: 4 })
     expect(store.status).toBe('saving')
     await store.idle()
+    expect(store.status).toEqual({ rejected: 1 })
+    store.dismissRefused()
     expect(store.status).toBe('saved')
   }, T)
 
@@ -308,7 +310,7 @@ describe('LibraryStore', () => {
     await store.idle()
 
     expect(server.rows.get('books:b2')?.fields.rating).toBe(2)
-    expect(store.status).toEqual({ rejected: 'invalid input syntax' })
+    expect(store.status).toEqual({ rejected: 1 })
     const pushed = server.pushes.length
     await store.refresh()
     expect(server.pushes).toHaveLength(pushed)
@@ -735,5 +737,97 @@ describe('LibraryStore', () => {
     await store.idle()
     expect(store.status).toEqual({ offline: 1 })
     expect(store.hasPendingWrites()).toBe(false)
+  }, T)
+  it('anAuthFailureSaysSignInAgain', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    const store = open(server)
+    await store.load()
+
+    server.pushError = new SyncError('auth', 'JWT expired')
+    store.edit('books', 'b1', { rating: 2 })
+    await store.idle()
+    // Not "Offline": signing in again is what helps. The change waits in the cache.
+    expect(store.status).toEqual({ signedOut: true })
+
+    // A change made meanwhile doesn't turn it back into a plain wait.
+    store.edit('books', 'b1', { rating: 3 })
+    expect(store.status).toEqual({ signedOut: true })
+
+    // Signed in again: the waiting changes go and the notice leaves.
+    server.pushError = null
+    await store.refresh()
+    await store.idle()
+    expect(store.status).toBe('saved')
+    expect(server.rows.get('books:b1')?.fields.rating).toBe(3)
+  }, T)
+
+  it('refusedChangesStayVisibleUntilDismissed', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    serverBook(server, 'b2')
+    serverBook(server, 'b3')
+    const store = open(server)
+    await store.load()
+
+    server.setAside.set('books:b1', 'value too long for type character varying(300)')
+    server.setAside.set('books:b2', 'invalid input syntax')
+    store.edit('books', 'b1', { rating: 1 })
+    store.edit('books', 'b2', { rating: 2 })
+    await store.idle()
+    // How many, never the server's own words.
+    expect(store.status).toEqual({ rejected: 2 })
+
+    // A later change that works doesn't clear it.
+    store.edit('books', 'b3', { rating: 3 })
+    await store.idle()
+    expect(store.status).toEqual({ rejected: 2 })
+
+    // Nor does a reload: the count is kept with the queue.
+    await store.close()
+    const again = open(server)
+    await again.load()
+    await again.idle()
+    expect(again.status).toEqual({ rejected: 2 })
+
+    again.dismissRefused()
+    expect(again.status).toBe('saved')
+    await again.close()
+    const last = open(server)
+    await last.load()
+    await last.idle()
+    expect(last.status).toBe('saved')
+  }, T)
+
+  it('aBrokenLocalCopySaysSo', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    let opens = 0
+    const broken = { open: () => { opens++; throw new Error('blocked') } }
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    globalThis.indexedDB = broken as unknown as IDBFactory
+    const store = open(server, OWNER, { openRetryMs: 0 })
+    expect(store.localCopyFailed).toBe(false)
+    await store.load()
+    // Tried again once, then said so; the library still works from the cloud, just not saved here.
+    expect(opens).toBe(2)
+    expect(store.localCopyFailed).toBe(true)
+    expect(store.book('b1')?.title).toBe('Book b1')
+    store.edit('books', 'b1', { rating: 4 })
+    await store.idle()
+    expect(server.rows.get('books:b1')?.fields.rating).toBe(4)
+  }, T)
+
+  it('aLocalCopyThatOpensTheSecondTimeIsFine', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    const real = globalThis.indexedDB
+    let opens = 0
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    globalThis.indexedDB = { open: (...a: Parameters<IDBFactory['open']>) => { if (opens++ === 0) throw new Error('busy'); return real.open(...a) } } as unknown as IDBFactory
+    const store = open(server, OWNER, { openRetryMs: 0 })
+    await store.load()
+    expect(store.localCopyFailed).toBe(false)
+    expect(store.book('b1')).toBeDefined()
   }, T)
 })

@@ -42,12 +42,12 @@ async function open(b: Book = book(), rows: SyncRow[] = []) {
 
 function fakeStorage() {
   const upload = vi.fn(async () => ({ error: null as { message: string } | null }))
-  const createSignedUrl = vi.fn(async (path: string) => ({
-    data: { signedUrl: `https://signed.example/${path}` },
+  const createSignedUrls = vi.fn(async (paths: string[]) => ({
+    data: paths.map((path) => ({ path, signedUrl: `https://signed.example/${path}`, error: null })),
     error: null,
   }))
-  const storage: CoverStorage = { from: () => ({ upload, createSignedUrl }) }
-  return { storage, upload, createSignedUrl }
+  const storage: CoverStorage = { from: () => ({ upload, createSignedUrls }) }
+  return { storage, upload, createSignedUrls }
 }
 
 const jpeg = () => new Blob(['jpeg'], { type: 'image/jpeg' })
@@ -358,12 +358,12 @@ describe('BookPage', () => {
 
   it('aPhotoIsShownThroughASignedLink', async () => {
     const store = await open(book({ coverUrl: 'photo' }))
-    const { createSignedUrl } = show(store)
+    const { createSignedUrls } = show(store)
     // The generated cover shows until the link arrives.
     await waitFor(() =>
       expect(screen.getByRole('img', { name: 'Cover of Blindness' })).toHaveAttribute('src', 'https://signed.example/u1/1.jpg'),
     )
-    expect(createSignedUrl).toHaveBeenCalledWith('u1/1.jpg', 3600)
+    expect(createSignedUrls).toHaveBeenCalledWith(['u1/1.jpg'], 3600)
   }, T)
 
   it('ebookOnAPhoneIsShownReadOnly', async () => {

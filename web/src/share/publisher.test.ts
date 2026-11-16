@@ -484,4 +484,101 @@ describe('the publisher', () => {
     await publisher.idle()
     expect(rpc.of('publish_book')).toHaveLength(3)
   }, T)
+  it('pendingPublishesSurviveAReload', async () => {
+    const api = new FakeApi()
+    const rpc = new FakeRpc()
+    rpc.shared = ['b1']
+    const first = new LibraryStore({ api, owner: 'u1', pollMs: 0, retryDelays: [60_000] })
+    stores.push(first)
+    await first.load()
+    first.create(book('b1'))
+    const p1 = new Publisher({ store: first, client: rpc, debounceMs: 0, retryDelays: [60_000], owner: 'u1', currentOwner: () => 'u1' })
+    publishers.push(p1)
+    await p1.start()
+    // The send fails (offline), and the tab is closed with the change still waiting.
+    rpc.failures = [new Error('offline')]
+    first.edit('books', 'b1', { status: 'READ' })
+    while (rpc.of('publish_book').length === 0) await new Promise((r) => setTimeout(r, 1))
+    p1.stop()
+    await first.close()
+
+    // The next visit of the same account sends it, from the state before the change.
+    const second = new LibraryStore({ api, owner: 'u1', pollMs: 0, retryDelays: [60_000] })
+    stores.push(second)
+    await second.load()
+    const p2 = new Publisher({ store: second, client: rpc, debounceMs: 0, retryDelays: [5], owner: 'u1', currentOwner: () => 'u1' })
+    publishers.push(p2)
+    await p2.start()
+    expect(p2.hasPending()).toBe(true)
+    await p2.idle()
+    const sent = rpc.of('publish_book')
+    expect(sent).toHaveLength(2)
+    expect((sent[1].args.book as { status: string }).status).toBe('read')
+    expect((sent[1].args.before as { status: string }).status).toBe('to_read')
+    expect(p2.hasPending()).toBe(false)
+    await second.idle()
+
+    // Sent: nothing is kept for a third visit.
+    p2.stop()
+    await second.close()
+    const third = new LibraryStore({ api, owner: 'u1', pollMs: 0, retryDelays: [60_000] })
+    stores.push(third)
+    await third.load()
+    const p3 = new Publisher({ store: third, client: rpc, debounceMs: 0, retryDelays: [5], owner: 'u1', currentOwner: () => 'u1' })
+    publishers.push(p3)
+    await p3.start()
+    expect(p3.hasPending()).toBe(false)
+  }, T)
+
+  it('pendingPublishesOfAnotherAccountAreDropped', async () => {
+    const api = new FakeApi()
+    const rpc = new FakeRpc()
+    rpc.shared = ['b1']
+    const first = new LibraryStore({ api, owner: 'u1', pollMs: 0, retryDelays: [60_000] })
+    stores.push(first)
+    await first.load()
+    first.create(book('b1'))
+    const p1 = new Publisher({ store: first, client: rpc, debounceMs: 0, retryDelays: [60_000], owner: 'u1', currentOwner: () => 'u1' })
+    publishers.push(p1)
+    await p1.start()
+    rpc.failures = [new Error('offline')]
+    first.edit('books', 'b1', { status: 'READ' })
+    while (rpc.of('publish_book').length === 0) await new Promise((r) => setTimeout(r, 1))
+    p1.stop()
+    await first.close()
+
+    // The same browser database, but another account is signed in now: nothing is sent, nothing is kept.
+    const second = new LibraryStore({ api, owner: 'u1', pollMs: 0, retryDelays: [60_000] })
+    stores.push(second)
+    await second.load()
+    const p2 = new Publisher({ store: second, client: rpc, debounceMs: 0, retryDelays: [5], owner: 'u2', currentOwner: () => 'u2' })
+    publishers.push(p2)
+    await p2.start()
+    expect(p2.hasPending()).toBe(false)
+    await new Promise((r) => setTimeout(r, 30))
+    expect(rpc.of('publish_book')).toHaveLength(1)
+    p2.stop()
+    await second.close()
+    const third = new LibraryStore({ api, owner: 'u1', pollMs: 0, retryDelays: [60_000] })
+    stores.push(third)
+    await third.load()
+    const p3 = new Publisher({ store: third, client: rpc, debounceMs: 0, retryDelays: [5], owner: 'u1', currentOwner: () => 'u1' })
+    publishers.push(p3)
+    await p3.start()
+    expect(p3.hasPending()).toBe(false)
+  }, T)
+
+  it('anUnsharedEditDoesNotWarnOnClose', async () => {
+    const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1'), book('b2')] })
+    // b2 is not shared: its edit will never be posted, so closing the tab loses nothing.
+    store.edit('books', 'b2', { status: 'READ' })
+    expect(publisher.hasPending()).toBe(false)
+    // b1 is shared: closing now would lose the post.
+    rpc.idsError = true
+    store.edit('books', 'b1', { status: 'READ' })
+    expect(publisher.hasPending()).toBe(true)
+    // A book made on the site counts too.
+    store.create(book('new'))
+    expect(publisher.hasPending()).toBe(true)
+  }, T)
 })

@@ -1,4 +1,5 @@
 import type { Book, Status } from '../sync/model'
+import type { PendingPublish, StoredPublish } from '../sync/queue'
 import type { LibraryStore } from '../sync/store'
 
 /** The server's limit for a shared title or authors. */
@@ -74,7 +75,7 @@ export type RpcClient = {
 }
 
 export type PublisherOptions = {
-  store: Pick<LibraryStore, 'onLocalChangeWithOrigin'>
+  store: Pick<LibraryStore, 'onLocalChangeWithOrigin' | 'loadPublishes' | 'savePublishes'>
   client: RpcClient
   /** Waits after the last change before sending (dragging a slider sends one update); the phone waits 2 s. */
   debounceMs?: number
@@ -89,9 +90,7 @@ export type PublisherOptions = {
   currentOwner: () => string | null | 'unknown' | Promise<string | null | 'unknown'>
 }
 
-type Entry =
-  | { kind: 'publish'; before: Book | null; after: Book; created: boolean }
-  | { kind: 'unpublish' }
+type Entry = PendingPublish
 
 const RETRY_DELAYS = [5_000, 15_000, 60_000, 300_000]
 
@@ -111,13 +110,15 @@ const isRefusal = (code: string | undefined) => code !== undefined && /^(22|23|4
  *   "before". A refusal (the server rejects the data) is logged and dropped, and a book the site created is sent
  *   again once what the community sees of it changes (as on the phone). The local edit is never touched.
  * - Every send first checks the session is still this publisher's account.
- *   Changes waiting at a closed tab are not remembered: the phone stays the source of truth for what's shared.
+ * - Changes waiting at a closed tab are kept in the browser's copy of the library and sent at the next visit of the same
+ *   account (dropped for any other). The shared ids are read first, so a post for a book that is no longer shared goes
+ *   nowhere: the phone stays the source of truth for what's shared.
  */
 export class Publisher {
   private readonly client: RpcClient
   private readonly debounceMs: number
   private readonly retryDelays: number[]
-  private readonly store: Pick<LibraryStore, 'onLocalChangeWithOrigin'>
+  private readonly store: PublisherOptions['store']
   private readonly owner: string | undefined
   private readonly currentOwner: PublisherOptions['currentOwner'] | undefined
 
@@ -150,11 +151,13 @@ export class Publisher {
 
   /** Starts listening to the store and reads the shared ids; resolves when that first read is over. */
   async start(): Promise<void> {
+    await this.restore()
     this.stopStore = this.store.onLocalChangeWithOrigin((...change) => {
       if (change[0] === 'books') this.onBook(change[1], change[2], change[3])
     })
     if (typeof window !== 'undefined') window.addEventListener('online', this.onOnline)
     if (!(await this.refreshIds())) this.scheduleRetry()
+    else if (this.pending.size > 0 && !this.stopped) this.schedule()
   }
 
   stop(): void {
@@ -173,9 +176,19 @@ export class Publisher {
     return this.idsKnown ? this.ids.has(id) : null
   }
 
-  /** Whether changes are waiting to be sent (closing the tab now would lose them). */
+  /**
+   * Whether changes are waiting to be sent that closing the tab could lose: a post for a book that is shared (or was
+   * made on the site). A change to a book that isn't shared will never be posted, so it doesn't count. (They are kept
+   * in the browser's copy too, and go at the next visit; this is for the person who would rather they went now.)
+   */
   hasPending(): boolean {
-    return this.pending.size > 0 || this.running !== null
+    for (const [id, entry] of this.pending) {
+      // Which books are shared isn't known yet: any change might be.
+      if (!this.idsKnown) return true
+      if (entry.kind === 'publish' && entry.created) return true
+      if (this.ids.has(id)) return true
+    }
+    return false
   }
 
   /** Called when the shared books change. Returns the way to stop. */
@@ -191,6 +204,46 @@ export class Publisher {
     while (!this.stopped && (this.timer !== null || this.running !== null || this.pending.size > 0)) {
       await new Promise((r) => setTimeout(r, 1))
     }
+  }
+
+  /** Takes up the posts a closed tab left waiting; those of another account are forgotten. */
+  private async restore(): Promise<void> {
+    let kept: StoredPublish[]
+    try {
+      kept = await this.store.loadPublishes()
+    } catch {
+      return
+    }
+    if (this.stopped || kept.length === 0) return
+    for (const { id, owner, entry } of kept) {
+      if (owner !== this.owner) continue
+      this.pending.set(id, entry)
+      if (entry.kind === 'publish' && entry.created) this.created.add(id)
+    }
+    // Other accounts' posts (and any that were taken up) are written back as they are now.
+    this.save()
+  }
+
+  private setPending(id: string, entry: Entry) {
+    this.pending.set(id, entry)
+    this.save()
+  }
+
+  private deletePending(id: string) {
+    if (this.pending.delete(id)) this.save()
+  }
+
+  private clearPending() {
+    if (this.pending.size === 0) return
+    this.pending.clear()
+    this.save()
+  }
+
+  /** Keeps the waiting posts in the browser's copy of the library. */
+  private save() {
+    if (this.stopped || this.owner === undefined) return
+    const owner = this.owner
+    this.store.savePublishes([...this.pending].map(([id, entry]) => ({ id, owner, entry })))
   }
 
   private onBook(before: Book | null, after: Book | null, origin: string | undefined) {
@@ -225,10 +278,10 @@ export class Publisher {
         : { kind: 'publish', before, after, created }
     // Changed and changed back before anything was sent: nothing to say.
     if (!entry.created && entry.before && !publicFieldsDiffer(entry.before, after)) {
-      this.pending.delete(after.id)
+      this.deletePending(after.id)
       return
     }
-    this.pending.set(after.id, entry)
+    this.setPending(after.id, entry)
     this.schedule()
   }
 
@@ -238,10 +291,10 @@ export class Publisher {
     this.refused.delete(id)
     // Not on the way: it never reached the server. On the way: it may land, so take it down once the send is over.
     if (this.sendingId !== id && held?.kind === 'publish' && held.created) {
-      this.pending.delete(id)
+      this.deletePending(id)
       return
     }
-    this.pending.set(id, { kind: 'unpublish' })
+    this.setPending(id, { kind: 'unpublish' })
     this.schedule()
   }
 
@@ -299,11 +352,11 @@ export class Publisher {
         if (this.stopped) return
         // Not shared (a phone excluded it, or sharing is off): not for the site to post.
         if (entry.kind === 'publish' && !entry.created && !this.ids.has(id)) {
-          this.pending.delete(id)
+          this.deletePending(id)
           continue
         }
         if (entry.kind === 'unpublish' && !this.ids.has(id)) {
-          this.pending.delete(id)
+          this.deletePending(id)
           continue
         }
         if (!(await this.sessionIsOurs()) || this.stopped) return
@@ -321,11 +374,11 @@ export class Publisher {
           return
         }
         const newer = this.pending.get(id)
-        if (newer === entry) this.pending.delete(id)
+        if (newer === entry) this.deletePending(id)
         else if (newer?.kind === 'publish' && entry.kind === 'publish') {
           // Changed while this went out: the server has it now (when it worked), so the next send is measured from
           // there, and the book is no longer "new": a delete must take it down.
-          this.pending.set(id, {
+          this.setPending(id, {
             ...newer, before: entry.after, created: outcome === 'sent' ? false : newer.created,
           })
         }
@@ -390,7 +443,7 @@ export class Publisher {
       this.scheduleRetry()
       return false
     }
-    this.pending.clear()
+    this.clearPending()
     this.notify()
     return false
   }

@@ -83,6 +83,7 @@ export type LibraryPageProps = {
 /** Every book in a table: sort, search, filter, choose several and change them together. */
 export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onOpen }: LibraryPageProps) {
   const books = useSyncExternalStore(store.subscribe, () => store.books())
+  const firstVisitOffline = useSyncExternalStore(store.subscribe, () => store.firstVisitOffline)
   // Newest first until a column is chosen.
   const data = useMemo(() => books.slice().sort((a, b) => b.dateAdded - a.dateAdded), [books])
   const columns = useMemo(() => makeColumns(onOpen), [onOpen])
@@ -308,7 +309,13 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
           </tbody>
         </table>
         {rows.length === 0 && (
-          <p className="empty">{books.length === 0 ? 'No books yet. Press n to add one.' : 'No book matches.'}</p>
+          <p className="empty">
+            {books.length > 0
+              ? 'No book matches.'
+              : firstVisitOffline
+                ? "You're offline. Your library will appear once you're connected."
+                : 'No books yet. Press n to add one.'}
+          </p>
         )}
       </div>
     </main>

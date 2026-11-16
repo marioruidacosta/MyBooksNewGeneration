@@ -51,7 +51,7 @@ describe('shrinkToJpeg', () => {
 describe('uploadCover', () => {
   it('upsertsTheFileThenMarksPhotoRestamping', async () => {
     const upload = vi.fn(async () => ({ error: null }))
-    const storage: CoverStorage = { from: (b) => (b === 'covers' ? { upload, createSignedUrl: vi.fn() } : (undefined as never)) }
+    const storage: CoverStorage = { from: (b) => (b === 'covers' ? { upload, createSignedUrls: vi.fn() } : (undefined as never)) }
     const edit = vi.fn()
     const blob = new Blob(['j'], { type: 'image/jpeg' })
 
@@ -63,7 +63,7 @@ describe('uploadCover', () => {
 
   it('marksNothingWhenTheUploadFails', async () => {
     const upload = vi.fn(async () => ({ error: { message: 'no' } }))
-    const storage: CoverStorage = { from: () => ({ upload, createSignedUrl: vi.fn() }) }
+    const storage: CoverStorage = { from: () => ({ upload, createSignedUrls: vi.fn() }) }
     const edit = vi.fn()
     await expect(uploadCover('u1', 'b1', new Blob(['j']), { edit }, storage)).rejects.toThrow('no')
     expect(edit).not.toHaveBeenCalled()
@@ -72,15 +72,18 @@ describe('uploadCover', () => {
 
 describe('signed links', () => {
   it('areCachedForAboutFiftyFiveMinutesAndForgottenOnUpload', async () => {
-    const createSignedUrl = vi.fn(async (path: string) => ({ data: { signedUrl: `s:${path}:${Math.random()}` }, error: null }))
-    const storage: CoverStorage = { from: () => ({ upload: vi.fn(), createSignedUrl }) }
+    const createSignedUrl = vi.fn(async (paths: string[]) => ({
+      data: paths.map((path) => ({ path, signedUrl: `s:${path}:${Math.random()}`, error: null })),
+      error: null,
+    }))
+    const storage: CoverStorage = { from: () => ({ upload: vi.fn(), createSignedUrls: createSignedUrl }) }
     let t = 1_000
     const now = () => t
 
     const a = await signedUrl(storage, 'u/1.jpg', now)
     expect(await signedUrl(storage, 'u/1.jpg', now)).toBe(a)
     expect(createSignedUrl).toHaveBeenCalledTimes(1)
-    expect(createSignedUrl).toHaveBeenCalledWith('u/1.jpg', 3600)
+    expect(createSignedUrl).toHaveBeenCalledWith(['u/1.jpg'], 3600)
 
     t += 54 * 60_000
     expect(await signedUrl(storage, 'u/1.jpg', now)).toBe(a)

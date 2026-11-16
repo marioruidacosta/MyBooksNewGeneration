@@ -139,7 +139,7 @@ describe('backup covers', () => {
 
   it('backupZipRestoresCovers', async () => {
     const upload = vi.fn(async () => ({ error: null }))
-    const storage: CoverStorage = { from: () => ({ upload, createSignedUrl: vi.fn() }) }
+    const storage: CoverStorage = { from: () => ({ upload, createSignedUrls: vi.fn() }) }
     const store = await open([book('have', { isbn: '9780000000002', title: 'Covered', authors: 'C', coverUrl: 'https://x/y.jpg' })])
     const library = {
       version: 1, exportedAt: 1,
@@ -174,7 +174,7 @@ describe('backup covers', () => {
 
   it('countsAPhotoThatCouldNotBeUploaded', async () => {
     const storage: CoverStorage = {
-      from: () => ({ upload: async () => ({ error: { message: 'full' } }), createSignedUrl: vi.fn() }),
+      from: () => ({ upload: async () => ({ error: { message: 'full' } }), createSignedUrls: vi.fn() }),
     }
     const store = await open()
     const backup = parseBackup(zipSync({

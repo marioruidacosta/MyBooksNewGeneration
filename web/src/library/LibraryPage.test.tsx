@@ -1,11 +1,12 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { rowKey, type SyncApi } from '../sync/api'
+import { rowKey, SyncError, type SyncApi } from '../sync/api'
 import type { Book } from '../sync/model'
 import { LibraryStore } from '../sync/store'
+import { CoverContext } from '../covers/storage'
 import { COLUMN_STORAGE_KEY } from './columns'
 import { LibraryPage } from './LibraryPage'
 
@@ -384,5 +385,48 @@ describe('LibraryPage', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Publisher' }))
     expect(screen.getByText('Pub House')).toBeInTheDocument()
     expect(JSON.parse(window.localStorage.getItem(COLUMN_STORAGE_KEY) ?? '{}').publisher).toBe(true)
+  }, T)
+  it('aFirstVisitOfflineSaysSo', async () => {
+    const offline: SyncApi = {
+      ...api,
+      pull: async () => {
+        throw new SyncError('offline', 'Failed to fetch')
+      },
+    }
+    const store = new LibraryStore({ api: offline, owner: 'u1', retryDelays: [60_000], pollMs: 0 })
+    stores.push(store)
+    await store.load()
+    show(store)
+    expect(screen.getByText("You're offline. Your library will appear once you're connected.")).toBeInTheDocument()
+    expect(screen.queryByText(/No books yet/)).not.toBeInTheDocument()
+  }, T)
+
+  it('anEmptyLibraryOnlineStillSaysNoBooksYet', async () => {
+    const store = await open([])
+    show(store)
+    expect(screen.getByText(/No books yet/)).toBeInTheDocument()
+    expect(screen.queryByText(/You're offline/)).not.toBeInTheDocument()
+  }, T)
+  it('photoCoversAreSignedInOneCall', async () => {
+    const store = await open([
+      book('1', { coverUrl: 'photo' }),
+      book('2', { coverUrl: 'photo' }),
+      book('3', { coverUrl: 'photo' }),
+      book('4', { coverUrl: 'https://example.com/c.jpg' }),
+    ])
+    const createSignedUrls = vi.fn(async (paths: string[]) => ({
+      data: paths.map((path) => ({ path, signedUrl: `https://signed.example/${path}`, error: null })),
+      error: null,
+    }))
+    const covers = { owner: 'u-batch', storage: { from: () => ({ upload: vi.fn(), createSignedUrls }) } }
+    render(
+      <CoverContext.Provider value={covers}>
+        <LibraryPage store={store} year={2026} onAdd={vi.fn()} onOpen={vi.fn()} />
+      </CoverContext.Provider>,
+    )
+    await waitFor(() => expect(document.querySelectorAll('img[src^="https://signed.example/"]')).toHaveLength(3))
+    // One request for every photo on the page, not one per book.
+    expect(createSignedUrls).toHaveBeenCalledTimes(1)
+    expect([...createSignedUrls.mock.calls[0][0]].sort()).toEqual(['u-batch/1.jpg', 'u-batch/2.jpg', 'u-batch/3.jpg'])
   }, T)
 })
