@@ -263,6 +263,21 @@ describe('BookPage', () => {
     expect(quotes()[0].text).toBe('short')
   }, T)
 
+  it('aNegativeQuotePageSaysSo', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    show(store)
+    await user.type(screen.getByLabelText('New quote'), 'Rain')
+    await user.type(screen.getByLabelText('Quote page'), '-3')
+    await user.click(screen.getByRole('button', { name: 'Add quote' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('The page must be 0 or more.')
+    expect(store.quotes('1')).toHaveLength(0)
+    await user.clear(screen.getByLabelText('Quote page'))
+    await user.type(screen.getByLabelText('Quote page'), '1.5')
+    await user.click(screen.getByRole('button', { name: 'Add quote' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('The page must be a whole number.')
+  })
+
   it('quotesAddEditDelete', async () => {
     const store = await open()
     const user = userEvent.setup()

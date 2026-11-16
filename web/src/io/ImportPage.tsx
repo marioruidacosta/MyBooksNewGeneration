@@ -21,6 +21,20 @@ type Props = {
 
 const count = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`
 
+/** The "Also …" line of a preview (quotes, goals, photos); empty when there is nothing more. */
+function alsoText(plan: Plan): string {
+  const extras = [
+    plan.quoteCount > 0 ? count(plan.quoteCount, 'quote', 'quotes') : '',
+    plan.goals.length > 0 ? count(plan.goals.length, 'reading goal', 'reading goals') : '',
+    plan.uploads.length > 0 ? count(plan.uploads.length, 'cover photo', 'cover photos') : '',
+  ].filter((t) => t !== '')
+  return extras.length > 0 ? `Also ${extras.join(', ').replace(/, ([^,]*)$/, ' and $1')}.` : ''
+}
+
+/** Everything the person sees in a preview: a difference in any of it means they must look again. */
+const shown = (plan: Plan) => `${previewText(plan)}
+${alsoText(plan)}`
+
 /** Import a Goodreads CSV or a MyBooks backup (after a preview), and export either. */
 export function ImportPage({ store, owner, storage, download = browserDownload, getPhoto, decode, now = Date.now }: Props) {
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -59,7 +73,7 @@ export function ImportPage({ store, owner, storage, download = browserDownload, 
     // The library may have changed since the preview (a sync arrived): plan again, and ask if the counts differ.
     if (source.current) {
       const again = planImport(source.current, store, now())
-      if (previewText(again) !== previewText(current)) {
+      if (shown(again) !== shown(current)) {
         setPlan(again)
         setError('Your library changed. Check the new counts, then import.')
         return
@@ -105,11 +119,6 @@ export function ImportPage({ store, owner, storage, download = browserDownload, 
   }
 
   const photos = getPhoto ?? (owner && storage ? storagePhotos(owner, storage) : () => Promise.resolve(null))
-  const extras = plan && [
-    plan.quoteCount > 0 ? count(plan.quoteCount, 'quote', 'quotes') : '',
-    plan.goals.length > 0 ? count(plan.goals.length, 'reading goal', 'reading goals') : '',
-    plan.uploads.length > 0 ? count(plan.uploads.length, 'cover photo', 'cover photos') : '',
-  ].filter((t) => t !== '')
 
   return (
     <main className="import-page">
@@ -136,7 +145,7 @@ export function ImportPage({ store, owner, storage, download = browserDownload, 
         {plan && (
           <div className="import-preview">
             <p role="status">{previewText(plan)}</p>
-            {extras && extras.length > 0 && <p>Also {extras.join(', ').replace(/, ([^,]*)$/, ' and $1')}.</p>}
+            {alsoText(plan) && <p>{alsoText(plan)}</p>}
             <button type="button" disabled={busy} onClick={() => void confirm()}>
               Import
             </button>{' '}

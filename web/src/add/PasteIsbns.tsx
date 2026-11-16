@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type { Book } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { addBook, authorsText, inLibrary } from './addBook'
@@ -81,11 +82,16 @@ export function PasteIsbns({ store, lookup, books }: Props) {
   const addAll = () => {
     if (addingRef.current) return
     addingRef.current = true
-    setAdding(true)
-    let n = 0
-    for (const l of toAdd) if (addBook(store, l.found).added) n += 1
-    setMessage(n === 1 ? 'Added 1 book' : `Added ${String(n)} books`)
-    setAdding(false)
+    // Shown at once, before the work: the button really is disabled while the books are added.
+    flushSync(() => setAdding(true))
+    try {
+      let n = 0
+      for (const l of toAdd) if (addBook(store, l.found).added) n += 1
+      setMessage(n === 1 ? 'Added 1 book' : `Added ${String(n)} books`)
+    } finally {
+      addingRef.current = false
+      setAdding(false)
+    }
   }
 
   const label = (l: Line) => {

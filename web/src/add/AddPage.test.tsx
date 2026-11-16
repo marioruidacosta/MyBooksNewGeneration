@@ -218,6 +218,50 @@ describe('AddPage', () => {
     expect(screen.queryByText('Added 0 books')).toBeNull()
   })
 
+  it('addBooksWorksAgainAfterAnAdd', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    const lookup = lookupOf({
+      lookupIsbn: (isbn) => Promise.resolve(found({ isbn, title: `T${isbn}`, authors: [`A${isbn}`] })),
+    })
+    render(<AddPage store={store} lookup={lookup} onOpen={vi.fn()} />)
+    const box = screen.getByLabelText('ISBNs, one per line')
+    await user.type(box, '9789722015981')
+    await user.click(screen.getByRole('button', { name: 'Look up' }))
+    await user.click(await screen.findByRole('button', { name: 'Add 1 book' }))
+    expect(store.books()).toHaveLength(1)
+
+    // Another list afterwards: the same page adds again.
+    await user.clear(box)
+    await user.type(box, '9780140449136')
+    await user.click(screen.getByRole('button', { name: 'Look up' }))
+    const add = await screen.findByRole('button', { name: 'Add 1 book' })
+    expect(add).toBeEnabled()
+    await user.click(add)
+    expect(store.books()).toHaveLength(2)
+  })
+
+  it('theAddButtonIsDisabledWhileAdding', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    const lookup = lookupOf({
+      lookupIsbn: (isbn) => Promise.resolve(found({ isbn, title: `T${isbn}`, authors: [`A${isbn}`] })),
+    })
+    render(<AddPage store={store} lookup={lookup} onOpen={vi.fn()} />)
+    await user.type(screen.getByLabelText('ISBNs, one per line'), '9789722015981')
+    await user.click(screen.getByRole('button', { name: 'Look up' }))
+    const add = await screen.findByRole('button', { name: 'Add 1 book' })
+    // Seen from inside the store's first write, the button is already disabled.
+    let during: boolean | undefined
+    const create = store.create.bind(store)
+    vi.spyOn(store, 'create').mockImplementation((b) => {
+      during ??= (add as HTMLButtonElement).disabled
+      return create(b)
+    })
+    await user.click(add)
+    expect(during).toBe(true)
+  })
+
   it('longDescriptionsAreClampedWithMore', async () => {
     const user = userEvent.setup()
     const store = await open()
@@ -233,8 +277,10 @@ describe('AddPage', () => {
     expect(text).toHaveClass('clamped')
     // Only the long one gets a toggle.
     expect(screen.getAllByRole('button', { name: 'More' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'More' })).toHaveAttribute('aria-expanded', 'false')
     await user.click(screen.getByRole('button', { name: 'More' }))
     expect(text).not.toHaveClass('clamped')
+    expect(screen.getByRole('button', { name: 'Less' })).toHaveAttribute('aria-expanded', 'true')
     await user.click(screen.getByRole('button', { name: 'Less' }))
     expect(text).toHaveClass('clamped')
     expect(screen.getByText('Brief.')).not.toHaveClass('clamped')

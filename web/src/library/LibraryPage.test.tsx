@@ -268,6 +268,17 @@ describe('LibraryPage', () => {
     expect(edit).toHaveBeenCalledTimes(3)
   }, T)
 
+  it('aNumberWithoutASeriesIsIgnored', async () => {
+    const store = await open([book('a', { title: 'Alpha', series: 'Saga', seriesNumber: '2' })])
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.type(screen.getByLabelText('Series number'), '7')
+    await user.click(screen.getByRole('button', { name: 'Set series' }))
+    expect(store.book('a')?.series).toBeNull()
+    expect(store.book('a')?.seriesNumber).toBeNull()
+  }, T)
+
   it('bulkSeriesAndLending', async () => {
     const store = await open([
       book('a', { title: 'Alpha', dateAdded: 3, lentTo: 'Ana', lentOn: 5 }),

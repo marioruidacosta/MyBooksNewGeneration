@@ -19,7 +19,7 @@ function Description({ text }: { text: string }) {
       {/* The description is untrusted: React renders it as text. */}
       <p className={long && !open ? 'description clamped' : 'description'}>{text}</p>
       {long && (
-        <button type="button" onClick={() => setOpen(!open)}>
+        <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>
           {open ? 'Less' : 'More'}
         </button>
       )}

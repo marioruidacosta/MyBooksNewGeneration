@@ -27,6 +27,7 @@ export type Backup = {
 const MAX_ENTRY_BYTES = 50 * 1024 * 1024
 const MAX_TOTAL_BYTES = 500 * 1024 * 1024
 const DAMAGED = 'This backup file is damaged.'
+const TOO_LARGE = 'This backup file is too large to import.'
 
 const VERSION = 1
 const LIBRARY = 'library.json'
@@ -90,7 +91,7 @@ function unzipChecked(zip: Uint8Array, limits: BackupLimits): Record<string, Uin
       filter: (file) => {
         // The sizes come from the archive, so a huge entry is refused before it is inflated.
         total += file.originalSize
-        if (file.originalSize > maxEntry || total > maxTotal) throw damaged()
+        if (file.originalSize > maxEntry || total > maxTotal) throw new BackupFormatException(TOO_LARGE)
         return true
       },
     })

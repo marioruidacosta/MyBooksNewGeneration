@@ -173,7 +173,8 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
         if (b.series !== series) fields.series = series
         // No series, no number in it.
         if (series === null && b.seriesNumber !== null) fields.series_number = null
-        if (number !== '' && b.seriesNumber !== number) fields.series_number = number
+        // A number with no series is ignored.
+        if (series !== null && number !== '' && b.seriesNumber !== number) fields.series_number = number
         if (Object.keys(fields).length > 0) store.edit('books', b.id, fields)
       }
     },

@@ -124,6 +124,15 @@ describe('writeBackup', () => {
     expect([...out.covers.keys()]).toEqual(['a.jpg'])
   })
 
+  it('anOversizedBackupSaysTooLarge', () => {
+    const tooLarge = 'This backup file is too large to import.'
+    const stored = zipSync({ 'library.json': [bytes(json), { level: 0 }] })
+    expect(() => parseBackup(stored, { maxEntryBytes: 100 })).toThrow(tooLarge)
+    expect(() => parseBackup(zipSync({ 'library.json': bytes(json), 'covers/a.jpg': new Uint8Array(50) }), { maxTotalBytes: json.length })).toThrow(tooLarge)
+    // A damaged one still says so.
+    expect(() => parseBackup(stored.slice(0, stored.length - 30))).toThrow('This backup file is damaged.')
+  })
+
   it('aCorruptBackupSaysItIsDamaged', () => {
     const damaged = 'This backup file is damaged.'
     const stored = zipSync({ 'library.json': [bytes(json), { level: 0 }] })
@@ -141,10 +150,6 @@ describe('writeBackup', () => {
     const broken = packed.slice()
     for (let i = 40; i < 60; i++) broken[i] ^= 0xff
     expect(() => parseBackup(broken)).toThrow(damaged)
-
-    // More than the cap says it holds: refused from the sizes, before anything is inflated.
-    expect(() => parseBackup(stored, { maxEntryBytes: 100 })).toThrow(damaged)
-    expect(() => parseBackup(zipSync({ 'library.json': bytes(json), 'covers/a.jpg': new Uint8Array(50) }), { maxTotalBytes: json.length })).toThrow(damaged)
 
     // An intact one still reads.
     expect(parseBackup(stored).books).toHaveLength(2)

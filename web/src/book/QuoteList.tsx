@@ -17,7 +17,7 @@ export function QuoteList({ store, bookId }: { store: LibraryStore; bookId: stri
     const n = parseWhole(page)
     // The server refuses a longer quote (and then every later change to it), so it is never saved.
     setTooLong(body.length > MAX_QUOTE_TEXT)
-    setProblem(body === '' ? 'Write the quote first.' : n === undefined ? 'The page must be a whole number.' : '')
+    setProblem(body === '' ? 'Write the quote first.' : n === undefined ? (Number(page) < 0 ? 'The page must be 0 or more.' : 'The page must be a whole number.') : '')
     if (body === '' || n === undefined || body.length > MAX_QUOTE_TEXT) return
     store.createQuote({
       id: crypto.randomUUID(), bookId, text: body, page: n, dateAdded: Date.now(), position: null, deleted: false,

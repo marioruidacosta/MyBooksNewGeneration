@@ -15,6 +15,7 @@ import { AddPage } from './add/AddPage'
 import { BookPage } from './book/BookPage'
 import { CoverContext } from './covers/storage'
 import { LibraryPage } from './library/LibraryPage'
+import { PageBoundary } from './PageBoundary'
 import { Publisher } from './share/publisher'
 import { SharingContext } from './share/SharingContext'
 import { supabase } from './supabase'
@@ -75,9 +76,11 @@ function ImportRoute() {
   const store = useStore()
   const covers = useContext(CoverContext)
   return (
-    <Suspense fallback={loadingPage}>
-      <ImportPage store={store} owner={covers?.owner} storage={covers?.storage} />
-    </Suspense>
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>
+        <ImportPage store={store} owner={covers?.owner} storage={covers?.storage} />
+      </Suspense>
+    </PageBoundary>
   )
 }
 
@@ -86,9 +89,11 @@ function TidyRoute() {
   const covers = useContext(CoverContext)
   if (!covers) throw new Error('TidyRoute: no signed-in account')
   return (
-    <Suspense fallback={loadingPage}>
-      <TidyPage store={store} owner={covers.owner} storage={supabase.storage} />
-    </Suspense>
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>
+        <TidyPage store={store} owner={covers.owner} storage={supabase.storage} />
+      </Suspense>
+    </PageBoundary>
   )
 }
 

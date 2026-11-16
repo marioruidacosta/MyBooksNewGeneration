@@ -174,6 +174,27 @@ describe('ImportPage', () => {
     expect(screen.queryByText(/Uploading photos/)).not.toBeInTheDocument()
   })
 
+  it('aChangeOnlyInQuotesIsShownBeforeImport', async () => {
+    const user = userEvent.setup()
+    const store = await open([book('dune', { title: 'Dune', authors: 'Frank Herbert', isbn: '9780441013593' })])
+    const backup = {
+      version: 1, exportedAt: 1,
+      books: [{ title: 'Dune', authors: 'Frank Herbert', isbn: '9780441013593', quotes: [{ text: 'Fear is the mind-killer', page: 3, dateAdded: 5 }] }],
+    }
+    render(<ImportPage store={store} now={() => Date.now() + 10_000} />)
+    await user.upload(screen.getByLabelText('Goodreads or MyBooks file'), new File([JSON.stringify(backup)], 'backup.json'))
+    expect(await screen.findByText('Also 1 quote.')).toBeInTheDocument()
+
+    // A sync brings the same quote in: the counts line is the same, the "Also" line is not.
+    store.createQuote({ id: 'q1', bookId: 'dune', text: 'Fear is the mind-killer', page: 3, dateAdded: 5, position: null, deleted: false })
+    await user.click(screen.getByRole('button', { name: 'Import' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Your library changed.')
+    expect(screen.queryByText('Also 1 quote.')).not.toBeInTheDocument()
+    expect(store.quotes('dune')).toHaveLength(1)
+    expect(screen.queryByText(/^Imported/)).not.toBeInTheDocument()
+  })
+
   it('aChangedLibraryIsPlannedAgainBeforeImport', async () => {
     const user = userEvent.setup()
     const store = await open()
