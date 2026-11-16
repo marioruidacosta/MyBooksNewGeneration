@@ -1,0 +1,68 @@
+name: Web Pages
+
+# Publishes the whole GitHub Pages site: the docs/ pages at the root (privacy.html and delete-account.html are
+# linked from the Play Store listing) and the website under /app/.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'docs/**'
+      - '.github/pages/**'
+      - '.github/workflows/web-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  pages: write
+  id-token: write
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # docs/ holds a .nojekyll file, so the legacy "Deploy from a branch" build never ran Jekyll: it served the
+      # files byte for byte (the .md pages as plain text). Copying docs/ as it is reproduces that exactly;
+      # actions/jekyll-build-pages would render the .md pages and change those URLs.
+      - name: Site root from docs/
+        run: |
+          mkdir _site
+          cp -a docs/. _site/
+          test -f _site/.nojekyll
+          cp .github/pages/404.html _site/404.html
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the website into _site/app
+        working-directory: web
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          npm ci
+          npm run build
+          mkdir -p ../_site/app
+          cp -a dist/. ../_site/app/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

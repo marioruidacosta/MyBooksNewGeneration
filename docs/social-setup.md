@@ -170,3 +170,28 @@ After that, the **Friends** icon appears in the library's top bar, and **Setting
   Delete account in the app).
 - **Reports**: read them in **Table Editor → reports**. To act on one, block or delete the user
   from **Authentication → Users**.
+
+## 6. The website
+
+The website (`web/`) is published at https://marioruidacosta.github.io/MyBooksNewGeneration/app/ by
+`.github/workflows/web-pages.yml`, which also republishes the `docs/` pages at the site root unchanged. Do these
+steps **in this order**:
+
+1. **Set the Supabase secret** `GOOGLE_BOOKS_API_KEY` (the same key as in `local.properties`) for the book search:
+
+   ```bash
+   supabase secrets set GOOGLE_BOOKS_API_KEY=<your Google Books key>
+   ```
+
+2. **Deploy the `lookup` function**: `supabase functions deploy lookup`.
+3. **Apply the migration** `2026111600_my_shared_book_ids.sql` (`supabase db push`). Do this before the site goes
+   live: without it, nothing the website shares gets published.
+4. **Set the repository variables** `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, in GitHub under
+   *Settings → Secrets and variables → Actions → Variables* (variables, not secrets: they end up in the page anyway).
+5. **Switch Pages' source** in *Settings → Pages → Build and deployment* from "Deploy from a branch" to
+   "GitHub Actions". Then run **Web Pages** from the Actions tab (or push to `main`). The first run republishes the
+   docs pages unchanged, including `privacy.html` and `delete-account.html`.
+
+The anon key is public by design: it ships in the website and the apps, and the row-level security rules are what
+protect the data. The `service_role` key is never used by the website, the apps or the workflow; never put it in a
+variable or in the repository. Never write a real key in these docs.

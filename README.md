@@ -88,6 +88,26 @@ Then:
 ./gradlew :androidApp:assembleDebug   # → androidApp/build/outputs/apk/debug/androidApp-debug.apk
 ```
 
+## Website
+
+`web/` is a React site that works as another synced device for the MyBooks app: sign in with the same email code and
+you see the same library, and edits on either side reach the other within seconds. It also does the add-a-book
+search, import/export and tidy-up.
+
+It lives at https://marioruidacosta.github.io/MyBooksNewGeneration/app/ (the pages in `docs/` stay at the site root).
+
+Run it locally (Node 18):
+
+```bash
+cd web
+npm ci
+# .env.local, not committed: VITE_SUPABASE_URL=https://<project>.supabase.co and VITE_SUPABASE_ANON_KEY=<anon key>
+npm run dev        # http://localhost:5173/MyBooksNewGeneration/app/
+```
+
+Test it with `npm run lint`, `npm test -- --run` and `npm run build`. The site uses only the public anon key; the
+`service_role` key is never used. To publish it, follow the production steps in [docs/social-setup.md](docs/social-setup.md).
+
 ## Google Play
 
 The signed release bundle (`./gradlew :androidApp:bundleRelease`), the privacy policy and the account-deletion page
