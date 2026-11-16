@@ -14,8 +14,9 @@ data class PullPage(val rows: List<SyncRow>, val last: Long)
 data class MergeResult(val ids: Map<String, String>, val setAside: List<SetAside>)
 
 /**
- * A failed sync call. [rejected]: the server answered and refused the request itself (an HTTP 4xx other than an expired
- * session or a full store), so sending the same request again can't work; false when it was down or unreachable.
+ * A failed sync call. [rejected]: the server answered and refused the request itself (an HTTP 400), so sending the
+ * same request again can't work; false for anything else: an expired session (AUTH), a 413 (STORAGE_FULL), or
+ * a 403, 404, 409, 429, a down or unreachable server, which are all retried later.
  */
 class SyncException(
     val kind: Kind,

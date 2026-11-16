@@ -57,8 +57,8 @@ internal fun mapSyncError(e: Throwable): SyncException {
         isTlsFailure(e) || chain.any { it is HttpRequestTimeoutException } || e is HttpRequestException || e is IOException ||
             message.contains("timeout has expired", ignoreCase = true) ->
             SyncException(SyncException.Kind.OFFLINE, "offline", e)
-        // A 4xx: the server took the request and refused it (sending it again can't work); else it was down.
-        else -> SyncException(SyncException.Kind.OTHER, e.message ?: "error", e, rejected = status != null && status in 400..499)
+        // Only a 400 is a refusal of the request itself (sending it again can't work); a 404, 409, 429 or 5xx is retried later.
+        else -> SyncException(SyncException.Kind.OTHER, e.message ?: "error", e, rejected = status == 400)
     }
 }
 

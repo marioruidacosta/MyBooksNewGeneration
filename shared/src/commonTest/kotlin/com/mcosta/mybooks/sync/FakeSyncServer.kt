@@ -36,6 +36,9 @@ class FakeSyncServer(
      */
     var rejectRequest: (SyncRow) -> Boolean = { false }
 
+    /** A push holding more rows than this fails as too large (a 413, mapped to STORAGE_FULL). */
+    var maxPushRows = Int.MAX_VALUE
+
     /** Every data call ("push", "pull", "merge", "cover-up", "cover-down"), with the [clock] time it was made at, failed ones included. */
     val calls = mutableListOf<Pair<String, Long>>()
 
@@ -95,6 +98,7 @@ class FakeSyncServer(
     override suspend fun push(rows: List<SyncRow>): PushResult {
         check("push")
         require(rows.size <= 200) { "sync_push takes at most 200 changes" }
+        if (rows.size > maxPushRows) throw SyncException(SyncException.Kind.STORAGE_FULL, "storage full")
         if (rows.any(rejectRequest)) throw SyncException(SyncException.Kind.OTHER, "request refused", rejected = true)
         val refused = rows.mapNotNull { row -> refuse(row)?.let { SetAside(row.table, row.id, it) } }
         val accepted = rows.filter { row -> refused.none { it.table == row.table && it.id == row.id } }

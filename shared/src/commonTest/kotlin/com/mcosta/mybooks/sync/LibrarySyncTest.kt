@@ -314,6 +314,28 @@ class LibrarySyncTest {
     }
 
     @Test
+    fun aPushThatIsTooLargeIsSplitAndSentInParts() = runTest {
+        val server = server()
+        val a = device(server)
+        for (uuid in listOf("w", "x", "y", "z")) {
+            a.seed(uuid, "Livro $uuid")
+            a.edit(uuid) { it.copy(rating = 3) }
+        }
+        server.maxPushRows = 1
+
+        a.sync.start(OWNER)
+        advanceTimeBy(60 * 60_000)
+        runCurrent()
+        val status = a.sync.status.value
+        a.sync.stop()
+
+        assertIs<SyncStatus.Synced>(status)
+        assertTrue(a.queue.rows.value.isEmpty())
+        assertEquals(0, a.sync.setAside.value)
+        assertEquals(setOf("w", "x", "y", "z"), server.stored().keys.map { it.second }.toSet())
+    }
+
+    @Test
     fun serverErrorSetsNothingAside() = runTest {
         val server = server()
         val a = device(server)
