@@ -686,6 +686,57 @@ describe('LibraryPage', () => {
     expect(screen.getByRole('combobox', { name: 'Status of Bravo by Author' })).toHaveValue('TO_READ')
   }, T)
 
+  it('arrowKeysOnTheTableStatusDoNotChangeItUntilChosen', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', status: 'READING', dateStarted: 5, currentPage: 3, progressPercent: 10 }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+    const select = screen.getByRole('combobox', { name: 'Status of Alpha by Author' })
+
+    // A focused, closed select fires `change` on every arrow key (Chrome, Edge): that is browsing, not choosing.
+    select.focus()
+    fireEvent.change(select, { target: { value: 'READ' } })
+    fireEvent.change(select, { target: { value: 'TO_READ' } })
+    expect(store.book('a')).toMatchObject({ status: 'READING', dateStarted: 5, currentPage: 3, progressPercent: 10 })
+    expect(select).toHaveValue('TO_READ')
+
+    // Enter chooses it.
+    fireEvent.keyDown(select, { key: 'Enter' })
+    expect(store.book('a')).toMatchObject({ status: 'TO_READ', dateStarted: null, currentPage: null, progressPercent: null })
+
+    // So does leaving the control.
+    fireEvent.change(select, { target: { value: 'READ' } })
+    expect(store.book('a')?.status).toBe('TO_READ')
+    await user.tab()
+    expect(store.book('a')?.status).toBe('READ')
+  }, T)
+
+  it('aTableStatusChangeCanBeUndone', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', status: 'READING', dateStarted: 5, currentPage: 3, progressPercent: 10, rating: 2 }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Alpha by Author' }), 'READ')
+    expect(store.book('a')?.status).toBe('READ')
+    expect(screen.getByRole('status')).toHaveTextContent('Status changed to Read.')
+    // A newer edit to a field the change didn't write stays; one it did write is brought back only if still as written.
+    store.edit('books', 'a', { rating: 5 })
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(store.book('a')).toMatchObject({
+      status: 'READING', dateStarted: 5, dateRead: null, currentPage: 3, progressPercent: 10, rating: 5,
+    })
+
+    // A field changed since keeps its newer value.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Alpha by Author' }), 'TO_READ')
+    store.edit('books', 'a', { status: 'READ' })
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(store.book('a')?.status).toBe('READ')
+    expect(store.book('a')).toMatchObject({ dateStarted: 5, currentPage: 3, progressPercent: 10 })
+  }, T)
+
   it('clickingAStarInTheTableSetsTheScore', async () => {
     const store = await open([book('a', { title: 'Stoner', authors: 'John Williams', rating: null })])
     const user = userEvent.setup()

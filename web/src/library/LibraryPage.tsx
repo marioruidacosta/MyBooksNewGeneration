@@ -5,6 +5,7 @@ import {
 } from '@tanstack/react-table'
 import { progressChange } from '../book/progress'
 import { statusChange } from '../book/status'
+import { bookToFields } from '../sync/codec'
 import type { PortraitFetch } from '../quotes/daily'
 import { QuoteOfTheDay } from '../quotes/QuoteOfTheDay'
 import { STATUSES, type Book, type Status } from '../sync/model'
@@ -144,12 +145,28 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
     () => ({
       // The status and the dates it goes with, exactly as the book page and the bulk bar do.
       setStatus: (b: Book, status: Status) => {
-        if (b.status !== status) store.edit('books', b.id, statusChange(b, status, Date.now()))
+        const change = statusChange(b, status, Date.now())
+        if (b.status === status || Object.keys(change).length === 0) return
+        store.edit('books', b.id, change)
+        toast.show(`Status changed to ${STATUS_LABELS[status]}.`, {
+          label: 'Undo',
+          // Only the fields the change wrote that still hold what it wrote go back: a newer edit (here or from a
+          // phone) keeps its value, as with the merge Undo.
+          run: () => {
+            const now = store.book(b.id)
+            if (!now) return
+            const current = bookToFields(now)
+            const was = bookToFields(b)
+            const back: Record<string, unknown> = {}
+            for (const [f, v] of Object.entries(change)) if (current[f] === v) back[f] = was[f]
+            if (Object.keys(back).length > 0) store.edit('books', b.id, back)
+          },
+        })
       },
       setRating: (b, rating) => store.edit('books', b.id, { rating }),
       filterByTag: (tag) => setFilters((f) => ({ ...f, tag })),
     }),
-    [store],
+    [store, toast],
   )
   const columns = useMemo(() => makeColumns(onOpen, cellActions), [onOpen, cellActions])
 
