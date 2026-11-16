@@ -43,12 +43,15 @@ class FakeRpc implements RpcClient {
   /** Errors for the next publish/unpublish calls, in order (null: it works). */
   failures: ({ message: string; code?: string } | Error | null)[] = []
   idsError = false
+  /** While set, publish_book waits for it before answering. */
+  gate: Promise<void> | null = null
 
   async rpc(fn: string, args: Record<string, unknown> = {}) {
     this.calls.push({ fn, args })
     if (fn === 'my_shared_book_ids') {
       return this.idsError ? { data: null, error: { message: 'offline' } } : { data: [...this.shared], error: null }
     }
+    if (fn === 'publish_book' && this.gate) await this.gate
     const failure = this.failures.shift() ?? null
     if (failure instanceof Error) throw failure
     if (!failure && fn === 'publish_book') {
@@ -66,7 +69,9 @@ class FakeRpc implements RpcClient {
 const stores: LibraryStore[] = []
 const publishers: Publisher[] = []
 
-async function setup(opts: { shared?: string[]; books?: Book[]; retryDelays?: number[] } = {}) {
+async function setup(
+  opts: { shared?: string[]; books?: Book[]; retryDelays?: number[]; owner?: string; currentOwner?: () => string | null } = {},
+) {
   const api = new FakeApi()
   const rpc = new FakeRpc()
   rpc.shared = opts.shared ?? []
@@ -74,7 +79,9 @@ async function setup(opts: { shared?: string[]; books?: Book[]; retryDelays?: nu
   stores.push(store)
   await store.load()
   for (const b of opts.books ?? []) store.create(b)
-  const publisher = new Publisher({ store, client: rpc, debounceMs: 0, retryDelays: opts.retryDelays ?? [5] })
+  const publisher = new Publisher({
+    store, client: rpc, debounceMs: 0, retryDelays: opts.retryDelays ?? [5], owner: opts.owner, currentOwner: opts.currentOwner,
+  })
   publishers.push(publisher)
   await publisher.start()
   return { api, rpc, store, publisher }
@@ -150,7 +157,8 @@ describe('the publisher', () => {
     expect(sent[0].args.book).toEqual(publicState({ ...before, status: 'READING', rating: 4 }))
     expect(sent[0].args.before).toEqual(publicState(before))
     // The shared ids are read at load and again after the publish.
-    expect(rpc.of('my_shared_book_ids')).toHaveLength(2)
+    // ...and at the start of the send, so a phone's exclusion made meanwhile is seen.
+    expect(rpc.of('my_shared_book_ids')).toHaveLength(3)
   }, T)
 
   it('anUnsharedBookIsNeverPublished', async () => {
@@ -281,5 +289,99 @@ describe('the publisher', () => {
     rpc.idsError = false
     await publisher.idle()
     expect(rpc.of('publish_book')).toHaveLength(1)
+  }, T)
+
+  it('aBookExcludedOnThePhoneAfterLoadIsNotPublished', async () => {
+    const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1')] })
+    expect(publisher.isShared('b1')).toBe(true)
+    rpc.shared = [] // the person excluded it on the phone while this tab was open
+    store.edit('books', 'b1', { status: 'READ' })
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(0)
+    expect(publisher.isShared('b1')).toBe(false)
+  }, T)
+
+  it('aBookSharedOnThePhoneAfterLoadIsPublished', async () => {
+    const { rpc, store, publisher } = await setup({ shared: [], books: [book('b1')] })
+    rpc.shared = ['b1']
+    store.edit('books', 'b1', { status: 'READ' })
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+  }, T)
+
+  it('aFailedIdsReadKeepsTheChangeWaitingInsteadOfDecidingFromAStaleSet', async () => {
+    const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1')] })
+    rpc.idsError = true
+    store.edit('books', 'b1', { status: 'READ' })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(rpc.of('publish_book')).toHaveLength(0)
+    expect(publisher.hasPending()).toBe(true)
+    rpc.idsError = false
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+  }, T)
+
+  it('deletingDuringTheFirstPublishUnpublishes', async () => {
+    const { rpc, store, publisher } = await setup()
+    let release!: () => void
+    rpc.gate = new Promise<void>((r) => (release = r))
+    store.create(book('new'))
+    while (rpc.of('publish_book').length === 0) await new Promise((r) => setTimeout(r, 1))
+    store.remove('books', 'new')
+    release()
+    await publisher.idle()
+    expect(rpc.of('unpublish_book').map((c) => c.args.id)).toEqual(['new'])
+    expect(rpc.shared).toEqual([])
+  }, T)
+
+  it('aSendNeverGoesOutUnderAnotherAccount', async () => {
+    let user: string | null = 'u1'
+    const { rpc, store, publisher } = await setup({
+      shared: ['b1'], books: [book('b1')], owner: 'u1', currentOwner: () => user,
+    })
+    store.edit('books', 'b1', { status: 'READ' })
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+    user = 'u2'
+    store.edit('books', 'b1', { status: 'READING' })
+    store.remove('books', 'b1')
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+    expect(rpc.of('unpublish_book')).toHaveLength(0)
+  }, T)
+
+  it('sharingIsUnknownUntilIdsLoad', async () => {
+    const api = new FakeApi()
+    const rpc = new FakeRpc()
+    rpc.idsError = true
+    const store = new LibraryStore({ api, owner: 'u1', pollMs: 0, retryDelays: [60_000] })
+    stores.push(store)
+    await store.load()
+    const publisher = new Publisher({ store, client: rpc, debounceMs: 0, retryDelays: [5] })
+    publishers.push(publisher)
+    await publisher.start()
+    expect(publisher.isShared('b1')).toBeNull()
+    rpc.idsError = false
+    rpc.shared = ['b1']
+    await new Promise((r) => setTimeout(r, 50))
+    expect(publisher.isShared('b1')).toBe(true)
+    expect(publisher.isShared('zz')).toBe(false)
+  }, T)
+
+  it('aRefusedBookIsRetriedWhenItChanges', async () => {
+    const { rpc, store, publisher } = await setup()
+    rpc.failures = [{ message: 'invalid book', code: '22023' }]
+    store.create(book('new', { title: 'Novo' }))
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+    // Nothing the community sees changed: still not sent.
+    store.edit('books', 'new', { notes: 'a note' })
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+    // A change to what it sees: sent again.
+    store.edit('books', 'new', { title: 'Novo, corrigido' })
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(2)
+    expect(publisher.isShared('new')).toBe(true)
   }, T)
 })

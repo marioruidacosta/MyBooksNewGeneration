@@ -80,6 +80,10 @@ export type PublisherOptions = {
   debounceMs?: number
   /** Waits after a failed send, the last one repeating. */
   retryDelays?: number[]
+  /** The account this publisher posts for; with [currentOwner], a send is dropped when the session is someone else's. */
+  owner?: string
+  /** The account signed in now (null: none). */
+  currentOwner?: () => string | null | Promise<string | null>
 }
 
 type Entry =
@@ -93,14 +97,17 @@ const isRefusal = (code: string | undefined) => code !== undefined && /^(22|23|4
 
 /**
  * Posts the site's changes to the community exactly as the phone does (`Publisher.kt`, `ShareTracker.kt`):
- * - A book counts as shared when the server lists it in `my_shared_book_ids()` (read at load and after each
- *   publish) or the site just created it. There is no per-book switch on the site.
+ * - A book counts as shared when the server lists it in `my_shared_book_ids()` (read at load, at the start of every
+ *   send pass so a phone's exclusion or sharing is seen, and after each publish; when that read fails nothing is
+ *   decided from the old list and the change waits) or the site just created it. There is no per-book switch.
  * - Only a change to what the community sees publishes, sent with the state from before the batch of changes so the
  *   server creates the right feed entries; changes arriving together go as one. Removing a shared book unpublishes it.
  * - Changes pulled from a phone never publish (the store tells only of edits made here), and bulk writes tagged
  *   `import` (backup and Goodreads imports, filling in details) don't, as on the phone.
  * - A failed send is retried (5 s, 15 s, 60 s, then 300 s, and when the connection returns), keeping the first
- *   "before". A refusal (the server rejects the data) is logged and dropped. The local edit is never touched.
+ *   "before". A refusal (the server rejects the data) is logged and dropped, and a book the site created is sent
+ *   again once what the community sees of it changes (as on the phone). The local edit is never touched.
+ * - Every send first checks the session is still this publisher's account.
  *   Changes waiting at a closed tab are not remembered: the phone stays the source of truth for what's shared.
  */
 export class Publisher {
@@ -108,12 +115,18 @@ export class Publisher {
   private readonly debounceMs: number
   private readonly retryDelays: number[]
   private readonly store: Pick<LibraryStore, 'onLocalChangeWithOrigin'>
+  private readonly owner: string | undefined
+  private readonly currentOwner: (() => string | null | Promise<string | null>) | undefined
 
   private ids = new Set<string>()
   private idsKnown = false
   /** Created on the site, not yet listed by the server. */
   private created = new Set<string>()
   private pending = new Map<string, Entry>()
+  /** The public state of a created book the server refused, until what the community sees of it changes. */
+  private refused = new Map<string, Book>()
+  /** The book whose send is in flight. */
+  private sendingId: string | null = null
   private listeners = new Set<() => void>()
 
   private stopStore: (() => void) | null = null
@@ -128,6 +141,8 @@ export class Publisher {
     this.client = options.client
     this.debounceMs = options.debounceMs ?? 2_000
     this.retryDelays = options.retryDelays?.length ? options.retryDelays : RETRY_DELAYS
+    this.owner = options.owner
+    this.currentOwner = options.currentOwner
   }
 
   /** Starts listening to the store and reads the shared ids; resolves when that first read is over. */
@@ -149,9 +164,15 @@ export class Publisher {
     if (typeof window !== 'undefined') window.removeEventListener('online', this.onOnline)
   }
 
-  /** Whether the community has this book (or the site just posted it). */
-  isShared(id: string): boolean {
-    return this.ids.has(id) || this.created.has(id)
+  /** Whether the community has this book (or the site just posted it); null until the shared books are known. */
+  isShared(id: string): boolean | null {
+    if (this.created.has(id)) return true
+    return this.idsKnown ? this.ids.has(id) : null
+  }
+
+  /** Whether changes are waiting to be sent (closing the tab now would lose them). */
+  hasPending(): boolean {
+    return this.pending.size > 0 || this.running !== null
   }
 
   /** Called when the shared books change. Returns the way to stop. */
@@ -177,7 +198,16 @@ export class Publisher {
     }
     if (!before) {
       this.created.add(after.id)
+      this.refused.delete(after.id)
       this.queuePublish(null, after, true)
+      return
+    }
+    const refused = this.refused.get(after.id)
+    if (refused) {
+      // The server refused this book: only a change to what it sees is worth sending again.
+      if (!publicFieldsDiffer(refused, after)) return
+      this.refused.delete(after.id)
+      this.queuePublish(before, after, true)
       return
     }
     if (publicFieldsDiffer(before, after)) this.queuePublish(before, after, false)
@@ -202,12 +232,9 @@ export class Publisher {
   private queueUnpublish(id: string) {
     const held = this.pending.get(id)
     this.created.delete(id)
-    if (held?.kind === 'publish' && held.created) {
-      // Never reached the server.
-      this.pending.delete(id)
-      return
-    }
-    if (this.idsKnown && !this.ids.has(id)) {
+    this.refused.delete(id)
+    // Not on the way: it never reached the server. On the way: it may land, so take it down once the send is over.
+    if (this.sendingId !== id && held?.kind === 'publish' && held.created) {
       this.pending.delete(id)
       return
     }
@@ -257,7 +284,9 @@ export class Publisher {
 
   private async drain(): Promise<void> {
     while (!this.stopped && this.pending.size > 0) {
-      if (!this.idsKnown && !(await this.refreshIds())) {
+      if (!(await this.sessionIsOurs())) return
+      // Read fresh at every pass: a phone may have excluded or shared books since. A failed read decides nothing.
+      if (!(await this.refreshIds())) {
         this.scheduleRetry()
         return
       }
@@ -273,7 +302,14 @@ export class Publisher {
           this.pending.delete(id)
           continue
         }
-        const outcome = await this.send(id, entry)
+        if (!(await this.sessionIsOurs())) return
+        this.sendingId = id
+        let outcome: 'sent' | 'dropped' | 'retry'
+        try {
+          outcome = await this.send(id, entry)
+        } finally {
+          this.sendingId = null
+        }
         if (outcome === 'retry') {
           this.scheduleRetry()
           return
@@ -293,6 +329,9 @@ export class Publisher {
           } else {
             this.ids.delete(id)
           }
+        } else if (entry.kind === 'publish') {
+          // Refused: a book the site created stays "shared" here, and goes again once what it shows changes.
+          if (entry.created) this.refused.set(id, entry.after)
         } else {
           this.created.delete(id)
         }
@@ -320,6 +359,21 @@ export class Publisher {
     } catch {
       return 'retry'
     }
+  }
+
+  /** Whether the signed-in account is still the one this publisher posts for; if not, everything waiting is dropped. */
+  private async sessionIsOurs(): Promise<boolean> {
+    if (this.owner === undefined || !this.currentOwner) return true
+    let now: string | null
+    try {
+      now = await this.currentOwner()
+    } catch {
+      now = null
+    }
+    if (now === this.owner) return true
+    this.pending.clear()
+    this.notify()
+    return false
   }
 
   /** Reads the shared ids; false when that failed (the ones known stay). */

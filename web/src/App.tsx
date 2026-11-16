@@ -158,12 +158,16 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
   const userId = session?.user.id ?? null
   // One store for the signed-in account; closed on sign-out and when the account changes.
   const { store, error } = useLibraryStore(userId, (id) => new LibraryStore({ api: createApi(id), owner: id }))
-  useWarnBeforeClosing(store)
   // Posts this account's changes to the community like the phone does; one per open library.
   const [publisher, setPublisher] = useState<Publisher | null>(null)
   useEffect(() => {
     if (!store) return
-    const next = new Publisher({ store, client: supabase })
+    const next = new Publisher({
+      store,
+      client: supabase,
+      owner: userId ?? undefined,
+      currentOwner: async () => (await supabase.auth.getSession()).data.session?.user.id ?? null,
+    })
     let live = true
     void next.start().then(() => {
       if (live) setPublisher(next)
@@ -173,7 +177,8 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
       next.stop()
       setPublisher(null)
     }
-  }, [store])
+  }, [store, userId])
+  useWarnBeforeClosing(store, publisher)
   // Whose cover photos to show, and where they are kept.
   const covers = useMemo(() => (userId ? { owner: userId, storage: supabase.storage } : null), [userId])
 

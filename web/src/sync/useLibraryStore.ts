@@ -40,16 +40,16 @@ export function useLibraryStore(
   return { store: current?.store ?? null, error: current?.error ?? null }
 }
 
-/** Asks the browser to confirm closing the tab while the store has changes not yet safe (see `hasPendingWrites`). */
-export function useWarnBeforeClosing(store: LibraryStore | null): void {
+/** Asks the browser to confirm closing the tab while the store has changes not yet safe (see `hasPendingWrites`), or the community publisher has changes not yet sent. */
+export function useWarnBeforeClosing(store: LibraryStore | null, publisher?: { hasPending(): boolean } | null): void {
   useEffect(() => {
     if (!store) return
     const warn = (event: BeforeUnloadEvent) => {
-      if (!store.hasPendingWrites()) return
+      if (!store.hasPendingWrites() && !publisher?.hasPending()) return
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [store])
+  }, [store, publisher])
 }

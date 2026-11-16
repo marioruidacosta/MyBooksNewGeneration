@@ -80,6 +80,16 @@ describe('useWarnBeforeClosing', () => {
     expect(closing().defaultPrevented).toBe(false)
   })
 
+  it('warnsWhileThePublisherHasWaitingChanges', () => {
+    const store = fakeStore('u1', false)
+    const publisher = { hasPending: vi.fn(() => true) }
+    const { unmount } = renderHook(() => useWarnBeforeClosing(store as unknown as LibraryStore, publisher))
+    expect(closing().defaultPrevented).toBe(true)
+    publisher.hasPending.mockReturnValue(false)
+    expect(closing().defaultPrevented).toBe(false)
+    unmount()
+  })
+
   it('stopsWarningWhenTheStoreIsGone', () => {
     const store = fakeStore('u1', true)
     const { rerender } = renderHook(({ s }) => useWarnBeforeClosing(s), {

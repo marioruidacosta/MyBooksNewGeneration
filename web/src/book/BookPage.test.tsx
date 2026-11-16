@@ -357,14 +357,16 @@ describe('BookPage', () => {
     expect(screen.getByText('Shared with friends')).toBeInTheDocument()
     expect(screen.queryByRole('checkbox', { name: /shared/i })).not.toBeInTheDocument()
     unmount()
+    publisher.stop()
     shared.length = 0
-    await publisher.start()
+    const second = new Publisher({ store, client, debounceMs: 0 })
+    await second.start()
     render(
-      <SharingContext.Provider value={publisher}>
+      <SharingContext.Provider value={second}>
         <BookPage store={store} owner="u1" id="1" storage={fake.storage} onBack={() => {}} />
       </SharingContext.Provider>,
     )
     expect(screen.getByText('Not shared')).toBeInTheDocument()
-    publisher.stop()
+    second.stop()
   }, T)
 })
