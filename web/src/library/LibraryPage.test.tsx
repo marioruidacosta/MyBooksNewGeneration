@@ -27,6 +27,7 @@ function book(id: string, over: Partial<Book> = {}): Book {
   }
 }
 
+const NOW = 1_800_000_000_000
 const stores: LibraryStore[] = []
 
 async function open(books: Book[]) {
@@ -184,6 +185,7 @@ describe('LibraryPage', () => {
       book('c', { title: 'Charlie', dateAdded: 1 }),
     ])
     const edit = vi.spyOn(store, 'edit')
+    vi.spyOn(Date, 'now').mockReturnValue(NOW)
     const user = userEvent.setup()
     show(store)
 
@@ -192,9 +194,10 @@ describe('LibraryPage', () => {
     expect(screen.getByText('2 selected')).toBeInTheDocument()
     await user.selectOptions(screen.getByLabelText('Set status'), 'READING')
 
+    // The book page's rule: Reading starts now.
     expect(edit.mock.calls).toEqual([
-      ['books', 'a', { status: 'READING' }],
-      ['books', 'b', { status: 'READING' }],
+      ['books', 'a', { status: 'READING', date_started: NOW }],
+      ['books', 'b', { status: 'READING', date_started: NOW }],
     ])
     expect(store.book('a')?.status).toBe('READING')
     expect(store.book('b')?.status).toBe('READING')
@@ -204,6 +207,29 @@ describe('LibraryPage', () => {
     edit.mockClear()
     await user.selectOptions(screen.getByLabelText('Set status'), 'READING')
     expect(edit).not.toHaveBeenCalled()
+  }, T)
+
+  it('bulkMarkingReadSetsTheReadDate', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', dateAdded: 3 }),
+      book('b', { title: 'Bravo', status: 'READING', dateStarted: 500, currentPage: 40, progressPercent: 20, dateAdded: 2 }),
+    ])
+    vi.spyOn(Date, 'now').mockReturnValue(NOW)
+    const user = userEvent.setup()
+    show(store)
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Bravo' }))
+    await user.selectOptions(screen.getByLabelText('Set status'), 'READ')
+    expect(store.book('a')).toMatchObject({ status: 'READ', dateRead: NOW, dateStarted: null })
+    expect(store.book('b')).toMatchObject({ status: 'READ', dateRead: NOW, dateStarted: 500 })
+
+    // Back to To read: the dates and the progress go, as on the book page.
+    await user.selectOptions(screen.getByLabelText('Set status'), 'TO_READ')
+    expect(store.book('b')).toMatchObject({
+      status: 'TO_READ', dateRead: null, dateStarted: null, currentPage: null, progressPercent: null,
+    })
+    expect(store.book('a')).toMatchObject({ status: 'TO_READ', dateRead: null })
   }, T)
 
   it('bulkAddTagKeepsExistingTags', async () => {

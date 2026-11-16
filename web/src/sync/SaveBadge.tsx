@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { REFUSED_MESSAGE } from './limits'
 import type { SaveStatus } from './store'
 
 /** Just what the badge reads: the store's save status and its change feed. */
@@ -10,7 +11,8 @@ function label(status: SaveStatus): string {
   if ('offline' in status) {
     return `Offline · ${status.offline} ${status.offline === 1 ? 'change' : 'changes'} waiting`
   }
-  return `A change couldn't be saved: ${status.rejected}`
+  // The server's own text is for the log, not for the person.
+  return `A change couldn't be saved. ${REFUSED_MESSAGE}`
 }
 
 /** "Saved", "Saving…", "Offline · N changes waiting", or why a change was refused. */

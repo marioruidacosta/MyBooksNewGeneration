@@ -142,6 +142,21 @@ describe('mergeBooks', () => {
     expect(result.coverKept).toBe(false)
   })
 
+  it('mergingKeepsStatusAndDatesConsistent', async () => {
+    const store = await open()
+    // The kept book is To read; the other is Read with dates: the merged book keeps the kept status, so no read date.
+    store.create(book({ id: 'drop', status: 'READ', dateRead: 900, dateStarted: 800 }))
+    clock = 2000
+    store.create(book({ id: 'keep', status: 'TO_READ' }))
+    clock = 3000
+
+    const plan = planMerge(store, store.book('keep') as Book, store.book('drop') as Book)
+    expect(plan.merged).toMatchObject({ status: 'TO_READ', dateRead: null, dateStarted: null })
+    await mergeBooks(store, store.book('keep') as Book, store.book('drop') as Book)
+
+    expect(store.book('keep')).toMatchObject({ status: 'TO_READ', dateRead: null, dateStarted: null })
+  })
+
   it('mergeMovesADropPhotoCoverToTheKeptBook', async () => {
     const store = await open()
     store.create(book({ id: 'keep', coverUrl: null }))

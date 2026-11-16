@@ -1,4 +1,5 @@
 import { bookToFields, rowToBook } from './codec'
+import { isOverLimit, limitOf } from './limits'
 import { TAG_SEPARATOR, type Book, type SyncRow } from './model'
 
 /** The time (ms) each field of a row last changed, by the server's field name. */
@@ -11,7 +12,9 @@ export type FieldTimes = Record<string, number>
  * - A filled value beats an empty one, whatever their times.
  * - Notes and review that differ are joined with a blank line, the newer first, unless one already contains the
  *   other (then the longer stays). The joined text is timed after both, so it wins everywhere.
- * - Tags are joined (a tag in both is kept once, ignoring capitals), and the earliest date added stays: nothing is lost.
+ * - A join that would pass the server's length limit is not made: the newest text stays whole, the older is dropped.
+ * - Tags are joined (a tag in both is kept once, ignoring capitals; a tag that would pass the limit is left out), and
+ *   the earliest date added stays.
  * - The id, the table and `deleted` are [keep]'s.
  */
 export function combineRows(keep: SyncRow, other: SyncRow): SyncRow {
@@ -57,8 +60,15 @@ export function combineRows(keep: SyncRow, other: SyncRow): SyncRow {
       if (kv.includes(ov)) takeKeep()
       else if (ov.includes(kv)) takeOther()
       else {
-        fields[f] = ot > kt ? `${ov}\n\n${kv}` : `${kv}\n\n${ov}`
-        times[f] = Math.max(kt, ot) + 1
+        const joined = ot > kt ? `${ov}\n\n${kv}` : `${kv}\n\n${ov}`
+        if (isOverLimit(f, joined)) {
+          // Both would not fit (the server refuses the whole row): the newest text stays whole, the older is dropped.
+          if (ot > kt) takeOther()
+          else takeKeep()
+        } else {
+          fields[f] = joined
+          times[f] = Math.max(kt, ot) + 1
+        }
       }
     } else if (ot > kt) {
       takeOther()
@@ -86,9 +96,14 @@ const isEmpty = (v: unknown): boolean => v === null || v === undefined || v === 
 function joinTags(a: unknown, b: unknown): string {
   const seen = new Set<string>()
   const out: string[] = []
+  const max = limitOf('tags') ?? Infinity
+  let length = 0
   for (const v of [a, b]) {
     for (const t of typeof v === 'string' ? v.split(TAG_SEPARATOR) : []) {
       if (t.length > 0 && !seen.has(t.toLowerCase())) {
+        const next = length + (out.length > 0 ? TAG_SEPARATOR.length : 0) + t.length
+        if (next > max) continue
+        length = next
         seen.add(t.toLowerCase())
         out.push(t)
       }

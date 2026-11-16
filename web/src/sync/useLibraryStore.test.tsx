@@ -60,6 +60,32 @@ describe('useLibraryStore', () => {
   })
 })
 
+describe('useLibraryStore signing back in', () => {
+  it('signingBackInAsTheSameUserOpensAFreshStore', async () => {
+    const made: ReturnType<typeof fakeStore>[] = []
+    const create = (id: string) => {
+      const s = fakeStore(id)
+      made.push(s)
+      return s as unknown as LibraryStore
+    }
+    const { result, rerender } = renderHook(({ id }) => useLibraryStore(id, create), {
+      initialProps: { id: 'u1' as string | null },
+    })
+    await waitFor(() => expect(result.current.store).toBe(made[0]))
+
+    rerender({ id: null })
+    expect(made[0].close).toHaveBeenCalledTimes(1)
+    expect(result.current.store).toBeNull()
+
+    // The same user again: the closed store is never handed out, a new one opens.
+    rerender({ id: 'u1' })
+    expect(result.current.store).toBeNull()
+    await waitFor(() => expect(result.current.store).toBe(made[1]))
+    expect(made).toHaveLength(2)
+    expect(result.current.store).not.toBe(made[0])
+  })
+})
+
 describe('useWarnBeforeClosing', () => {
   const closing = () => {
     const event = new Event('beforeunload', { cancelable: true })

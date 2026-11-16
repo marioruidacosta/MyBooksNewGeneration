@@ -3,6 +3,7 @@ import {
   flexRender, getCoreRowModel, getFilteredRowModel, getSortedRowModel, useReactTable,
   type RowSelectionState, type SortingState, type VisibilityState,
 } from '@tanstack/react-table'
+import { statusChange } from '../book/status'
 import { STATUSES, type Book } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { BulkBar, type BulkActions } from './BulkBar'
@@ -149,8 +150,10 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
 
   // Each change goes through `edit` for each book, and only where the book would change: the rest is not stamped.
   const bulk: BulkActions = {
+    // The status and the dates it goes with, as the book page does (Read finishes now, To read forgets the dates).
     setStatus: (status) => {
-      for (const b of selected) if (b.status !== status) store.edit('books', b.id, { status })
+      const now = Date.now()
+      for (const b of selected) if (b.status !== status) store.edit('books', b.id, statusChange(b, status, now))
     },
     addTag: (raw) => {
       const tag = raw.trim()

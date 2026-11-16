@@ -6,6 +6,7 @@ import type { CoverStorage } from '../covers/storage'
 import type { ImageDecoder } from '../covers/coverUpload'
 import { rowKey, type SyncApi } from '../sync/api'
 import type { Book } from '../sync/model'
+import { bookToFields } from '../sync/codec'
 import { LibraryStore } from '../sync/store'
 import { parseBackup } from './backup'
 import { parseGoodreads } from './goodreads'
@@ -139,5 +140,32 @@ describe('status on import', () => {
     await applyPlan(planImport(backupItems(backup), store, NOW), store, {})
     expect(store.books().find((b) => b.title === 'Dune')?.dateRead).toBeNull()
     expect(store.books().find((b) => b.title === 'Now')?.dateStarted).toBeNull()
+  })
+})
+
+describe('field limits', () => {
+  it('importNeverWritesAnOverLimitField', async () => {
+    const store = await open([book('a', { title: 'Dune', authors: 'Frank Herbert', notes: 'n'.repeat(15_000) })])
+    const long = (n: number) => 'z'.repeat(n)
+    const rows = parseGoodreads(csv([
+      `${long(400)},${long(400)},="9780141182803",read,0,${long(25_000)},`,
+      'Dune,Frank Herbert,,read,5,' + long(9000) + ',',
+    ]))
+    const items = goodreadsItems(rows, NOW)
+    items.items.forEach((i) => Object.assign(i.book, { description: long(30_000), coverUrl: 'https://x.example/' + long(600) }))
+    const plan = planImport(items, store, NOW)
+    await applyPlan(plan, store, {})
+    const limits: Record<string, number> = {
+      title: 300, authors: 300, description: 20_000, notes: 20_000, review: 2000, cover_url: 500, tags: 2000,
+    }
+    const check = (fields: Record<string, unknown>) => {
+      for (const [f, max] of Object.entries(limits)) {
+        const v = fields[f]
+        if (typeof v === 'string') expect(v.length, f).toBeLessThanOrEqual(max)
+      }
+    }
+    expect(store.books().length).toBe(2)
+    for (const b of store.books()) check(bookToFields(b))
+    for (const m of plan.merged) check(m.changes)
   })
 })

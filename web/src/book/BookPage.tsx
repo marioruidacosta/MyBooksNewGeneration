@@ -7,6 +7,7 @@ import { supabase } from '../supabase'
 import { useIsShared } from '../share/SharingContext'
 import { STATUSES, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
+import { BOOK_LIMITS, tooLongMessage } from '../sync/limits'
 import { Field } from './Field'
 import { dayText, parseDay, parseWhole } from './parse'
 import { statusChange } from './status'
@@ -95,6 +96,10 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
       setCoverError('Paste a web link that starts with http:// or https://.')
       return
     }
+    if (link.length > BOOK_LIMITS.cover_url) {
+      setCoverError(tooLongMessage('That link', BOOK_LIMITS.cover_url))
+      return
+    }
     setCoverError(null)
     edit({ cover_url: link })
     setCoverLink('')
@@ -142,7 +147,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
             <p className="hint">Or drop a picture anywhere on this page.</p>
             <label className="field">
               <span>Cover link</span>
-              <input type="url" value={coverLink} onChange={(e) => setCoverLink(e.target.value)} />
+              <input type="url" maxLength={BOOK_LIMITS.cover_url} value={coverLink} onChange={(e) => setCoverLink(e.target.value)} />
             </label>
             <div className="cover-actions">
               <button type="button" onClick={useLink} disabled={coverLink.trim() === ''}>
@@ -163,6 +168,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
           <form className="book-form" onSubmit={(e) => e.preventDefault()}>
             <Field
               label="Title"
+              limit={BOOK_LIMITS.title}
               shown={book.title}
               onCommit={(t) => {
                 // A book can't lose its title.
@@ -171,18 +177,19 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
             />
             <Field
               label="Authors"
+              limit={BOOK_LIMITS.authors}
               shown={book.authors}
               onCommit={(t) => {
                 if (t.trim() !== book.authors) edit({ authors: t.trim() })
               }}
             />
-            <Field label="ISBN" shown={book.isbn ?? ''} onCommit={nullableText('isbn', book.isbn)} />
+            <Field label="ISBN" limit={BOOK_LIMITS.isbn} shown={book.isbn ?? ''} onCommit={nullableText('isbn', book.isbn)} />
             <Field label="Publisher" shown={book.publisher ?? ''} onCommit={nullableText('publisher', book.publisher)} />
             <Field kind="number" label="Year" shown={show(book.publishedYear)} onCommit={whole('published_year', book.publishedYear)} />
             <Field kind="number" label="Pages" shown={show(book.pageCount)} onCommit={whole('page_count', book.pageCount)} />
-            <Field label="Series" shown={book.series ?? ''} onCommit={nullableText('series', book.series)} />
-            <Field label="Series number" shown={book.seriesNumber ?? ''} onCommit={nullableText('series_number', book.seriesNumber)} />
-            <Field label="Tags" shown={book.tags.join(', ')} onCommit={(t) => {
+            <Field label="Series" limit={BOOK_LIMITS.series} shown={book.series ?? ''} onCommit={nullableText('series', book.series)} />
+            <Field label="Series number" limit={BOOK_LIMITS.series_number} shown={book.seriesNumber ?? ''} onCommit={nullableText('series_number', book.seriesNumber)} />
+            <Field label="Tags" limit={BOOK_LIMITS.tags} shown={book.tags.join(', ')} onCommit={(t) => {
               const tags = [...new Set(t.split(',').map((x) => x.trim()).filter((x) => x !== ''))]
               if (!sameList(tags, book.tags)) edit({ tags })
             }} />
@@ -227,14 +234,14 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
             <Field kind="date" label="Finished" shown={dayText(book.dateRead)} onCommit={day('date_read', book.dateRead)} />
             <Field kind="number" label="Current page" shown={show(book.currentPage)} onCommit={whole('current_page', book.currentPage)} />
             <Field kind="number" label="Progress (%)" shown={show(book.progressPercent)} onCommit={whole('progress_percent', book.progressPercent)} />
-            <Field label="Lent to" shown={book.lentTo ?? ''} onCommit={nullableText('lent_to', book.lentTo)} />
+            <Field label="Lent to" limit={BOOK_LIMITS.lent_to} shown={book.lentTo ?? ''} onCommit={nullableText('lent_to', book.lentTo)} />
             <Field kind="date" label="Lent on" shown={dayText(book.lentOn)} onCommit={day('lent_on', book.lentOn)} />
-            <Field kind="area" label="Description" shown={book.description ?? ''} onCommit={(t) => {
+            <Field kind="area" label="Description" limit={BOOK_LIMITS.description} shown={book.description ?? ''} onCommit={(t) => {
               const next = t.trim() === '' ? null : t
               if (next !== book.description) edit({ description: next })
             }} />
-            <Field kind="area" label="Notes" shown={book.notes} onCommit={plainText('notes', book.notes)} />
-            <Field kind="area" label="Review" shown={book.review} onCommit={plainText('review', book.review)} />
+            <Field kind="area" label="Notes" limit={BOOK_LIMITS.notes} shown={book.notes} onCommit={plainText('notes', book.notes)} />
+            <Field kind="area" label="Review" limit={BOOK_LIMITS.review} shown={book.review} onCommit={plainText('review', book.review)} />
             <p className="hint">Added {new Date(book.dateAdded).toLocaleDateString()}</p>
           </form>
         </div>

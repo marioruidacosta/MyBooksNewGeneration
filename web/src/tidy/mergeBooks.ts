@@ -3,6 +3,7 @@ import { bookToFields, rowToBook } from '../sync/codec'
 import type { Book, SyncRow } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { combineRows } from '../sync/twin'
+import { statusDates } from '../io/importPlan'
 
 /** Supabase Storage as merging needs it: the cover bucket's copy (the real `supabase.storage` fits). */
 export type PhotoStorage = {
@@ -42,10 +43,11 @@ const rowOf = (store: LibraryStore, b: Book): SyncRow => ({
 })
 
 /** What merging [drop] into [keep] would do, without doing it. Uses the one twin rule, `combineRows`. */
-export function planMerge(store: LibraryStore, keep: Book, drop: Book): MergePlan {
+export function planMerge(store: LibraryStore, keep: Book, drop: Book, now = Date.now()): MergePlan {
   const keepRow = rowOf(store, keep)
   const dropRow = rowOf(store, drop)
-  const merged = rowToBook(combineRows(keepRow, dropRow))
+  // The dates a status goes with, as on import: a To-read book keeps no read date, a Read one has its date.
+  const merged = statusDates(rowToBook(combineRows(keepRow, dropRow)), keep.status, now)
   const before = bookToFields(keep)
   const after = bookToFields(merged)
   const fields = Object.keys(after).filter((f) => f !== 'deleted' && after[f] !== before[f])

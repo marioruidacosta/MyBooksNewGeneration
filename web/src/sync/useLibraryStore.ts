@@ -35,6 +35,9 @@ export function useLibraryStore(
     }
   }, [userId])
 
+  // Signed out: forget the closed store, so the same user signing back in opens a fresh one.
+  if (userId === null && opened !== null) setOpened(null)
+
   // What was opened for another account (or before signing out) is never handed out.
   const current = opened !== null && opened.userId === userId ? opened : null
   return { store: current?.store ?? null, error: current?.error ?? null }

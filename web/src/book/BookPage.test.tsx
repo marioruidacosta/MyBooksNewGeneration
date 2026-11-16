@@ -69,6 +69,30 @@ afterEach(async () => {
 })
 
 describe('BookPage', () => {
+  it('aReviewOverTheLimitIsNotSaved', async () => {
+    const store = await open(book({ review: 'fine' }))
+    const edit = vi.spyOn(store, 'edit')
+    const user = userEvent.setup()
+    show(store)
+
+    const box = screen.getByLabelText('Review')
+    expect(box).toHaveAttribute('maxlength', '2000')
+    expect(screen.getByLabelText('Title')).toHaveAttribute('maxlength', '300')
+    // A value that arrives longer than the box allows (not typed) is refused with a short message.
+    await user.click(box)
+    fireEvent.change(box, { target: { value: 'x'.repeat(2001) } })
+    await user.tab()
+    expect(edit).not.toHaveBeenCalled()
+    expect(store.book('1')?.review).toBe('fine')
+    expect(screen.getByRole('alert')).toHaveTextContent('Review is too long (2000 characters at most)')
+
+    // A value within the limit saves.
+    await user.click(box)
+    fireEvent.change(box, { target: { value: 'x'.repeat(2000) } })
+    await user.tab()
+    expect(store.book('1')?.review).toBe('x'.repeat(2000))
+  }, T)
+
   it('everyFieldSavesOnBlur', async () => {
     const store = await open()
     const edit = vi.spyOn(store, 'edit')

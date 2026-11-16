@@ -3,6 +3,7 @@ import type { CoverStorage } from '../covers/storage'
 import { bookToFields, rowToBook } from '../sync/codec'
 import type { Book, Quote, Status, SyncRow } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
+import { BOOK_LIMITS } from '../sync/limits'
 import { combineRows, type FieldTimes } from '../sync/twin'
 import { catalogTitleKey, firstAuthorKey } from '../text/keys'
 import type { Backup, BackupChallenge } from './backup'
@@ -87,13 +88,27 @@ function clean(b: Book): Book | null {
   const lentTo = b.lentTo?.trim().slice(0, MAX_NAME_LENGTH) || null
   // A number only means something within a series.
   const number = b.seriesNumber?.trim().replace(/^#/, '').trim().slice(0, 10) || null
+  // Over the server's limits a row is refused whole: long texts are cut (the review is refused above), a cover link
+  // that is too long is left out, and the tags stop where the limit is reached.
+  const tags: string[] = []
+  let tagsLength = 0
+  for (const t of cleanTags(b.tags)) {
+    const next = tagsLength + (tags.length > 0 ? 1 : 0) + t.length
+    if (next > BOOK_LIMITS.tags) break
+    tagsLength = next
+    tags.push(t)
+  }
   return {
     ...b,
-    title,
+    title: title.slice(0, BOOK_LIMITS.title).trim(),
+    authors: b.authors.slice(0, BOOK_LIMITS.authors).trim(),
+    coverUrl: b.coverUrl !== null && b.coverUrl.length > BOOK_LIMITS.cover_url ? null : b.coverUrl,
+    description: b.description === null ? null : b.description.slice(0, BOOK_LIMITS.description),
+    notes: b.notes.slice(0, BOOK_LIMITS.notes),
     isbn,
     currentPage: b.currentPage !== null && b.currentPage >= 0 ? b.currentPage : null,
     progressPercent: b.progressPercent === null ? null : Math.min(100, Math.max(0, b.progressPercent)),
-    tags: cleanTags(b.tags),
+    tags,
     series,
     seriesNumber: series !== null ? number : null,
     lentTo,
@@ -102,7 +117,7 @@ function clean(b: Book): Book | null {
 }
 
 /** The dates a status goes with (the app's `withStatusDates`); [previous] is the status the book had. */
-function statusDates(b: Book, previous: Status | null, now: number): Book {
+export function statusDates(b: Book, previous: Status | null, now: number): Book {
   switch (b.status) {
     case 'READING':
       return { ...b, dateRead: null, dateStarted: b.dateStarted ?? (previous !== 'READING' ? now : null) }

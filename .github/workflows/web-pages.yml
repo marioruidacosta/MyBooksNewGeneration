@@ -42,13 +42,33 @@ jobs:
           node-version: 18
           cache: npm
           cache-dependency-path: web/package-lock.json
+      # Without these the site would build and deploy, but nobody could sign in: stop before publishing it.
+      - name: Check the Supabase settings are set
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          missing=""
+          [ -n "$VITE_SUPABASE_URL" ] || missing="$missing VITE_SUPABASE_URL"
+          [ -n "$VITE_SUPABASE_ANON_KEY" ] || missing="$missing VITE_SUPABASE_ANON_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Repository variable(s) not set:$missing. Set them under Settings > Secrets and variables > Actions > Variables, then run this workflow again. Nothing was deployed."
+            exit 1
+          fi
+
+      - name: Lint and test the website
+        working-directory: web
+        run: |
+          npm ci
+          npm run lint
+          npm test -- --run
+
       - name: Build the website into _site/app
         working-directory: web
         env:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
         run: |
-          npm ci
           npm run build
           mkdir -p ../_site/app
           cp -a dist/. ../_site/app/

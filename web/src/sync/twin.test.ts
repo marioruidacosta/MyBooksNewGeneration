@@ -77,6 +77,28 @@ describe('combineRows', () => {
   })
 })
 
+describe('limits', () => {
+  it('joiningTwoLongReviewsStaysWithinTheLimit', () => {
+    const older = 'a'.repeat(1500)
+    const newer = 'b'.repeat(1200)
+    const out = combineRows(row(book('a', { review: older }), 10), row(book('b', { review: newer }), 20))
+    // Both together would not fit: the newest text stays whole and the older one is dropped.
+    expect(out.fields.review).toBe(newer)
+    expect(out.times.review).toBe(20)
+    const notes = combineRows(
+      row(book('a', { notes: 'x'.repeat(15_000) }), 30), row(book('b', { notes: 'y'.repeat(9000) }), 10),
+    )
+    expect(notes.fields.notes).toBe('x'.repeat(15_000))
+    // Joined texts that fit are still joined.
+    const fits = combineRows(row(book('a', { review: 'one' }), 10), row(book('b', { review: 'two' }), 20))
+    expect(fits.fields.review).toBe('two\n\none')
+    // Tags are never joined past their limit either.
+    const tag = (c: string) => Array.from({ length: 150 }, (_, i) => `${c}${String(i).padStart(10, '0')}`)
+    const tags = combineRows(row(book('a', { tags: tag('a') }), 10), row(book('b', { tags: tag('b') }), 20))
+    expect((tags.fields.tags as string).length).toBeLessThanOrEqual(2000)
+  })
+})
+
 describe('combineBooks', () => {
   it('keepsTheKeptIdAndFillsGapsFromTheOther', () => {
     const keep = book('a', { rating: 4, notes: 'mine' })

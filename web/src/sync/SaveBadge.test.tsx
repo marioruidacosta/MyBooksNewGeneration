@@ -35,6 +35,8 @@ describe('SaveBadge', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Offline · 1 change waiting')
 
     act(() => store.set({ rejected: 'value too long' }))
-    expect(screen.getByRole('status')).toHaveTextContent("A change couldn't be saved: value too long")
+    const text = screen.getByRole('status').textContent ?? ''
+    expect(text).toContain("A change couldn't be saved")
+    expect(text).not.toContain('value too long')
   })
 })
