@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rowKey, SyncError, type SyncApi } from '../sync/api'
 import type { Book, SyncRow } from '../sync/model'
+import { mergeFields } from '../sync/merge'
 import { LibraryStore } from '../sync/store'
 import { CoverContext } from '../covers/storage'
 import { ToastProvider } from '../ui/Toast'
@@ -800,6 +801,50 @@ describe('LibraryPage', () => {
     await user.click(screen.getByRole('button', { name: 'Undo' }))
     expect(store.book('a')).toMatchObject({ title: 'Alpha', deleted: false })
     expect(store.quotes('a').map((q) => q.text)).toEqual(['One'])
+  }, T)
+
+  it('undoAfterTheServerForgotKeepsANewerPhoneEdit', async () => {
+    const pushed: { table: string; id: string; fields: Record<string, unknown>; times: Record<string, number> }[] = []
+    const recording: SyncApi = {
+      ...phoneApi,
+      push: async (changes) => {
+        pushed.push(...changes.map((c) => ({ table: c.table, id: c.id, fields: c.fields, times: c.times })))
+        return { applied: changes.map((c) => rowKey(c.table, c.id)), rejected: [] }
+      },
+    }
+    const store = new LibraryStore({ api: recording, owner: 'u1', retryDelays: [60_000], pollMs: 0 })
+    stores.push(store)
+    await store.load()
+    store.create(book('a', { title: 'Alpha', rating: 2 }))
+    const original = store.bookTimes('a')
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    // The server echoes the delete (so the site drops the row for good), then the phone, which still saw the book,
+    // changes its score later than anything the site knew.
+    const echoed = Date.now() - 5
+    const phoneTime = Date.now() + 60_000
+    phone.later.push({ table: 'books', id: 'a', fields: { deleted: true }, times: { deleted: echoed }, seq: 1 })
+    await store.refresh()
+    expect(store.book('a')).toBeUndefined()
+    pushed.length = 0
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    await store.idle()
+
+    // The row goes back with the times it had, and only `deleted` is new: the server keeps the newer score.
+    const row = pushed.filter((c) => c.table === 'books' && c.id === 'a').pop()
+    expect(row?.fields).toMatchObject({ title: 'Alpha', deleted: false })
+    expect(row?.times.rating).toBe(original.rating)
+    expect(row?.times.title).toBe(original.title)
+    expect(row?.times.deleted).toBeGreaterThan(echoed)
+    const server: SyncRow = {
+      table: 'books', id: 'a', fields: { ...row?.fields, rating: 5, deleted: true },
+      times: { ...row?.times, rating: phoneTime, deleted: echoed },
+    }
+    const merged = mergeFields(server, { table: 'books', id: 'a', fields: row?.fields ?? {}, times: row?.times ?? {} })
+    expect(merged.fields).toMatchObject({ rating: 5, deleted: false })
   }, T)
 
   it('deletingBooksWithPhoneDataAsksFirst', async () => {

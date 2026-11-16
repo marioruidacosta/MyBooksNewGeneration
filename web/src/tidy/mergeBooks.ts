@@ -89,6 +89,7 @@ export async function mergeBooks(
   const plan = planMerge(store, keep, drop)
   const keepBefore = keep
   const dropBefore = drop
+  const dropTimes = store.bookTimes(drop.id)
   const changes: Record<string, unknown> = {}
   const after = bookToFields(plan.merged)
   for (const f of plan.fields) changes[f] = after[f]
@@ -143,7 +144,7 @@ export async function mergeBooks(
       for (const [f, v] of Object.entries(wrote)) if (current[f] === v) back[f] = was[f]
       if (Object.keys(back).length > 0) store.edit('books', keep.id, back)
     }
-    store.restoreBook(dropBefore)
+    store.restoreBook(dropBefore, dropTimes)
     const onKeep = new Set(store.quotes(keep.id).map((q) => q.id))
     for (const q of quotes) if (onKeep.has(q.id)) store.edit('quotes', q.id, { book_id: dropBefore.id })
   }

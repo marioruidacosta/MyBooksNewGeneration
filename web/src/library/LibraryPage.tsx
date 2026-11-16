@@ -198,7 +198,11 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
       return
     }
     // What undo needs, taken before the books go: every field of each book (the book itself) and its quotes.
-    const gone = selected.map((b) => ({ book: b, quotes: store.quotes(b.id) }))
+    const gone = selected.map((b) => ({
+      book: b,
+      times: store.bookTimes(b.id),
+      quotes: store.quotes(b.id).map((q) => ({ quote: q, times: store.quoteTimes(q.id) })),
+    }))
     for (const b of selected) store.remove('books', b.id)
     setRowSelection({})
     toast.show(`Deleted ${plural(gone.length, 'book')}.`, {
@@ -206,9 +210,9 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
       // Only `deleted: false` is written, for the books and for the quotes this delete took: a field changed on the
       // phone meanwhile keeps its newer value. It is a normal stamped edit, so it syncs.
       run: () => {
-        for (const { book, quotes } of gone) {
-          store.restoreBook(book)
-          for (const q of quotes) store.restoreQuote(q)
+        for (const { book, times, quotes } of gone) {
+          store.restoreBook(book, times)
+          for (const q of quotes) store.restoreQuote(q.quote, q.times)
         }
       },
     })

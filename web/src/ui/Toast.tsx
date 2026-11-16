@@ -45,6 +45,9 @@ function ToastItem({
           {toast.action.label}
         </button>
       )}
+      <button type="button" className="toast__dismiss" aria-label="Dismiss" onClick={() => onDismiss(toast.id)}>
+        <span aria-hidden="true">×</span>
+      </button>
     </div>
   )
 }
@@ -70,7 +73,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       dismiss(toast.id)
       try {
         toast.action?.run()
-      } catch {
+      } catch (e) {
+        console.error('Undo failed', e)
         show("Couldn't undo.")
       }
     },

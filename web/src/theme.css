@@ -484,6 +484,7 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
 }
 .toast button { border-color: color-mix(in srgb, var(--paper) 45%, transparent); color: inherit; padding: 0.25rem 0.75rem; }
 .toast button:hover:not(:disabled) { background: color-mix(in srgb, var(--paper) 18%, transparent); }
+.toast button.toast__dismiss { padding: 0 0.5rem; border-color: transparent; font-size: 1.125rem; line-height: 1.4; }
 .toast button:focus-visible { outline-color: var(--paper); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(0.5rem); } }
 
