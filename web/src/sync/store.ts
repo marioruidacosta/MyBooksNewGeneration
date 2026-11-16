@@ -30,9 +30,10 @@ export type LocalChangeArgs = {
 
 /**
  * Where a local change comes from, when it isn't an ordinary edit: `import` is a bulk write (a backup or Goodreads
- * import, filling in details) that, as on the phone, is never posted to the community.
+ * import, filling in details) that, as on the phone, is never posted to the community; `restore` is an Undo bringing a
+ * removed book back, which is not a book created on the site.
  */
-export type ChangeOrigin = 'import'
+export type ChangeOrigin = 'import' | 'restore'
 
 /** What [LibraryStore.onLocalChangeWithOrigin] calls: the change, then its [ChangeOrigin] (undefined for an ordinary edit). */
 export type LocalChangeWithOrigin = (...args: [...LocalChangeArgs, origin: ChangeOrigin | undefined]) => void
@@ -509,8 +510,8 @@ export class LibraryStore {
    * any newer value of the phone's. Until the next pull this copy may show the older value.
    */
   restoreBook(book: Book, times: Record<string, number> = {}): void {
-    if (this.rows.has(rowKey('books', book.id))) this.write('books', book.id, { deleted: false }, [], false)
-    else this.write('books', book.id, { ...bookToFields(book), deleted: false }, [], true, undefined, times)
+    if (this.rows.has(rowKey('books', book.id))) this.write('books', book.id, { deleted: false }, [], false, 'restore')
+    else this.write('books', book.id, { ...bookToFields(book), deleted: false }, [], true, 'restore', times)
   }
 
   /** As [restoreBook], for a quote ([times] from [quoteTimes]). */

@@ -256,6 +256,50 @@ describe('the publisher', () => {
     expect(rpc.calls.filter((c) => c.fn !== 'my_shared_book_ids')).toEqual([])
   }, T)
 
+  it('undoingADeleteOfAnExcludedBookPublishesNothing', async () => {
+    const { rpc, store, publisher } = await setup({ shared: [], books: [book('b1')] })
+    const times = store.bookTimes('b1')
+    const gone = store.book('b1')!
+    store.remove('books', 'b1')
+    await publisher.idle()
+    store.restoreBook(gone, times)
+    await publisher.idle()
+    expect(rpc.calls.filter((c) => c.fn !== 'my_shared_book_ids')).toEqual([])
+  }, T)
+
+  it('undoingADeleteBeforeTheUnpublishLeavesALLAsItWas', async () => {
+    const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1')] })
+    // Hold the unpublish back: it is still pending when Undo comes.
+    const slow = new Publisher({
+      store, client: rpc, debounceMs: 60_000, owner: 'u1', currentOwner: () => 'u1',
+    })
+    publishers.push(slow)
+    publisher.stop()
+    await slow.start()
+    const before = rpc.calls.length
+    const gone = store.book('b1')!
+    const times = store.bookTimes('b1')
+    store.remove('books', 'b1')
+    store.restoreBook(gone, times)
+    expect(slow.hasPending()).toBe(false)
+    expect(rpc.calls.slice(before).filter((c) => c.fn !== 'my_shared_book_ids')).toEqual([])
+    expect(slow.isShared('b1')).toBe(true)
+  }, T)
+
+  it('undoingAMergeDoesNotRepublishTheDroppedCopy', async () => {
+    const keep = book('k', { title: 'Same' })
+    const drop = book('d', { title: 'Same', pageCount: 300, status: 'READING', progressPercent: 20 })
+    const { rpc, store, publisher } = await setup({ shared: ['k', 'd'], books: [keep, drop] })
+    const { undo } = await mergeBooks(store, store.book('k')!, store.book('d')!)
+    await publisher.idle()
+    expect(rpc.of('unpublish_book').map((c) => c.args.id)).toEqual(['d'])
+    const published = rpc.of('publish_book').length
+    undo()
+    await publisher.idle()
+    expect(rpc.of('publish_book').filter((c) => (c.args.book as { id: string }).id === 'd')).toEqual([])
+    expect(rpc.of('publish_book').length).toBeGreaterThanOrEqual(published)
+  }, T)
+
   it('aFailedPublishIsRetriedAndNeverUndoesTheEdit', async () => {
     const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1')] })
     rpc.failures = [{ message: 'offline' }, new Error('network down')]
