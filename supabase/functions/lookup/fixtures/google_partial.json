@@ -1,0 +1,12 @@
+{
+  "kind": "books#volumes",
+  "totalItems": 1,
+  "items": [
+    {
+      "volumeInfo": {
+        "title": "Anonymous Pamphlet",
+        "publishedDate": "2005-03-01"
+      }
+    }
+  ]
+}

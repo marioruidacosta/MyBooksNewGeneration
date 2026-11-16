@@ -1,0 +1,88 @@
+name: Web Pages
+
+# Publishes the whole GitHub Pages site: the docs/ pages at the root (privacy.html and delete-account.html are
+# linked from the Play Store listing) and the website under /app/.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'docs/**'
+      - '.github/pages/**'
+      - '.github/workflows/web-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  pages: write
+  id-token: write
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # docs/ holds a .nojekyll file, so the legacy "Deploy from a branch" build never ran Jekyll: it served the
+      # files byte for byte (the .md pages as plain text). Copying docs/ as it is reproduces that exactly;
+      # actions/jekyll-build-pages would render the .md pages and change those URLs.
+      - name: Site root from docs/
+        run: |
+          mkdir _site
+          cp -a docs/. _site/
+          test -f _site/.nojekyll
+          cp .github/pages/404.html _site/404.html
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # Without these the site would build and deploy, but nobody could sign in: stop before publishing it.
+      - name: Check the Supabase settings are set
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          missing=""
+          [ -n "$VITE_SUPABASE_URL" ] || missing="$missing VITE_SUPABASE_URL"
+          [ -n "$VITE_SUPABASE_ANON_KEY" ] || missing="$missing VITE_SUPABASE_ANON_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Repository variable(s) not set:$missing. Set them under Settings > Secrets and variables > Actions > Variables, then run this workflow again. Nothing was deployed."
+            exit 1
+          fi
+
+      - name: Lint and test the website
+        working-directory: web
+        run: |
+          npm ci
+          npm run lint
+          npm test -- --run
+
+      - name: Build the website into _site/app
+        working-directory: web
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          npm run build
+          mkdir -p ../_site/app
+          cp -a dist/. ../_site/app/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

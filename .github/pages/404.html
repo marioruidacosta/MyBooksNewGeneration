@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Page not found</title>
+    <script>
+      // A direct load of a page of the website (/MyBooksNewGeneration/app/book/1) lands here, because
+      // GitHub Pages has no routing. Send it into the app, which puts the path back (web/src/restore-path.ts).
+      // Every other unknown address just shows the message below.
+      (function () {
+        var base = '/MyBooksNewGeneration/app/'
+        var l = window.location
+        if (l.pathname.indexOf(base) === 0) {
+          var path = l.pathname.slice(base.length) + l.search
+          l.replace(base + '?p=' + encodeURIComponent(path) + l.hash)
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <h1>Page not found</h1>
+    <p><a href="/MyBooksNewGeneration/">Back to MyBooks</a></p>
+  </body>
+</html>
