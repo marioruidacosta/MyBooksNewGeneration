@@ -29,3 +29,12 @@ export function progressChange(book: Pick<Book, 'pageCount'>, input: ProgressInp
   }
   return { current_page: null, progress_percent: input.percent }
 }
+
+/** How far into [book] the reader is, 0–100, or null when nothing says. */
+export function progressOf(book: Book): number | null {
+  if (book.progressPercent !== null) return Math.max(0, Math.min(100, book.progressPercent))
+  if (book.currentPage !== null && book.pageCount !== null && book.pageCount > 0) {
+    return Math.max(0, Math.min(100, Math.round((book.currentPage / book.pageCount) * 100)))
+  }
+  return null
+}

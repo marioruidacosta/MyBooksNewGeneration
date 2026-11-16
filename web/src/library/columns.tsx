@@ -1,5 +1,6 @@
 import type { ColumnDef, Row } from '@tanstack/react-table'
 import { CoverImage } from '../covers/CoverImage'
+import { formatDay } from '../text/dates'
 import { searchKey } from '../text/keys'
 import { STATUSES, type Book, type Status } from '../sync/model'
 import { STATUS_LABELS } from './filters'
@@ -37,7 +38,7 @@ export const DEFAULT_VISIBILITY: Record<ColumnId, boolean> = {
   read: true, publisher: false, year: false, pages: false, lentTo: true, added: false,
 }
 
-const date = (ms: number | null) => (ms === null ? '' : new Date(ms).toLocaleDateString())
+const date = (ms: number | null) => (ms === null ? '' : formatDay(ms))
 
 /** A text to sort by (case and accents aside); nothing when empty, which sorts last either way. */
 const sortText = (s: string | null): string | undefined => {

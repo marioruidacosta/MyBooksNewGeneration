@@ -1,18 +1,23 @@
-import { useState, useSyncExternalStore, type CSSProperties, type DragEvent } from 'react'
+import { useEffect, useState, useSyncExternalStore, type CSSProperties, type DragEvent } from 'react'
 import { coverColorCss } from '../covers/coverColor'
 import { CoverImage } from '../covers/CoverImage'
 import { shrinkToJpeg, uploadCover } from '../covers/coverUpload'
 import { CoverContext, type CoverStorage } from '../covers/storage'
-import { STATUS_LABELS } from '../library/filters'
+import { allTags, STATUS_LABELS } from '../library/filters'
 import { supabase } from '../supabase'
 import { useIsShared } from '../share/SharingContext'
 import { STATUSES, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { BOOK_LIMITS, tooLongMessage } from '../sync/limits'
+import { formatDay } from '../text/dates'
+import { AtAGlance } from './AtAGlance'
+import { DateField } from './DateField'
 import { Field } from './Field'
-import { dayText, parseDay, parseWhole } from './parse'
+import { parseWhole } from './parse'
+import { progressChange } from './progress'
 import { statusChange } from './status'
 import { QuoteList } from './QuoteList'
+import { TagInput } from './TagInput'
 
 type Props = {
   store: LibraryStore
@@ -26,9 +31,30 @@ type Props = {
   shrink?: (file: Blob) => Promise<Blob>
 }
 
-const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
+/** Pasting a picture anywhere but in a text box sets it as the cover. */
+function PasteCover({ onFile }: { onFile: (file: File) => void }) {
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target
+      if (target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return
+      const file = Array.from(e.clipboardData?.files ?? []).find((f) => f.type.startsWith('image/'))
+      if (!file) return
+      e.preventDefault()
+      onFile(file)
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [onFile])
+  return null
+}
 
 const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files')
+
+type Ebook = NonNullable<ReturnType<LibraryStore['ebook']>>
+
+/** What the phone has for the ebook, in a line. */
+const ebookLine = (e: Ebook) =>
+  [e.fileName, e.format, e.size !== null ? `${String(Math.max(1, Math.round(e.size / 1024)))} KB` : null].filter(Boolean).join(', ') || 'Yes'
 
 /** One book: every field saved as focus leaves it, status and score, quotes and the cover. */
 export function BookPage({ store, owner, id, onBack, storage = supabase.storage, shrink = shrinkToJpeg }: Props) {
@@ -53,23 +79,25 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
 
   const edit = (fields: Record<string, unknown>) => store.edit('books', id, fields)
   const ebook = store.ebook(id)
+  const suggestions = allTags(store.books())
 
   /** A nullable text: empty means none. */
   const nullableText = (field: string, current: string | null) => (text: string) => {
     const next = text.trim() === '' ? null : text.trim()
-    if (next !== current) edit({ [field]: next })
+    if (next === current) return false
+    edit({ [field]: next })
   }
   /** A text that is always there ('' when empty), kept as typed. */
   const plainText = (field: string, current: string) => (text: string) => {
-    if (text !== current) edit({ [field]: text })
+    if (text === current) return false
+    edit({ [field]: text })
   }
   const whole = (field: string, current: number | null) => (text: string) => {
     const next = parseWhole(text)
-    if (next !== undefined && next !== current) edit({ [field]: next })
+    if (next === undefined || next === current) return false
+    edit({ [field]: next })
   }
-  const day = (field: string, current: number | null) => (text: string) => {
-    const next = parseDay(text)
-    if (next === undefined || dayText(next) === dayText(current)) return
+  const day = (field: string) => (next: number | null) => {
     edit({ [field]: next })
   }
   const show = (n: number | null) => (n === null ? '' : String(n))
@@ -126,6 +154,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
           void setCover(e.dataTransfer.files[0])
         }}
       >
+        <PasteCover onFile={(file) => void setCover(file)} />
         <header className="book-hero">
           <div className="book-hero__inner">
             {onBack && (
@@ -174,18 +203,25 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
                   </span>
                 </div>
               </div>
-              {shared !== null && <p className="share-state">{shared ? 'Shared with friends' : 'Not shared'}</p>}
             </div>
           </div>
         </header>
 
         <div className="book-body">
+          <AtAGlance
+            book={book}
+            shared={shared}
+            ebook={ebook ? ebookLine(ebook) : null}
+            onMarkRead={() => edit(statusChange(book, 'READ', Date.now()))}
+            onProgress={(input) => edit(progressChange(book, input))}
+          />
+          <div className="book-main">
           <form className="book-form" onSubmit={(e) => e.preventDefault()}>
             <fieldset className="book-section">
               <legend>Reading</legend>
               <div className="book-fields">
-                <Field kind="date" label="Started" shown={dayText(book.dateStarted)} onCommit={day('date_started', book.dateStarted)} />
-                <Field kind="date" label="Finished" shown={dayText(book.dateRead)} onCommit={day('date_read', book.dateRead)} />
+                <DateField label="Started" value={book.dateStarted} onCommit={day('date_started')} />
+                <DateField label="Finished" value={book.dateRead} onCommit={day('date_read')} />
                 <Field kind="number" label="Current page" shown={show(book.currentPage)} onCommit={whole('current_page', book.currentPage)} />
                 <Field kind="number" label="Progress (%)" max={100} shown={show(book.progressPercent)} onCommit={whole('progress_percent', book.progressPercent)} />
               </div>
@@ -208,7 +244,8 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
                   shown={book.title}
                   onCommit={(t) => {
                     // A book can't lose its title.
-                    if (t.trim() !== '' && t.trim() !== book.title) edit({ title: t.trim() })
+                    if (t.trim() === '' || t.trim() === book.title) return false
+                    edit({ title: t.trim() })
                   }}
                 />
                 <Field
@@ -216,7 +253,8 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
                   limit={BOOK_LIMITS.authors}
                   shown={book.authors}
                   onCommit={(t) => {
-                    if (t.trim() !== book.authors) edit({ authors: t.trim() })
+                    if (t.trim() === book.authors) return false
+                    edit({ authors: t.trim() })
                   }}
                 />
                 <Field label="ISBN" limit={BOOK_LIMITS.isbn} shown={book.isbn ?? ''} onCommit={nullableText('isbn', book.isbn)} />
@@ -225,13 +263,11 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
                 <Field kind="number" label="Pages" shown={show(book.pageCount)} onCommit={whole('page_count', book.pageCount)} />
                 <Field label="Series" limit={BOOK_LIMITS.series} shown={book.series ?? ''} onCommit={nullableText('series', book.series)} />
                 <Field label="Series number" limit={BOOK_LIMITS.series_number} shown={book.seriesNumber ?? ''} onCommit={nullableText('series_number', book.seriesNumber)} />
-                <Field label="Tags" limit={BOOK_LIMITS.tags} shown={book.tags.join(', ')} onCommit={(t) => {
-                  const tags = [...new Set(t.split(',').map((x) => x.trim()).filter((x) => x !== ''))]
-                  if (!sameList(tags, book.tags)) edit({ tags })
-                }} />
+                <TagInput label="Tags" tags={book.tags} suggestions={suggestions} onChange={(tags) => edit({ tags })} />
                 <Field kind="area" label="Description" limit={BOOK_LIMITS.description} shown={book.description ?? ''} onCommit={(t) => {
                   const next = t.trim() === '' ? null : t
-                  if (next !== book.description) edit({ description: next })
+                  if (next === book.description) return false
+                  edit({ description: next })
                 }} />
               </div>
             </fieldset>
@@ -240,7 +276,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
               <legend>Lending</legend>
               <div className="book-fields">
                 <Field label="Lent to" limit={BOOK_LIMITS.lent_to} shown={book.lentTo ?? ''} onCommit={nullableText('lent_to', book.lentTo)} />
-                <Field kind="date" label="Lent on" shown={dayText(book.lentOn)} onCommit={day('lent_on', book.lentOn)} />
+                <DateField label="Lent on" value={book.lentOn} onCommit={day('lent_on')} />
               </div>
             </fieldset>
           </form>
@@ -262,7 +298,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
                 }}
               />
             </label>
-            <p className="hint">Or drop a picture anywhere on this page.</p>
+            <p className="hint">Or drop or paste a picture anywhere on this page.</p>
             <label className="field">
               <span>Cover link</span>
               <input type="url" maxLength={BOOK_LIMITS.cover_url} value={coverLink} onChange={(e) => setCoverLink(e.target.value)} />
@@ -286,12 +322,13 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
           {ebook && (
             <section className="book-section ebook" aria-labelledby="ebook-title">
               <h2 id="ebook-title">Ebook on a phone</h2>
-              <p>{[ebook.fileName, ebook.format, ebook.size !== null ? `${Math.max(1, Math.round(ebook.size / 1024))} KB` : null].filter(Boolean).join(', ') || 'Yes'}</p>
+              <p>{ebookLine(ebook)}</p>
               <p className="hint">The ebook is read on the phone; the site only shows that it is there.</p>
             </section>
           )}
 
-          <p className="hint added">Added {new Date(book.dateAdded).toLocaleDateString()}</p>
+          <p className="hint added">Added {formatDay(book.dateAdded)}</p>
+          </div>
         </div>
       </main>
     </CoverContext.Provider>
