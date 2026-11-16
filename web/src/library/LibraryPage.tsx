@@ -237,7 +237,7 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
           for (const q of quotes) store.restoreQuote(q.quote, q.times)
         }
       },
-    })
+    }, { focus: true })
   }, [selected, store, toast])
 
   useEffect(() => {

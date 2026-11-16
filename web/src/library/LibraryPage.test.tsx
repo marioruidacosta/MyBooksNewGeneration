@@ -737,6 +737,22 @@ describe('LibraryPage', () => {
     expect(store.book('a')).toMatchObject({ dateStarted: 5, currentPage: 3, progressPercent: 10 })
   }, T)
 
+  it('afterDeletingFocusIsOnUndo', async () => {
+    const store = await open([book('a', { title: 'Alpha', dateAdded: 2 }), book('b', { title: 'Bravo', dateAdded: 1 })])
+    const user = userEvent.setup()
+    show(store)
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.keyboard('{Delete}')
+    expect(store.books().map((b) => b.id)).toEqual(['b'])
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveFocus()
+
+    // Undo gives focus back to the page: the heading, as the row it came from is gone.
+    await user.keyboard('{Enter}')
+    expect(store.books()).toHaveLength(2)
+    expect(screen.getByRole('heading', { level: 1, name: 'Library' })).toHaveFocus()
+  }, T)
+
   it('clickingAStarInTheTableSetsTheScore', async () => {
     const store = await open([book('a', { title: 'Stoner', authors: 'John Williams', rating: null })])
     const user = userEvent.setup()

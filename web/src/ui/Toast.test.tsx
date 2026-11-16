@@ -175,4 +175,76 @@ describe('Toast', () => {
     expect(error).toHaveBeenCalled()
     error.mockRestore()
   })
+
+  it('ctrlZUndoesTheLastAction', async () => {
+    const user = userEvent.setup()
+    const first = vi.fn()
+    const second = vi.fn()
+    function Two() {
+      const toast = useToast()
+      return (
+        <>
+          <button type="button" onClick={() => toast.show('One.', { label: 'Undo', run: first })}>
+            One
+          </button>
+          <button type="button" onClick={() => toast.show('Two.', { label: 'Undo', run: second })}>
+            Two
+          </button>
+          <input aria-label="Text" />
+        </>
+      )
+    }
+    render(
+      <ToastProvider>
+        <Two />
+      </ToastProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: 'One' }))
+    await user.click(screen.getByRole('button', { name: 'Two' }))
+
+    // In a text field, Ctrl+Z is the field's own.
+    await user.click(screen.getByLabelText('Text'))
+    await user.keyboard('{Control>}z{/Control}')
+    expect(second).not.toHaveBeenCalled()
+
+    // Elsewhere it undoes the newest, then the one before.
+    await user.click(screen.getByRole('button', { name: 'Two' }))
+    second.mockClear()
+    await user.keyboard('{Control>}z{/Control}')
+    expect(second).toHaveBeenCalledTimes(1)
+    await user.keyboard('{Control>}z{/Control}')
+    expect(second).toHaveBeenCalledTimes(2)
+    await user.keyboard('{Control>}z{/Control}')
+    expect(first).toHaveBeenCalledTimes(1)
+    await user.keyboard('{Control>}z{/Control}')
+    expect(first).toHaveBeenCalledTimes(1)
+  })
+
+  it('undoOrDismissReturnsFocusToWhereItWas', async () => {
+    const user = userEvent.setup()
+    function Back() {
+      const toast = useToast()
+      return (
+        <>
+          <h1 tabIndex={-1}>Page</h1>
+          <button type="button" onClick={() => toast.show('Done.', { label: 'Undo', run: () => {} }, { focus: true })}>
+            Go
+          </button>
+        </>
+      )
+    }
+    render(
+      <ToastProvider>
+        <Back />
+      </ToastProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: 'Go' }))
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(screen.getByRole('button', { name: 'Go' })).toHaveFocus()
+
+    await user.click(screen.getByRole('button', { name: 'Go' }))
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.getByRole('button', { name: 'Go' })).toHaveFocus()
+  })
 })
