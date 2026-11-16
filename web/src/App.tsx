@@ -14,6 +14,7 @@ import { useSession } from './auth/useSession'
 import { AddPage } from './add/AddPage'
 import { BookPage } from './book/BookPage'
 import { CoverContext } from './covers/storage'
+import { ImportPage } from './io/ImportPage'
 import { LibraryPage } from './library/LibraryPage'
 import { supabase } from './supabase'
 import { createSupabaseSyncApi, type SyncApi } from './sync/api'
@@ -73,6 +74,12 @@ function AddRoute() {
   return <AddPage store={store} onOpen={(id) => void navigate({ to: '/book/$id', params: { id } })} />
 }
 
+function ImportRoute() {
+  const store = useStore()
+  const covers = useContext(CoverContext)
+  return <ImportPage store={store} owner={covers?.owner} storage={covers?.storage} />
+}
+
 function BookRoute() {
   const store = useStore()
   const { id } = bookRoute.useParams()
@@ -118,7 +125,7 @@ const importRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/import',
   beforeLoad: requireSession,
-  component: page('Import'),
+  component: ImportRoute,
 })
 const tidyRoute = createRoute({
   getParentRoute: () => rootRoute,

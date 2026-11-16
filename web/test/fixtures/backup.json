@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "exportedAt": 1763251200000,
+  "books": [
+    {
+      "isbn": "9780441013593", "title": "Dune", "authors": "Frank Herbert", "publisher": "Ace", "publishedYear": 2005,
+      "pageCount": 688, "coverUrl": "cover:photo-dune.jpg", "description": "A desert planet.", "status": "READ",
+      "rating": 5, "notes": "Reread in winter.", "dateAdded": 1701388800000, "dateRead": 1710460800000,
+      "dateStarted": null, "currentPage": null, "progressPercent": null, "review": "A classic.",
+      "shareId": "00000000-0000-0000-0000-00000000aaaa", "shareExcluded": false, "tags": ["classics", "sci-fi"],
+      "series": "Dune", "seriesNumber": "1", "lentTo": null, "lentOn": null,
+      "quotes": [
+        { "text": "Fear is the mind-killer.", "page": 12, "dateAdded": 1710460900000, "position": null },
+        { "text": "The spice must flow.", "page": null, "dateAdded": 1710461000000, "position": "ch3" }
+      ],
+      "ebook": null, "bookmarks": []
+    },
+    {
+      "isbn": null, "title": "Good Omens", "authors": "Terry Pratchett, Neil Gaiman", "publisher": null,
+      "publishedYear": null, "pageCount": null, "coverUrl": "https://example.com/omens.jpg", "description": null,
+      "status": "READING", "rating": null, "notes": "", "dateAdded": 1735689600000, "dateRead": null,
+      "dateStarted": 1735776000000, "currentPage": 120, "progressPercent": 30, "review": "", "shareId": null,
+      "shareExcluded": false, "tags": [], "series": null, "seriesNumber": null, "lentTo": "Ana", "lentOn": 1735862400000,
+      "quotes": [], "ebook": null, "bookmarks": []
+    }
+  ],
+  "challenges": [{ "year": 2025, "goal": 24 }],
+  "hiddenSuggestions": ["9780000000002"],
+  "futureField": true
+}

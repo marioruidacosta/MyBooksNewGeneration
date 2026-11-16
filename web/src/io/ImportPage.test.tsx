@@ -1,0 +1,142 @@
+import 'fake-indexeddb/auto'
+import { IDBFactory } from 'fake-indexeddb'
+import { readFileSync } from 'node:fs'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { strFromU8, unzipSync } from 'fflate'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { rowKey, type SyncApi } from '../sync/api'
+import type { Book } from '../sync/model'
+import { LibraryStore } from '../sync/store'
+import { blobBytes } from './blobBytes'
+import { ImportPage } from './ImportPage'
+
+const api: SyncApi = {
+  pull: async () => ({ rows: [], last: 0 }),
+  push: async (changes) => ({ applied: changes.map((c) => rowKey(c.table, c.id)), rejected: [] }),
+  onPing: () => () => {},
+}
+
+const book = (id: string, over: Partial<Book> = {}): Book => ({
+  id, isbn: null, title: `Book ${id}`, authors: 'Author', publisher: null, publishedYear: null, pageCount: null,
+  coverUrl: null, description: null, status: 'TO_READ', rating: null, notes: '', dateAdded: 7, dateRead: null,
+  dateStarted: null, currentPage: null, progressPercent: null, review: '', tags: [], series: null, seriesNumber: null,
+  lentTo: null, lentOn: null, deleted: false, ...over,
+})
+
+const stores: LibraryStore[] = []
+async function open(books: Book[] = []) {
+  const store = new LibraryStore({ api, owner: 'u1', retryDelays: [60_000], pollMs: 0 })
+  stores.push(store)
+  await store.load()
+  books.forEach((b) => store.create(b))
+  return store
+}
+
+beforeEach(() => {
+  globalThis.indexedDB = new IDBFactory()
+})
+afterEach(async () => {
+  await Promise.all(stores.splice(0).map((s) => s.close()))
+})
+
+const FIVE = [
+  'Title,Author,ISBN13,Exclusive Shelf,My Rating,Private Notes',
+  'Dune,Frank Herbert,="9780441013593",read,5,from goodreads',
+  'Emma,Jane Austen,="9780140434262",to-read,0,',
+  'Ulysses,James Joyce,="9780141182803",to-read,0,',
+  'Hamlet,William Shakespeare,,to-read,0,',
+  'Dracula,Bram Stoker,,to-read,0,',
+].join('\n')
+
+const file = (text: string, name = 'goodreads_library_export.csv') => new File([text], name, { type: 'text/csv' })
+
+describe('ImportPage', () => {
+  it('importMergesExistingBooks', async () => {
+    const user = userEvent.setup()
+    const store = await open([
+      book('dune', { title: 'Dune', authors: 'Frank Herbert', isbn: '9780441013593', notes: 'my own' }),
+      book('emma', { title: 'Emma', authors: 'Jane Austen', isbn: '9780141439587' }),
+    ])
+    render(<ImportPage store={store} now={() => Date.now() + 10_000} />)
+
+    await user.upload(screen.getByLabelText('Goodreads or MyBooks file'), file(FIVE))
+
+    expect(await screen.findByText('3 new · 2 already in your library (merged) · 0 skipped')).toBeInTheDocument()
+    // Nothing is written until the person confirms.
+    expect(store.books()).toHaveLength(2)
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.queryByText(/already in your library/)).not.toBeInTheDocument()
+    expect(store.books()).toHaveLength(2)
+
+    await user.upload(screen.getByLabelText('Goodreads or MyBooks file'), file(FIVE))
+    await user.click(await screen.findByRole('button', { name: 'Import' }))
+
+    expect(await screen.findByText('Imported 3 new books and merged 2.')).toBeInTheDocument()
+    expect(store.books()).toHaveLength(5)
+    expect(store.book('dune')?.notes).toBe('from goodreads\n\nmy own')
+  })
+
+  it('showsWhatItSkips', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    render(<ImportPage store={store} />)
+    await user.upload(
+      screen.getByLabelText('Goodreads or MyBooks file'),
+      new File([readFileSync('test/fixtures/goodreads_library_export.csv')], 'export.csv'),
+    )
+    expect(await screen.findByText('4 new · 0 already in your library (merged) · 1 skipped')).toBeInTheDocument()
+  })
+
+  it('previewsABackupWithItsQuotesAndGoals', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    render(<ImportPage store={store} />)
+    await user.upload(
+      screen.getByLabelText('Goodreads or MyBooks file'),
+      new File([readFileSync('test/fixtures/backup.json')], 'library.json'),
+    )
+    expect(await screen.findByText('2 new · 0 already in your library (merged) · 0 skipped')).toBeInTheDocument()
+    expect(screen.getByText('Also 2 quotes and 1 reading goal.')).toBeInTheDocument()
+  })
+
+  it('saysWhenTheFileIsNotOne', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    render(<ImportPage store={store} />)
+    await user.upload(screen.getByLabelText('Goodreads or MyBooks file'), file('name,age\nAna,3\n', 'x.csv'))
+    expect(await screen.findByRole('alert')).toHaveTextContent("That isn't a Goodreads export.")
+    await user.upload(screen.getByLabelText('Goodreads or MyBooks file'), file('{"version":2}', 'x.json'))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unsupported backup version 2')
+    expect(screen.queryByRole('button', { name: 'Import' })).not.toBeInTheDocument()
+  })
+
+  it('exportsGoodreadsAndTheBackup', async () => {
+    const user = userEvent.setup()
+    const store = await open([
+      book('a', { title: 'Dune', authors: 'Frank Herbert', coverUrl: 'photo' }),
+      book('b', { title: 'Emma', authors: 'Jane Austen' }),
+    ])
+    store.edit('challenges', '2026', { goal: 30 })
+    const download = vi.fn()
+    const getPhoto = vi.fn(async (id: string) => (id === 'a' ? new Uint8Array([4, 5]) : null))
+    render(<ImportPage store={store} download={download} getPhoto={getPhoto} now={() => new Date(2026, 10, 16, 12).getTime()} />)
+
+    await user.click(screen.getByRole('button', { name: 'Export for Goodreads' }))
+    expect(download).toHaveBeenCalledTimes(1)
+    const [csvName, csvBlob] = download.mock.calls[0] as [string, Blob]
+    expect(csvName).toBe('mybooks-goodreads.csv')
+    const csv = strFromU8(await blobBytes(csvBlob))
+    expect(csv.split('\r\n')[0]).toContain('Title,Author,Additional Authors,ISBN,ISBN13')
+    expect(csv).toContain('Dune')
+
+    await user.click(screen.getByRole('button', { name: 'Export a backup' }))
+    await waitFor(() => expect(download).toHaveBeenCalledTimes(2))
+    const [zipName, zipBlob] = download.mock.calls[1] as [string, Blob]
+    expect(zipName).toBe('mybooks-backup-2026-11-16.zip')
+    const entries = unzipSync(await blobBytes(zipBlob))
+    expect(Object.keys(entries).sort()).toEqual(['covers/a.jpg', 'library.json'])
+    expect(getPhoto).toHaveBeenCalledWith('a')
+    expect(JSON.parse(strFromU8(entries['library.json'])).challenges).toEqual([{ year: 2026, goal: 30 }])
+  })
+})

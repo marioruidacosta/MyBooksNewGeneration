@@ -240,6 +240,12 @@ export class LibraryStore {
     return row && !isDeleted(row) ? this.asBook(row) : undefined
   }
 
+  /** When each field of a live book last changed (ms, by the server's field name); empty for a book that isn't here. */
+  bookTimes(id: string): Record<string, number> {
+    const row = this.rows.get(rowKey('books', id))
+    return row && !isDeleted(row) ? { ...row.times } : {}
+  }
+
   /** A book's live quotes, oldest first. */
   quotes(bookId: string): Quote[] {
     let out = this.quotesMemo.get(bookId)
@@ -276,6 +282,17 @@ export class LibraryStore {
       if (!Number.isNaN(c.year) && c.year === year) return c.goal
     }
     return null
+  }
+
+  /** Every live reading goal, by year (rows whose id isn't a year are skipped). */
+  goals(): { year: number; goal: number }[] {
+    const out: { year: number; goal: number }[] = []
+    for (const row of this.rows.values()) {
+      if (row.table !== 'challenges' || isDeleted(row)) continue
+      const c = rowToChallenge(row)
+      if (!Number.isNaN(c.year)) out.push({ year: c.year, goal: c.goal })
+    }
+    return out.sort((a, b) => a.year - b.year)
   }
 
   // ---- changing ----
