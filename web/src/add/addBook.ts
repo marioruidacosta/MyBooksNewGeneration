@@ -35,7 +35,7 @@ export function addBook(store: LibraryStore, found: Found, now = Date.now()): Ad
   if (existing) return { id: existing.id, added: false }
   const id = crypto.randomUUID()
   store.create({
-    id, isbn: found.isbn, title: found.title.slice(0, BOOK_LIMITS.title),
+    id, isbn: found.isbn === null ? null : found.isbn.slice(0, BOOK_LIMITS.isbn), title: found.title.slice(0, BOOK_LIMITS.title),
     authors: authorsText(found, books).slice(0, BOOK_LIMITS.authors), publisher: found.publisher,
     publishedYear: found.year, pageCount: found.pages,
     // A source's texts can be long; the server refuses a row with one over its limit.

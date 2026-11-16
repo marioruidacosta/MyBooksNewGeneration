@@ -33,6 +33,8 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
   /** The kept book chosen for each group (by the group's first book), and the group being confirmed. */
   const [chosen, setChosen] = useState<Record<string, string>>({})
   const [confirming, setConfirming] = useState<string | null>(null)
+  /** Books the person says are not duplicates after all: left out of their group's merge. */
+  const [leftOut, setLeftOut] = useState<Set<string>>(new Set())
 
   const lists = useMemo(
     () => ({
@@ -80,8 +82,8 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
     } catch (e) {
       setError(
         e instanceof NotFoundWithErrors
-          ? 'Not found. A source couldn’t be reached. Try again later.'
-          : 'Couldn’t look that up just now. Try again.',
+          ? "Not found. A source couldn't be reached. Try again later."
+          : "Couldn't look that up just now. Try again.",
       )
     } finally {
       setBusy(null)
@@ -122,7 +124,7 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
       const title = store.book(keepId)?.title ?? 'the book'
       setMessage(
         `Merged ${String(done)} ${done === 1 ? 'book' : 'books'} into ${title}.` +
-          (coverKept ? ' The other book’s cover photo could not be used, so the book keeps its own cover.' : ''),
+          (coverKept ? " The other book's cover photo could not be used, so the book keeps its own cover." : ''),
       )
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : 'The books could not be merged.')
@@ -162,37 +164,57 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
 
   const group = (g: Book[]) => {
     const id = g[0].id
-    const keepId = g.some((b) => b.id === chosen[id]) ? chosen[id] : id
-    const keep = g.find((b) => b.id === keepId) ?? g[0]
-    const others = g.filter((b) => b.id !== keep.id)
+    // Only the books still checked are merged; one left out is not touched.
+    const members = g.filter((b) => !leftOut.has(b.id))
+    const canMerge = members.length >= 2
+    const keep = members.find((b) => b.id === chosen[id]) ?? members[0] ?? g[0]
+    const others = members.filter((b) => b.id !== keep.id)
     return (
       <li key={id} className="tidy-group">
         <fieldset>
           <legend>Which one do you keep?</legend>
           {g.map((b) => (
-            <label key={b.id} className="tidy-choice">
-              <input
-                type="radio"
-                name={`keep-${id}`}
-                checked={b.id === keep.id}
-                disabled={busy !== null}
-                onChange={() => {
-                  setChosen({ ...chosen, [id]: b.id })
-                  setConfirming(null)
-                }}
-              />
-              <CoverImage book={b} compact className="tidy-cover" />
-              <span className="tidy-title">
-                <strong>{b.title}</strong>
-                <span className="hint">
-                  {b.authors}
-                  {b.isbn ? ` · ${b.isbn}` : ''}
+            <div key={b.id} className="tidy-member">
+              <label className="tidy-choice">
+                <input
+                  type="radio"
+                  name={`keep-${id}`}
+                  checked={b.id === keep.id && !leftOut.has(b.id)}
+                  disabled={busy !== null || leftOut.has(b.id)}
+                  onChange={() => {
+                    setChosen({ ...chosen, [id]: b.id })
+                    setConfirming(null)
+                  }}
+                />
+                <CoverImage book={b} compact className="tidy-cover" />
+                <span className="tidy-title">
+                  <strong>{b.title}</strong>
+                  <span className="hint">
+                    {b.authors}
+                    {b.isbn ? ` · ${b.isbn}` : ''}
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+              <label className="tidy-leave">
+                <input
+                  type="checkbox"
+                  aria-label={`Not a duplicate: ${b.title}`}
+                  checked={leftOut.has(b.id)}
+                  disabled={busy !== null}
+                  onChange={(e) => {
+                    const next = new Set(leftOut)
+                    if (e.target.checked) next.add(b.id)
+                    else next.delete(b.id)
+                    setLeftOut(next)
+                    setConfirming(null)
+                  }}
+                />
+                <span>Not a duplicate</span>
+              </label>
+            </div>
           ))}
         </fieldset>
-        {confirming === id ? (
+        {confirming === id && canMerge ? (
           <div role="alertdialog" aria-label="Confirm merge" className="tidy-confirm">
             <p>
               Keep <strong>{keep.title}</strong>. This will delete the other{' '}
@@ -224,7 +246,7 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
             </button>
           </div>
         ) : (
-          <button type="button" disabled={busy !== null} onClick={() => setConfirming(id)}>
+          <button type="button" disabled={busy !== null || !canMerge} onClick={() => setConfirming(id)}>
             Merge
           </button>
         )}

@@ -6,7 +6,7 @@ import { normalizeIsbn, NotFoundWithErrors, type Found, type Lookup } from './lo
 
 export const PASTE_CONCURRENCY = 4
 
-const UNREACHED = 'Not found. A source couldn’t be reached. Try again later.'
+const UNREACHED = "Not found. A source couldn't be reached. Try again later."
 
 type Line =
   | { raw: string; state: 'waiting' | 'looking' | 'notfound' | 'unreached' | 'invalid' | 'error' }

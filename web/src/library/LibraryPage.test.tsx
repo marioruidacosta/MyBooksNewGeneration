@@ -50,6 +50,9 @@ function show(store: LibraryStore, extra: { onAdd?: () => void; onOpen?: (id: st
 const titles = () =>
   within(screen.getByRole('table')).queryAllByRole('link').map((a) => a.textContent)
 
+/** The same as `titles`, without the accessibility-tree walk of a role query: for a test that reads it dozens of times. */
+const quickTitles = () => [...document.querySelectorAll('table a')].map((a) => a.textContent)
+
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
   window.localStorage.clear()
@@ -108,11 +111,11 @@ describe('LibraryPage', () => {
         'pages', 'lentTo', 'added'].map((id) => [id, true]),
     )
     window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(everything))
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     // Newest first until a column is chosen.
-    expect(titles()).toEqual(['Alpha', 'Charlie', 'Bravo'])
+    expect(quickTitles()).toEqual(['Alpha', 'Charlie', 'Bravo'])
 
     const name = { a: 'Alpha', b: 'Bravo', c: 'Charlie' }
     const order = (ids: string) => ids.split('').map((i) => name[i as 'a'])
@@ -133,15 +136,16 @@ describe('LibraryPage', () => {
       ['Added', 'bca', 'acb'],
     ]
     for (const [header, asc, desc] of cases) {
-      const button = screen.getByRole('button', { name: header })
+      const button = [...document.querySelectorAll('th button')].find((b) => b.textContent === header) as HTMLElement
+      expect(button, header).toBeDefined()
       await user.click(button)
-      expect(titles(), `${header} ascending`).toEqual(order(asc))
+      expect(quickTitles(), `${header} ascending`).toEqual(order(asc))
       expect(button.closest('th')).toHaveAttribute('aria-sort', 'ascending')
       await user.click(button)
-      expect(titles(), `${header} descending`).toEqual(order(desc))
+      expect(quickTitles(), `${header} descending`).toEqual(order(desc))
       expect(button.closest('th')).toHaveAttribute('aria-sort', 'descending')
       await user.click(button)
-      expect(titles(), `${header} unsorted`).toEqual(['Alpha', 'Charlie', 'Bravo'])
+      expect(quickTitles(), `${header} unsorted`).toEqual(['Alpha', 'Charlie', 'Bravo'])
     }
   }, T)
 

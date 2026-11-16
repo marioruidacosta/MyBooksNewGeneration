@@ -9,6 +9,18 @@ export default defineConfig(({ command, mode }) => {
   return {
     base: '/MyBooksNewGeneration/app/',
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        output: {
+          // The libraries change rarely: their own files stay cached across deploys, and none passes the size warning.
+          manualChunks(id: string) {
+            if (id.includes('/node_modules/@supabase/')) return 'supabase'
+            if (id.includes('/node_modules/@tanstack/')) return 'tanstack'
+            return undefined
+          },
+        },
+      },
+    },
     test: {
       environment: 'jsdom',
       globalSetup: ['./src/test-global-setup.ts'],

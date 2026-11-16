@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rowKey, type SyncApi } from '../sync/api'
 import type { Book } from '../sync/model'
 import { LibraryStore } from '../sync/store'
+import { addBook } from './addBook'
 import { AddPage } from './AddPage'
 import { NotFoundWithErrors, type Found, type Lookup } from './lookup'
 
@@ -247,5 +248,11 @@ describe('AddPage', () => {
     await user.type(screen.getByLabelText('ISBN or title'), 'blind')
     await user.click(screen.getByRole('button', { name: 'Search' }))
     expect(await screen.findByText("No results. A source couldn't be reached. Try again later.")).toBeInTheDocument()
+  })
+
+  it('addBookCapsTheIsbnAtTheServersLimit', async () => {
+    const store = await open()
+    const { id } = addBook(store, found({ isbn: '9'.repeat(25) }))
+    expect(store.book(id)?.isbn).toHaveLength(20)
   })
 })

@@ -137,4 +137,34 @@ describe('TidyPage merging, more', () => {
     await waitFor(() => expect(store.books().map((b) => b.id)).toEqual(['b']))
     expect((store.book('b') as Book).publisher).toBe('House')
   }, T)
+
+  it('aBookCanBeLeftOutOfAMerge', async () => {
+    const user = userEvent.setup()
+    const store = await open(
+      book({ id: 'a', title: 'Blindness' }),
+      book({ id: 'b', title: 'Blindness: one', publisher: 'House' }),
+      book({ id: 'c', title: 'Blindness: two' }),
+    )
+    render(<TidyPage store={store} owner="u1" storage={storage} />)
+    await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
+
+    // Leave "two" out: only the other two merge.
+    await user.click(screen.getByRole('checkbox', { name: 'Not a duplicate: Blindness: two' }))
+    await user.click(screen.getByRole('button', { name: 'Merge' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('This will delete the other book.')
+    await user.click(screen.getByRole('button', { name: 'Merge and delete' }))
+    await waitFor(() => expect(store.books().map((b) => b.id).sort()).toEqual(['a', 'c']))
+    expect((store.book('a') as Book).publisher).toBe('House')
+  }, T)
+
+  it('aGroupWithFewerThanTwoCheckedCannotMerge', async () => {
+    const user = userEvent.setup()
+    const store = await open(book({ id: 'a', title: 'Blindness' }), book({ id: 'b', title: 'Blindness: one' }))
+    render(<TidyPage store={store} owner="u1" storage={storage} />)
+    await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Not a duplicate: Blindness: one' }))
+    expect(screen.getByRole('button', { name: 'Merge' })).toBeDisabled()
+    await user.click(screen.getByRole('checkbox', { name: 'Not a duplicate: Blindness: one' }))
+    expect(screen.getByRole('button', { name: 'Merge' })).toBeEnabled()
+  }, T)
 })

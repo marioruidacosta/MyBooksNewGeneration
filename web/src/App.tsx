@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import {
   Link,
   Outlet,
@@ -14,17 +14,21 @@ import { useSession } from './auth/useSession'
 import { AddPage } from './add/AddPage'
 import { BookPage } from './book/BookPage'
 import { CoverContext } from './covers/storage'
-import { ImportPage } from './io/ImportPage'
 import { LibraryPage } from './library/LibraryPage'
 import { Publisher } from './share/publisher'
 import { SharingContext } from './share/SharingContext'
 import { supabase } from './supabase'
-import { TidyPage } from './tidy/TidyPage'
 import { createSupabaseSyncApi, type SyncApi } from './sync/api'
 import { SaveBadge } from './sync/SaveBadge'
 import { LibraryStore } from './sync/store'
 import { StoreContext, useOptionalStore, useStore } from './sync/StoreContext'
 import { useLibraryStore, useWarnBeforeClosing } from './sync/useLibraryStore'
+
+// The import and tidy pages (with the ZIP reader and the import code) load when first opened.
+const ImportPage = lazy(() => import('./io/ImportPage').then((m) => ({ default: m.ImportPage })))
+const TidyPage = lazy(() => import('./tidy/TidyPage').then((m) => ({ default: m.TidyPage })))
+
+const loadingPage = <p className="loading">Loading…</p>
 
 interface RouterContext {
   signedIn: boolean
@@ -70,14 +74,22 @@ function AddRoute() {
 function ImportRoute() {
   const store = useStore()
   const covers = useContext(CoverContext)
-  return <ImportPage store={store} owner={covers?.owner} storage={covers?.storage} />
+  return (
+    <Suspense fallback={loadingPage}>
+      <ImportPage store={store} owner={covers?.owner} storage={covers?.storage} />
+    </Suspense>
+  )
 }
 
 function TidyRoute() {
   const store = useStore()
   const covers = useContext(CoverContext)
   if (!covers) throw new Error('TidyRoute: no signed-in account')
-  return <TidyPage store={store} owner={covers.owner} storage={supabase.storage} />
+  return (
+    <Suspense fallback={loadingPage}>
+      <TidyPage store={store} owner={covers.owner} storage={supabase.storage} />
+    </Suspense>
+  )
 }
 
 function BookRoute() {
