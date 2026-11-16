@@ -7,7 +7,8 @@ import { rowKey, SyncError, type SyncApi } from '../sync/api'
 import type { Book } from '../sync/model'
 import { LibraryStore } from '../sync/store'
 import { CoverContext } from '../covers/storage'
-import { COLUMN_STORAGE_KEY } from './columns'
+import { ToastProvider } from '../ui/Toast'
+import { COLUMN_STORAGE_KEY, VIEW_STORAGE_KEY } from './columns'
 import { LibraryPage } from './LibraryPage'
 
 const T = 10_000
@@ -42,8 +43,13 @@ async function open(books: Book[]) {
 function show(store: LibraryStore, extra: { onAdd?: () => void; onOpen?: (id: string) => void } = {}) {
   const onAdd = extra.onAdd ?? vi.fn()
   const onOpen = extra.onOpen ?? vi.fn()
-  render(<LibraryPage store={store} year={2026} onAdd={onAdd} onOpen={onOpen} />)
-  return { onAdd, onOpen }
+  const page = () => (
+    <ToastProvider>
+      <LibraryPage store={store} year={2026} onAdd={onAdd} onOpen={onOpen} />
+    </ToastProvider>
+  )
+  const view = render(page())
+  return { onAdd, onOpen, unmount: view.unmount, again: () => render(page()) }
 }
 
 /** The titles in the table, in row order. */
@@ -335,33 +341,105 @@ describe('LibraryPage', () => {
     expect(store.book('b')?.lentTo).toBeNull()
   }, T)
 
-  it('deleteAsksFirst', async () => {
-    const store = await open([
-      book('a', { title: 'Alpha', dateAdded: 3 }),
-      book('b', { title: 'Bravo', dateAdded: 2 }),
+  it('deletingShowsUndoAndUndoRestoresTheBooks', async () => {
+    const original = [
+      book('a', { title: 'Alpha', dateAdded: 3, status: 'READING', rating: 4, tags: ['x', 'y'], currentPage: 5, pageCount: 90, review: 'Fine' }),
+      book('b', { title: 'Bravo', dateAdded: 2, series: 'Saga', seriesNumber: '2', lentTo: 'Zoe', lentOn: 9 }),
       book('c', { title: 'Charlie', dateAdded: 1 }),
-    ])
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    ]
+    const store = await open(original)
+    const confirm = vi.spyOn(window, 'confirm')
     const user = userEvent.setup()
     show(store)
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
     await user.click(screen.getByRole('checkbox', { name: 'Select Bravo' }))
     await user.click(screen.getByRole('button', { name: 'Delete' }))
-    expect(confirm).toHaveBeenCalledWith('Delete 2 books?')
-    expect(store.books()).toHaveLength(3)
 
-    // The Delete key asks the same.
-    await user.keyboard('{Delete}')
-    expect(confirm).toHaveBeenCalledTimes(2)
-    expect(store.books()).toHaveLength(3)
-
-    confirm.mockReturnValue(true)
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    // No question: the books go, and the toast offers to bring them back.
+    expect(confirm).not.toHaveBeenCalled()
     expect(store.books().map((b) => b.id)).toEqual(['c'])
     expect(titles()).toEqual(['Charlie'])
-    // The selection is gone with the books.
     expect(screen.queryByText('2 selected')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Deleted 2 books.')
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(store.books().map((b) => b.id).sort()).toEqual(['a', 'b', 'c'])
+    expect(store.book('a')).toEqual(original[0])
+    expect(store.book('b')).toEqual(original[1])
+    expect(titles()).toEqual(['Alpha', 'Bravo', 'Charlie'])
+    expect(screen.queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument()
+  }, T)
+
+  it('theDeleteKeyDeletesToo', async () => {
+    const store = await open([book('a', { title: 'Alpha', dateAdded: 3 }), book('b', { title: 'Bravo', dateAdded: 2 })])
+    const confirm = vi.spyOn(window, 'confirm')
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.keyboard('{Delete}')
+    expect(confirm).not.toHaveBeenCalled()
+    expect(store.books().map((b) => b.id)).toEqual(['b'])
+    expect(screen.getByRole('status')).toHaveTextContent('Deleted 1 book.')
+  }, T)
+
+  it('undoRestoresQuotesToo', async () => {
+    const store = await open([book('a', { title: 'Alpha' })])
+    store.createQuote({ id: 'q1', bookId: 'a', text: 'One', page: 3, dateAdded: 1, position: 'p', deleted: false })
+    store.createQuote({ id: 'q2', bookId: 'a', text: 'Two', page: null, dateAdded: 2, position: null, deleted: false })
+    const before = store.quotes('a')
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    expect(store.quotes('a')).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(store.quotes('a')).toEqual(before)
+  }, T)
+
+  it('aRestoredBookSyncsToThePhone', async () => {
+    const pushed: { table: string; id: string; fields: Record<string, unknown> }[] = []
+    const recording: SyncApi = {
+      ...api,
+      push: async (changes) => {
+        pushed.push(...changes.map((c) => ({ table: c.table, id: c.id, fields: c.fields })))
+        return { applied: changes.map((c) => rowKey(c.table, c.id)), rejected: [] }
+      },
+    }
+    const store = new LibraryStore({ api: recording, owner: 'u1', retryDelays: [60_000], pollMs: 0 })
+    stores.push(store)
+    await store.load()
+    store.create(book('a', { title: 'Alpha' }))
+    store.createQuote({ id: 'q1', bookId: 'a', text: 'One', page: null, dateAdded: 1, position: null, deleted: false })
+    await store.idle()
+
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await store.idle()
+    pushed.length = 0
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    await store.idle()
+
+    const row = pushed.filter((c) => c.table === 'books' && c.id === 'a').pop()
+    expect(row?.fields).toMatchObject({ title: 'Alpha', deleted: false })
+    const quote = pushed.filter((c) => c.table === 'quotes' && c.id === 'q1').pop()
+    expect(quote?.fields).toMatchObject({ text: 'One', book_id: 'a', deleted: false })
+  }, T)
+
+  it('holdingDeleteDeletesOnce', async () => {
+    const store = await open([book('a', { title: 'Alpha', dateAdded: 3 }), book('b', { title: 'Bravo', dateAdded: 2 })])
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+
+    fireEvent.keyDown(document.body, { key: 'Delete' })
+    // The key held down repeats: those are not new presses.
+    fireEvent.keyDown(document.body, { key: 'Delete', repeat: true })
+    fireEvent.keyDown(document.body, { key: 'Delete', repeat: true })
+    expect(store.books().map((b) => b.id)).toEqual(['b'])
+    expect(screen.getByRole('status')).toHaveTextContent('Deleted 1 book.')
   }, T)
 
   it('goalIsEditable', async () => {
@@ -485,17 +563,179 @@ describe('LibraryPage', () => {
     }
   }, T)
 
-  it('holdingDeleteAsksOnce', async () => {
-    const store = await open([book('a', { title: 'Alpha', dateAdded: 3 })])
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  it('shelfProgressSavesTheCurrentPage', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', status: 'READING', dateStarted: 1, pageCount: 200, currentPage: 50, progressPercent: 25 }),
+    ])
+    const onOpen = vi.fn()
+    const user = userEvent.setup()
+    show(store, { onOpen })
+    const shelf = screen.getByRole('region', { name: 'Reading now' })
+
+    await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
+    const input = within(shelf).getByRole('spinbutton', { name: 'Current page of Alpha' })
+    expect(input).toHaveValue(50)
+    expect(shelf).toHaveTextContent('of 200')
+    await user.clear(input)
+    await user.type(input, '120{Enter}')
+
+    // As the app's quick progress: the page, and the percentage that follows from the page count.
+    expect(store.book('a')).toMatchObject({ currentPage: 120, progressPercent: 60, status: 'READING' })
+    expect(within(shelf).queryByRole('spinbutton')).not.toBeInTheDocument()
+    expect(within(shelf).getByRole('progressbar', { name: 'Alpha progress' })).toHaveAttribute('aria-valuenow', '60')
+
+    // Leaving the field saves too; a page past the end caps the percentage at 100 and leaves the status alone.
+    await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
+    const again = within(shelf).getByRole('spinbutton', { name: 'Current page of Alpha' })
+    await user.clear(again)
+    await user.type(again, '230')
+    await user.tab()
+    expect(store.book('a')).toMatchObject({ currentPage: 230, progressPercent: 100, status: 'READING' })
+
+    // The cover still opens the book.
+    await user.click(within(shelf).getByRole('link', { name: 'Alpha' }))
+    expect(onOpen).toHaveBeenCalledWith('a')
+  }, T)
+
+  it('shelfProgressWithoutPagesSavesAPercent', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', status: 'READING', dateStarted: 1, pageCount: null, currentPage: 7, progressPercent: null }),
+    ])
     const user = userEvent.setup()
     show(store)
-    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    const shelf = screen.getByRole('region', { name: 'Reading now' })
 
-    fireEvent.keyDown(document.body, { key: 'Delete' })
-    // The key held down repeats: those are not new presses.
-    fireEvent.keyDown(document.body, { key: 'Delete', repeat: true })
-    fireEvent.keyDown(document.body, { key: 'Delete', repeat: true })
-    expect(confirm).toHaveBeenCalledTimes(1)
+    await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
+    const input = within(shelf).getByRole('spinbutton', { name: 'Percent read of Alpha' })
+    await user.type(input, '40{Enter}')
+    expect(store.book('a')).toMatchObject({ currentPage: null, progressPercent: 40 })
+
+    // Something that is not 0 to 100 is not saved.
+    await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
+    const bad = within(shelf).getByRole('spinbutton', { name: 'Percent read of Alpha' })
+    await user.clear(bad)
+    await user.type(bad, '140{Enter}')
+    expect(store.book('a')?.progressPercent).toBe(40)
+    expect(bad).toHaveAttribute('aria-invalid', 'true')
+  }, T)
+
+  it('escapeLeavesProgressUnchanged', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', status: 'READING', dateStarted: 1, pageCount: 200, currentPage: 50, progressPercent: 25 }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+    const shelf = screen.getByRole('region', { name: 'Reading now' })
+    await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
+    const input = within(shelf).getByRole('spinbutton', { name: 'Current page of Alpha' })
+    await user.clear(input)
+    await user.type(input, '99{Escape}')
+    expect(store.book('a')).toMatchObject({ currentPage: 50, progressPercent: 25 })
+    expect(within(shelf).queryByRole('spinbutton')).not.toBeInTheDocument()
+  }, T)
+
+  it('changingStatusInTheTableAppliesTheDates', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', status: 'TO_READ', currentPage: null }),
+      book('b', { title: 'Bravo', status: 'READING', dateStarted: 5, currentPage: 3, progressPercent: 10, dateAdded: 6 }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+
+    const before = Date.now()
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Alpha' }), 'READING')
+    const started = store.book('a')?.dateStarted ?? 0
+    expect(started).toBeGreaterThanOrEqual(before)
+    expect(store.book('a')?.status).toBe('READING')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Alpha' }), 'READ')
+    expect(store.book('a')).toMatchObject({ status: 'READ', dateStarted: started })
+    expect(store.book('a')?.dateRead).toBeGreaterThanOrEqual(before)
+
+    // To read forgets the dates and the progress, as everywhere else.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Bravo' }), 'TO_READ')
+    expect(store.book('b')).toMatchObject({ status: 'TO_READ', dateStarted: null, dateRead: null, currentPage: null, progressPercent: null })
+    expect(screen.getByRole('combobox', { name: 'Status of Bravo' })).toHaveValue('TO_READ')
+  }, T)
+
+  it('clickingAStarInTheTableSetsTheScore', async () => {
+    const store = await open([book('a', { title: 'Stoner', rating: null })])
+    const user = userEvent.setup()
+    show(store)
+
+    await user.click(screen.getByRole('button', { name: '3 stars for Stoner' }))
+    expect(store.book('a')?.rating).toBe(3)
+    expect(screen.getByRole('button', { name: '3 stars for Stoner' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: '1 star for Stoner' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '5 stars for Stoner' }))
+    expect(store.book('a')?.rating).toBe(5)
+
+    // The current star again clears it, as on the book page.
+    await user.click(screen.getByRole('button', { name: '5 stars for Stoner' }))
+    expect(store.book('a')?.rating).toBeNull()
+  }, T)
+
+  it('coversViewShowsTheFilteredBooks', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', authors: 'Ann', status: 'READ', rating: 4, dateAdded: 3 }),
+      book('b', { title: 'Bravo', authors: 'Ben', status: 'READING', dateAdded: 2 }),
+      book('c', { title: 'Charlie', authors: 'Cy', status: 'READ', dateAdded: 1 }),
+    ])
+    const user = userEvent.setup()
+    const { onOpen } = show(store)
+    const view = screen.getByRole('group', { name: 'View' })
+
+    await user.click(within(view).getByRole('button', { name: 'Covers' }))
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    const grid = screen.getByRole('list', { name: 'Covers' })
+    expect(within(grid).getAllByRole('listitem')).toHaveLength(3)
+    // No checkboxes: choosing books and bulk changes are for the table.
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+
+    await user.selectOptions(screen.getByLabelText('Filter by status'), 'READ')
+    expect(within(grid).getAllByRole('listitem').map((li) => li.querySelector('.cover-card__title')?.textContent)).toEqual([
+      'Alpha', 'Charlie',
+    ])
+    expect([...grid.querySelectorAll('.cover-card__author')].map((a) => a.textContent)).toEqual(['Ann', 'Cy'])
+    expect(within(grid).getByRole('img', { name: '4 of 5' })).toBeInTheDocument()
+    expect(within(grid).getAllByRole('img', { name: /of 5/ })).toHaveLength(1)
+
+    await user.click(within(grid).getByRole('link', { name: /Charlie/ }))
+    expect(onOpen).toHaveBeenCalledWith('c')
+
+    await user.click(within(view).getByRole('button', { name: 'Table' }))
+    expect(titles()).toEqual(['Alpha', 'Charlie'])
+  }, T)
+
+  it('theViewChoiceIsRemembered', async () => {
+    const store = await open([book('a', { title: 'Alpha' })])
+    const user = userEvent.setup()
+    const page = show(store)
+    expect(screen.getByRole('button', { name: 'Table' })).toHaveAttribute('aria-pressed', 'true')
+    await user.click(screen.getByRole('button', { name: 'Covers' }))
+    expect(window.localStorage.getItem(VIEW_STORAGE_KEY)).toBe('covers')
+
+    page.unmount()
+    page.again()
+    expect(screen.getByRole('button', { name: 'Covers' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  }, T)
+
+  it('clickingATagChipFiltersByThatTag', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', tags: ['fantasy', 'owned'], dateAdded: 3 }),
+      book('b', { title: 'Bravo', tags: ['history'], dateAdded: 2 }),
+      book('c', { title: 'Charlie', tags: ['fantasy'], dateAdded: 1 }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+    const table = screen.getByRole('table')
+
+    await user.click(within(table).getAllByRole('button', { name: 'fantasy' })[0])
+    expect(titles()).toEqual(['Alpha', 'Charlie'])
+    expect(screen.getByLabelText('Filter by tag')).toHaveValue('fantasy')
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(titles()).toEqual(['Alpha', 'Bravo', 'Charlie'])
   }, T)
 })

@@ -3,13 +3,17 @@ import {
   flexRender, getCoreRowModel, getFilteredRowModel, getSortedRowModel, useReactTable,
   type RowSelectionState, type SortingState, type VisibilityState,
 } from '@tanstack/react-table'
+import { progressChange } from '../book/progress'
 import { statusChange } from '../book/status'
-import { STATUSES, type Book } from '../sync/model'
+import { STATUSES, type Book, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
+import { useToast } from '../ui/toastContext'
 import { BulkBar, type BulkActions } from './BulkBar'
+import { CoverGrid } from './CoverGrid'
 import { ReadingShelf } from './ReadingShelf'
 import {
-  COLUMN_LABELS, COLUMN_STORAGE_KEY, DEFAULT_VISIBILITY, makeColumns, type ColumnId,
+  COLUMN_LABELS, COLUMN_STORAGE_KEY, DEFAULT_VISIBILITY, makeColumns, VIEW_STORAGE_KEY, type CellActions, type ColumnId,
+  type LibraryView,
 } from './columns'
 import {
   allTags, countByStatus, matches, NO_FILTERS, plural, STATUS_LABELS, type Filters, type LentFilter,
@@ -31,6 +35,22 @@ function saveVisibility(v: VisibilityState) {
     window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(v))
   } catch {
     // Not kept this time; the columns still change.
+  }
+}
+
+function loadView(): LibraryView {
+  try {
+    return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'covers' ? 'covers' : 'table'
+  } catch {
+    return 'table'
+  }
+}
+
+function saveView(v: LibraryView) {
+  try {
+    window.localStorage.setItem(VIEW_STORAGE_KEY, v)
+  } catch {
+    // Not kept this time; the view still changes.
   }
 }
 
@@ -105,12 +125,25 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
   const firstVisitOffline = useSyncExternalStore(store.subscribe, () => store.firstVisitOffline)
   // Newest first until a column is chosen.
   const data = useMemo(() => books.slice().sort((a, b) => b.dateAdded - a.dateAdded), [books])
-  const columns = useMemo(() => makeColumns(onOpen), [onOpen])
+  const toast = useToast()
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  const cellActions = useMemo<CellActions>(
+    () => ({
+      // The status and the dates it goes with, exactly as the book page and the bulk bar do.
+      setStatus: (b: Book, status: Status) => {
+        if (b.status !== status) store.edit('books', b.id, statusChange(b, status, Date.now()))
+      },
+      setRating: (b, rating) => store.edit('books', b.id, { rating }),
+      filterByTag: (tag) => setFilters((f) => ({ ...f, tag })),
+    }),
+    [store],
+  )
+  const columns = useMemo(() => makeColumns(onOpen, cellActions), [onOpen, cellActions])
 
   const [sorting, setSorting] = useState<SortingState>([])
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(loadVisibility)
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  const [view, setView] = useState<LibraryView>(loadView)
   const searchRef = useRef<HTMLInputElement>(null)
 
   const table = useReactTable({
@@ -146,10 +179,21 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
 
   const remove = useCallback(() => {
     if (selected.length === 0) return
-    if (!window.confirm(`Delete ${plural(selected.length, 'book')}?`)) return
+    // What undo needs, taken before the books go: every field of each book (the book itself) and its quotes.
+    const gone = selected.map((b) => ({ book: b, quotes: store.quotes(b.id) }))
     for (const b of selected) store.remove('books', b.id)
     setRowSelection({})
-  }, [selected, store])
+    toast.show(`Deleted ${plural(gone.length, 'book')}.`, {
+      label: 'Undo',
+      // A normal write: the rows are set again, so each field that changed is stamped anew and syncs to the phone.
+      run: () => {
+        for (const { book, quotes } of gone) {
+          store.create(book)
+          for (const q of quotes) store.createQuote(q)
+        }
+      },
+    })
+  }, [selected, store, toast])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -160,13 +204,13 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
       } else if (e.key === 'n') {
         e.preventDefault()
         onAdd()
-      } else if (e.key === 'Delete') {
+      } else if (e.key === 'Delete' && view === 'table') {
         remove()
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onAdd, remove])
+  }, [onAdd, remove, view])
 
   // Each change goes through `edit` for each book, and only where the book would change: the rest is not stamped.
   const bulk: BulkActions = {
@@ -235,7 +279,11 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
         </div>
       </header>
 
-      <ReadingShelf books={books} onOpen={onOpen} />
+      <ReadingShelf
+        books={books}
+        onOpen={onOpen}
+        onProgress={(b, input) => store.edit('books', b.id, progressChange(b, input))}
+      />
 
       <div className="toolbar">
         <input
@@ -280,6 +328,24 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
             Clear filters
           </button>
         )}
+        <div className="view-switch" role="group" aria-label="View">
+          {(['table', 'covers'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={view === v}
+              onClick={() => {
+                setView(v)
+                saveView(v)
+                // Choosing books is for the table: nothing stays selected out of sight.
+                if (v === 'covers') setRowSelection({})
+              }}
+            >
+              {v === 'table' ? 'Table' : 'Covers'}
+            </button>
+          ))}
+        </div>
+        {view === 'table' && (
         <details className="columns">
           <summary>Columns</summary>
           <div className="columns-list">
@@ -294,14 +360,18 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
               ))}
           </div>
         </details>
+        )}
         <button type="button" className="primary" onClick={onAdd}>
           Add a book
         </button>
       </div>
 
-      {selected.length > 0 && <BulkBar count={selected.length} tags={tags} actions={bulk} />}
+      {view === 'table' && selected.length > 0 && <BulkBar count={selected.length} tags={tags} actions={bulk} />}
+
+      {view === 'covers' && <CoverGrid books={rows.map((r) => r.original)} onOpen={onOpen} />}
 
       <div className="table-wrap">
+        {view === 'table' && (
         <table className="library-table">
           <thead>
             {table.getHeaderGroups().map((group) => (
@@ -338,6 +408,7 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
             ))}
           </tbody>
         </table>
+        )}
         {rows.length === 0 && (
           <p className="empty">
             {books.length > 0
