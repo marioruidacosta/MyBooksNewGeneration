@@ -636,4 +636,111 @@ describe('BookPage', () => {
     expect(upload).toHaveBeenCalledTimes(1)
     expect(screen.getByText('Or drop or paste a picture anywhere on this page.')).toBeInTheDocument()
   }, T)
+
+  it('aQuoteEditThatSavesNothingShowsNoTick', async () => {
+    const store = await open()
+    store.createQuote({ id: 'q1', bookId: '1', text: 'It is raining', page: 5, dateAdded: 1, position: null, deleted: false })
+    show(store)
+
+    // Emptying a quote is refused; a page typed as 05 over 5 and a page that isn't one save nothing.
+    const text = screen.getByLabelText('Quote 1 text')
+    fireEvent.change(text, { target: { value: '' } })
+    fireEvent.blur(text)
+    const page = screen.getByLabelText('Quote 1 page')
+    fireEvent.change(page, { target: { value: '05' } })
+    fireEvent.blur(page)
+    expect(store.quotes('1')[0]).toMatchObject({ text: 'It is raining', page: 5 })
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument()
+
+    fireEvent.change(page, { target: { value: '6' } })
+    fireEvent.blur(page)
+    expect(store.quotes('1')[0].page).toBe(6)
+    expect(screen.getAllByText('Saved')).toHaveLength(1)
+  }, T)
+
+  it('aDateTypoSaysHowToTypeIt', async () => {
+    const store = await open(book({ dateStarted: new Date(2026, 0, 2).getTime() }))
+    const edit = vi.spyOn(store, 'edit')
+    const user = userEvent.setup()
+    show(store)
+
+    const box = screen.getByLabelText('Started')
+    await user.clear(box)
+    await user.type(box, '10/27/2026')
+    await user.tab()
+    expect(edit).not.toHaveBeenCalled()
+    expect(box).toHaveValue('02/01/2026')
+    expect(screen.getByRole('alert')).toHaveTextContent('Type a date as dd/mm/yyyy')
+
+    await user.type(box, '3')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  }, T)
+
+  it('holdingBackspaceRemovesOneChip', async () => {
+    const store = await open(book({ tags: ['a', 'b', 'c'] }))
+    show(store)
+    const box = screen.getByLabelText('Tags')
+    box.focus()
+
+    fireEvent.keyDown(box, { key: 'Backspace' })
+    fireEvent.keyDown(box, { key: 'Backspace', repeat: true })
+    fireEvent.keyDown(box, { key: 'Backspace', repeat: true })
+    expect(store.book('1')?.tags).toEqual(['a', 'b'])
+
+    // Enter while an input method is composing is not "add".
+    fireEvent.change(box, { target: { value: 'ni' } })
+    fireEvent.keyDown(box, { key: 'Enter', isComposing: true })
+    expect(store.book('1')?.tags).toEqual(['a', 'b'])
+  }, T)
+
+  it('duplicateTagsShowOnceAndRemoveTogether', async () => {
+    const store = await open(book({ tags: ['a', 'b', 'a'] }))
+    const edit = vi.spyOn(store, 'edit')
+    const user = userEvent.setup()
+    show(store)
+
+    expect(screen.getAllByRole('button', { name: 'Remove tag a' })).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Remove tag a' }))
+    expect(edit).toHaveBeenLastCalledWith('books', '1', { tags: ['b'] })
+  }, T)
+
+  it('theTooLongAlertClearsWhenEditing', async () => {
+    const store = await open(book({ tags: ['a'] }))
+    const user = userEvent.setup()
+    show(store)
+
+    const box = screen.getByLabelText('Tags')
+    await user.click(box)
+    fireEvent.change(box, { target: { value: 'x'.repeat(2000) } })
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    await user.type(box, 'y')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    await user.keyboard('{Enter}')
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Remove tag a' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  }, T)
+
+  it('markAsReadWorksWhileThePageEditorIsOpen', async () => {
+    const store = await open(book({ status: 'READING', pageCount: 200 }))
+    const user = userEvent.setup()
+    show(store)
+
+    await user.click(screen.getByRole('button', { name: "I'm on page…" }))
+    const editor = screen.getByLabelText('Current page of Blindness')
+    const mark = screen.getByRole('button', { name: 'Mark as read' })
+    // The editor sits after the buttons, so closing it on blur moves nothing under the pointer.
+    expect(mark.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await user.click(mark)
+
+    expect(store.book('1')?.status).toBe('READ')
+    expect(screen.queryByLabelText('Current page of Blindness')).not.toBeInTheDocument()
+
+    // Leaving READING by the status box closes an open editor too.
+    await user.selectOptions(screen.getByLabelText('Status'), 'READING')
+    expect(screen.queryByLabelText('Current page of Blindness')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: "I'm on page…" })).toBeInTheDocument()
+  }, T)
 })

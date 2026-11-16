@@ -9,10 +9,10 @@ type Props = {
   shown: string
   /**
    * Called when focus leaves and the text differs from [shown]. It gets the text and does nothing for a value that
-   * means no change (an unchanged field never reaches the store). Returning false says nothing was saved, so no
-   * "Saved" tick is shown.
+   * means no change (an unchanged field never reaches the store). It returns true when it saved something: only
+   * then is the "Saved" tick shown.
    */
-  onCommit: (text: string) => void | boolean
+  onCommit: (text: string) => boolean
   kind?: 'text' | 'number' | 'area'
   /** The most characters the server accepts: the box stops typing there, and a longer value is refused. */
   limit?: number
@@ -44,7 +44,7 @@ export function Field({ label, shown, onCommit, kind = 'text', limit, max }: Pro
     setTooBig(false)
     // A number box reports partly typed text ("12e", "-") as empty with badInput: that is a typo, not a clearing.
     if ('validity' in box && box.validity?.badInput) return
-    if (draft !== shown && onCommit(draft) !== false) flash()
+    if (draft !== shown && onCommit(draft)) flash()
   }
   const common = {
     id,

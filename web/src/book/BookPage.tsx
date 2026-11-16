@@ -86,19 +86,23 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
     const next = text.trim() === '' ? null : text.trim()
     if (next === current) return false
     edit({ [field]: next })
+    return true
   }
   /** A text that is always there ('' when empty), kept as typed. */
   const plainText = (field: string, current: string) => (text: string) => {
     if (text === current) return false
     edit({ [field]: text })
+    return true
   }
   const whole = (field: string, current: number | null) => (text: string) => {
     const next = parseWhole(text)
     if (next === undefined || next === current) return false
     edit({ [field]: next })
+    return true
   }
   const day = (field: string) => (next: number | null) => {
     edit({ [field]: next })
+    return true
   }
   const show = (n: number | null) => (n === null ? '' : String(n))
 
@@ -246,6 +250,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
                     // A book can't lose its title.
                     if (t.trim() === '' || t.trim() === book.title) return false
                     edit({ title: t.trim() })
+                    return true
                   }}
                 />
                 <Field
@@ -255,6 +260,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
                   onCommit={(t) => {
                     if (t.trim() === book.authors) return false
                     edit({ authors: t.trim() })
+                    return true
                   }}
                 />
                 <Field label="ISBN" limit={BOOK_LIMITS.isbn} shown={book.isbn ?? ''} onCommit={nullableText('isbn', book.isbn)} />
@@ -268,6 +274,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
                   const next = t.trim() === '' ? null : t
                   if (next === book.description) return false
                   edit({ description: next })
+                  return true
                 }} />
               </div>
             </fieldset>

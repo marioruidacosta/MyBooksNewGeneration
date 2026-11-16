@@ -29,6 +29,8 @@ function progressText(book: Book, percent: number): string {
 export function AtAGlance({ book, shared, ebook, onMarkRead, onProgress }: Props) {
   const [editing, setEditing] = useState(false)
   const reading = book.status === 'READING'
+  // Not reading any more (changed elsewhere): the editor is closed, and stays closed if reading starts again.
+  if (!reading && editing) setEditing(false)
   const progress = reading ? progressOf(book) : null
   return (
     <aside className="glance" aria-labelledby="glance-title">
@@ -78,14 +80,11 @@ export function AtAGlance({ book, shared, ebook, onMarkRead, onProgress }: Props
       {ebook !== null && <p>Ebook: {ebook}</p>}
       {(book.status !== 'READ' || reading) && (
         <div className="glance__actions">
-          {reading &&
-            (editing ? (
-              <ProgressEditor book={book} onSave={onProgress} onClose={() => setEditing(false)} />
-            ) : (
-              <button type="button" onClick={() => setEditing(true)}>
-                I&apos;m on page…
-              </button>
-            ))}
+          {reading && (
+            <button type="button" aria-expanded={editing} disabled={editing} onClick={() => setEditing(true)}>
+              I&apos;m on page…
+            </button>
+          )}
           {book.status !== 'READ' && (
             <button type="button" className="primary" onClick={onMarkRead}>
               Mark as read
@@ -93,6 +92,8 @@ export function AtAGlance({ book, shared, ebook, onMarkRead, onProgress }: Props
           )}
         </div>
       )}
+      {/* After the buttons, so closing it (it saves and closes when it loses focus) moves nothing the pointer is on. */}
+      {reading && editing && <ProgressEditor book={book} onSave={onProgress} onClose={() => setEditing(false)} />}
     </aside>
   )
 }

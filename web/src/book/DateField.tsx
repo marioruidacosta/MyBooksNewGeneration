@@ -8,8 +8,8 @@ type Props = {
   label: string
   /** The saved day (local midnight), or null for none. */
   value: number | null
-  /** Called with the day typed or picked (null when cleared). Returning false says nothing was saved. */
-  onCommit: (day: number | null) => void | boolean
+  /** Called with the day typed or picked (null when cleared). Returns true when it saved. */
+  onCommit: (day: number | null) => boolean
 }
 
 /**
@@ -20,11 +20,12 @@ export function DateField({ label, value, onCommit }: Props) {
   const id = useId()
   const [draft, setDraft] = useState<string | null>(null)
   const [saved, flash] = useSaved()
+  const [typo, setTypo] = useState(false)
   const picker = useRef<HTMLInputElement>(null)
 
   const commit = (next: number | null | undefined) => {
     if (next === undefined || dayText(next) === dayText(value)) return
-    if (onCommit(next) !== false) flash()
+    if (onCommit(next)) flash()
   }
   const openPicker = () => {
     const box = picker.current
@@ -50,11 +51,16 @@ export function DateField({ label, value, onCommit }: Props) {
           inputMode="numeric"
           placeholder="dd/mm/yyyy"
           value={draft ?? dayFieldText(value)}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            setTypo(false)
+          }}
           onBlur={() => {
             if (draft === null) return
             setDraft(null)
-            commit(parseDayText(draft))
+            const day = parseDayText(draft)
+            setTypo(day === undefined)
+            commit(day)
           }}
         />
         <button type="button" className="date-pick" aria-label={`Pick a date for ${label}`} onClick={openPicker}>
@@ -69,9 +75,13 @@ export function DateField({ label, value, onCommit }: Props) {
           tabIndex={-1}
           aria-hidden="true"
           value={dayText(value)}
-          onChange={(e) => commit(parseDay(e.target.value))}
+          onChange={(e) => {
+            setTypo(false)
+            commit(parseDay(e.target.value))
+          }}
         />
       </div>
+      {typo && <small role="alert">Type a date as dd/mm/yyyy</small>}
     </div>
   )
 }
