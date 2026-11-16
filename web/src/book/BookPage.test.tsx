@@ -346,7 +346,7 @@ describe('BookPage', () => {
     const store = await open()
     const shared = ['1']
     const client = { rpc: async () => ({ data: shared, error: null }) }
-    const publisher = new Publisher({ store, client, debounceMs: 0 })
+    const publisher = new Publisher({ store, client, debounceMs: 0, owner: 'u1', currentOwner: () => 'u1' })
     await publisher.start()
     const fake = fakeStorage()
     const { unmount } = render(
@@ -359,7 +359,7 @@ describe('BookPage', () => {
     unmount()
     publisher.stop()
     shared.length = 0
-    const second = new Publisher({ store, client, debounceMs: 0 })
+    const second = new Publisher({ store, client, debounceMs: 0, owner: 'u1', currentOwner: () => 'u1' })
     await second.start()
     render(
       <SharingContext.Provider value={second}>

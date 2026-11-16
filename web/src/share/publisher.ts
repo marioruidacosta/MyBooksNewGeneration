@@ -80,10 +80,13 @@ export type PublisherOptions = {
   debounceMs?: number
   /** Waits after a failed send, the last one repeating. */
   retryDelays?: number[]
-  /** The account this publisher posts for; with [currentOwner], a send is dropped when the session is someone else's. */
-  owner?: string
-  /** The account signed in now (null: none). */
-  currentOwner?: () => string | null | Promise<string | null>
+  /** The account this publisher posts for. */
+  owner: string
+  /**
+   * The account signed in now: its id, null when a successful read finds no session, or 'unknown' when the session
+   * can't be read (an error, offline). Nothing is sent unless it is [owner]; 'unknown' waits, anything else drops.
+   */
+  currentOwner: () => string | null | 'unknown' | Promise<string | null | 'unknown'>
 }
 
 type Entry =
@@ -116,7 +119,7 @@ export class Publisher {
   private readonly retryDelays: number[]
   private readonly store: Pick<LibraryStore, 'onLocalChangeWithOrigin'>
   private readonly owner: string | undefined
-  private readonly currentOwner: (() => string | null | Promise<string | null>) | undefined
+  private readonly currentOwner: PublisherOptions['currentOwner'] | undefined
 
   private ids = new Set<string>()
   private idsKnown = false
@@ -284,12 +287,13 @@ export class Publisher {
 
   private async drain(): Promise<void> {
     while (!this.stopped && this.pending.size > 0) {
-      if (!(await this.sessionIsOurs())) return
+      if (!(await this.sessionIsOurs()) || this.stopped) return
       // Read fresh at every pass: a phone may have excluded or shared books since. A failed read decides nothing.
       if (!(await this.refreshIds())) {
         this.scheduleRetry()
         return
       }
+      if (this.stopped) return
       let published = false
       for (const [id, entry] of [...this.pending]) {
         if (this.stopped) return
@@ -302,7 +306,9 @@ export class Publisher {
           this.pending.delete(id)
           continue
         }
-        if (!(await this.sessionIsOurs())) return
+        if (!(await this.sessionIsOurs()) || this.stopped) return
+        // The session check was a wait: what is queued for this book may have changed.
+        if (this.pending.get(id) !== entry) continue
         this.sendingId = id
         let outcome: 'sent' | 'dropped' | 'retry'
         try {
@@ -317,10 +323,14 @@ export class Publisher {
         const newer = this.pending.get(id)
         if (newer === entry) this.pending.delete(id)
         else if (newer?.kind === 'publish' && entry.kind === 'publish') {
-          // Changed while this went out: the server has it now, so the next send is measured from there.
-          this.pending.set(id, { ...newer, before: entry.after })
+          // Changed while this went out: the server has it now (when it worked), so the next send is measured from
+          // there, and the book is no longer "new": a delete must take it down.
+          this.pending.set(id, {
+            ...newer, before: entry.after, created: outcome === 'sent' ? false : newer.created,
+          })
         }
         if (outcome === 'sent') {
+          this.refused.delete(id)
           this.failures = 0
           if (entry.kind === 'publish') {
             this.created.delete(id)
@@ -361,16 +371,25 @@ export class Publisher {
     }
   }
 
-  /** Whether the signed-in account is still the one this publisher posts for; if not, everything waiting is dropped. */
+  /**
+   * Whether the signed-in account is this publisher's. Another account or no session (a successful read) drops
+   * everything waiting; a session that can't be read keeps it and tries again later. Without an owner, nothing is
+   * ever sent.
+   */
   private async sessionIsOurs(): Promise<boolean> {
-    if (this.owner === undefined || !this.currentOwner) return true
-    let now: string | null
+    if (this.owner === undefined || !this.currentOwner) return false
+    let now: string | null | 'unknown'
     try {
       now = await this.currentOwner()
     } catch {
-      now = null
+      now = 'unknown'
     }
+    if (this.stopped) return false
     if (now === this.owner) return true
+    if (now === 'unknown') {
+      this.scheduleRetry()
+      return false
+    }
     this.pending.clear()
     this.notify()
     return false

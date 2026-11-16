@@ -45,10 +45,13 @@ class FakeRpc implements RpcClient {
   idsError = false
   /** While set, publish_book waits for it before answering. */
   gate: Promise<void> | null = null
+  /** While set, my_shared_book_ids waits for it before answering. */
+  idsGate: Promise<void> | null = null
 
   async rpc(fn: string, args: Record<string, unknown> = {}) {
     this.calls.push({ fn, args })
     if (fn === 'my_shared_book_ids') {
+      if (this.idsGate) await this.idsGate
       return this.idsError ? { data: null, error: { message: 'offline' } } : { data: [...this.shared], error: null }
     }
     if (fn === 'publish_book' && this.gate) await this.gate
@@ -70,7 +73,7 @@ const stores: LibraryStore[] = []
 const publishers: Publisher[] = []
 
 async function setup(
-  opts: { shared?: string[]; books?: Book[]; retryDelays?: number[]; owner?: string; currentOwner?: () => string | null } = {},
+  opts: { shared?: string[]; books?: Book[]; retryDelays?: number[]; owner?: string; currentOwner?: () => string | null | 'unknown' | Promise<string | null | 'unknown'> } = {},
 ) {
   const api = new FakeApi()
   const rpc = new FakeRpc()
@@ -80,7 +83,7 @@ async function setup(
   await store.load()
   for (const b of opts.books ?? []) store.create(b)
   const publisher = new Publisher({
-    store, client: rpc, debounceMs: 0, retryDelays: opts.retryDelays ?? [5], owner: opts.owner, currentOwner: opts.currentOwner,
+    store, client: rpc, debounceMs: 0, retryDelays: opts.retryDelays ?? [5], owner: opts.owner ?? 'u1', currentOwner: opts.currentOwner ?? (() => 'u1'),
   })
   publishers.push(publisher)
   await publisher.start()
@@ -282,7 +285,7 @@ describe('the publisher', () => {
     stores.push(store)
     await store.load()
     store.create(book('b1'))
-    const publisher = new Publisher({ store, client: rpc, debounceMs: 0, retryDelays: [5] })
+    const publisher = new Publisher({ store, client: rpc, debounceMs: 0, retryDelays: [5], owner: 'u1', currentOwner: () => 'u1' })
     publishers.push(publisher)
     await publisher.start()
     store.edit('books', 'b1', { status: 'READ' })
@@ -357,7 +360,7 @@ describe('the publisher', () => {
     const store = new LibraryStore({ api, owner: 'u1', pollMs: 0, retryDelays: [60_000] })
     stores.push(store)
     await store.load()
-    const publisher = new Publisher({ store, client: rpc, debounceMs: 0, retryDelays: [5] })
+    const publisher = new Publisher({ store, client: rpc, debounceMs: 0, retryDelays: [5], owner: 'u1', currentOwner: () => 'u1' })
     publishers.push(publisher)
     await publisher.start()
     expect(publisher.isShared('b1')).toBeNull()
@@ -383,5 +386,102 @@ describe('the publisher', () => {
     await publisher.idle()
     expect(rpc.of('publish_book')).toHaveLength(2)
     expect(publisher.isShared('new')).toBe(true)
+  }, T)
+
+  it('stoppingDuringTheSessionCheckSendsNothing', async () => {
+    let release!: () => void
+    const held = new Promise<void>((r) => (release = r))
+    let checks = 0
+    const { rpc, store, publisher } = await setup({
+      shared: ['b1'], books: [book('b1')],
+      currentOwner: async () => {
+        if (++checks > 0) await held
+        return 'u1'
+      },
+    })
+    const before = rpc.calls.length
+    store.edit('books', 'b1', { status: 'READ' })
+    while (checks === 0) await new Promise((r) => setTimeout(r, 1))
+    publisher.stop() // an account switch, while the session is being read
+    release()
+    await new Promise((r) => setTimeout(r, 30))
+    expect(rpc.calls.length).toBe(before)
+  }, T)
+
+  it('aSessionErrorKeepsTheQueue', async () => {
+    let session: string | null | 'unknown' = 'unknown'
+    const { rpc, store, publisher } = await setup({
+      shared: ['b1'], books: [book('b1')], currentOwner: () => session,
+    })
+    store.edit('books', 'b1', { status: 'READ' })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(rpc.of('publish_book')).toHaveLength(0)
+    expect(publisher.hasPending()).toBe(true)
+    session = 'u1' // back online
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+  }, T)
+
+  it('signedOutDropsTheQueue', async () => {
+    const { rpc, store, publisher } = await setup({
+      shared: ['b1'], books: [book('b1')], currentOwner: () => null,
+    })
+    store.edit('books', 'b1', { status: 'READ' })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(rpc.of('publish_book')).toHaveLength(0)
+    expect(publisher.hasPending()).toBe(false)
+  }, T)
+
+  it('withoutAnOwnerNothingIsSent', async () => {
+    const api = new FakeApi()
+    const rpc = new FakeRpc()
+    rpc.shared = ['b1']
+    const store = new LibraryStore({ api, owner: 'u1', pollMs: 0, retryDelays: [60_000] })
+    stores.push(store)
+    await store.load()
+    store.create(book('b1'))
+    const publisher = new Publisher({ store, client: rpc, debounceMs: 0, retryDelays: [5] } as never)
+    publishers.push(publisher)
+    await publisher.start()
+    store.edit('books', 'b1', { status: 'READ' })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(rpc.of('publish_book')).toHaveLength(0)
+  }, T)
+
+  it('deletingAfterAnEditDuringTheFirstPublishUnpublishes', async () => {
+    const { rpc, store, publisher } = await setup()
+    let release!: () => void
+    rpc.gate = new Promise<void>((r) => (release = r))
+    store.create(book('new'))
+    while (rpc.of('publish_book').length === 0) await new Promise((r) => setTimeout(r, 1))
+    store.edit('books', 'new', { title: 'Edited meanwhile' })
+    let releaseIds!: () => void
+    rpc.idsGate = new Promise<void>((r) => (releaseIds = r))
+    const idReads = rpc.of('my_shared_book_ids').length
+    release()
+    // The first publish is done; the pass is reading the shared ids before the edit goes out.
+    while (rpc.of('my_shared_book_ids').length === idReads) await new Promise((r) => setTimeout(r, 1))
+    store.remove('books', 'new')
+    releaseIds()
+    await publisher.idle()
+    expect(rpc.of('unpublish_book').map((c) => c.args.id)).toEqual(['new'])
+    expect(rpc.shared).toEqual([])
+  }, T)
+
+  it('aSuccessfulSendClearsTheRefusal', async () => {
+    const { rpc, store, publisher } = await setup()
+    let release!: () => void
+    rpc.gate = new Promise<void>((r) => (release = r))
+    rpc.failures = [{ message: 'invalid book', code: '22023' }]
+    store.create(book('new', { title: 'A' }))
+    while (rpc.of('publish_book').length === 0) await new Promise((r) => setTimeout(r, 1))
+    store.edit('books', 'new', { title: 'B' }) // goes out after the refusal, and works
+    release()
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(2)
+    // Back to what was refused: that is a change from B, and the old refusal must not hide it.
+    store.edit('books', 'new', { title: 'A' })
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(3)
   }, T)
 })

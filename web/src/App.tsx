@@ -165,8 +165,16 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
     const next = new Publisher({
       store,
       client: supabase,
-      owner: userId ?? undefined,
-      currentOwner: async () => (await supabase.auth.getSession()).data.session?.user.id ?? null,
+      owner: userId ?? '',
+      currentOwner: async () => {
+        try {
+          const { data, error } = await supabase.auth.getSession()
+          // A failed read (offline, a refresh that didn't work) says nothing about who is signed in.
+          return error ? 'unknown' : (data.session?.user.id ?? null)
+        } catch {
+          return 'unknown'
+        }
+      },
     })
     let live = true
     void next.start().then(() => {
