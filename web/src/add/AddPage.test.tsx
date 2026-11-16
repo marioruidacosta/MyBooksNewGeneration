@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rowKey, type SyncApi } from '../sync/api'
@@ -195,5 +195,57 @@ describe('AddPage', () => {
     await user.type(screen.getByLabelText('ISBNs, one per line'), '9789722015981')
     await user.click(screen.getByRole('button', { name: 'Look up' }))
     expect(await screen.findAllByText(/source couldn.t be reached/)).toHaveLength(2)
+  })
+
+  it('aDoubleClickOnAddBooksAddsOnce', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    const lookup = lookupOf({
+      lookupIsbn: (isbn) => Promise.resolve(found({ isbn, title: `T${isbn}`, authors: [`A${isbn}`] })),
+    })
+    render(<AddPage store={store} lookup={lookup} onOpen={vi.fn()} />)
+    await user.type(screen.getByLabelText('ISBNs, one per line'), ['9789722015981', '9780140449136'].join('{Enter}'))
+    await user.click(screen.getByRole('button', { name: 'Look up' }))
+    const add = await screen.findByRole('button', { name: 'Add 2 books' })
+    // Two clicks before React can re-render (a fast double click).
+    act(() => {
+      fireEvent.click(add)
+      fireEvent.click(add)
+    })
+    expect(store.books()).toHaveLength(2)
+    expect(screen.getByText('Added 2 books')).toBeInTheDocument()
+    expect(screen.queryByText('Added 0 books')).toBeNull()
+  })
+
+  it('longDescriptionsAreClampedWithMore', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    const long = 'A long story. '.repeat(60).trim()
+    const lookup = lookupOf({
+      searchTitle: () =>
+        Promise.resolve([found({ description: long }), found({ isbn: null, title: 'Short', description: 'Brief.' })]),
+    })
+    render(<AddPage store={store} lookup={lookup} onOpen={vi.fn()} />)
+    await user.type(screen.getByLabelText('ISBN or title'), 'blind')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    const text = await screen.findByText(long)
+    expect(text).toHaveClass('clamped')
+    // Only the long one gets a toggle.
+    expect(screen.getAllByRole('button', { name: 'More' })).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'More' }))
+    expect(text).not.toHaveClass('clamped')
+    await user.click(screen.getByRole('button', { name: 'Less' }))
+    expect(text).toHaveClass('clamped')
+    expect(screen.getByText('Brief.')).not.toHaveClass('clamped')
+  })
+
+  it('aSearchWithAFailedSourceSaysSoOnScreen', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    const lookup = lookupOf({ searchTitle: () => Promise.reject(new NotFoundWithErrors()) })
+    render(<AddPage store={store} lookup={lookup} onOpen={vi.fn()} />)
+    await user.type(screen.getByLabelText('ISBN or title'), 'blind')
+    await user.click(screen.getByRole('button', { name: 'Search' }))
+    expect(await screen.findByText("No results. A source couldn't be reached. Try again later.")).toBeInTheDocument()
   })
 })

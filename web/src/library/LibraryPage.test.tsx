@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rowKey, SyncError, type SyncApi } from '../sync/api'
@@ -428,5 +428,35 @@ describe('LibraryPage', () => {
     // One request for every photo on the page, not one per book.
     expect(createSignedUrls).toHaveBeenCalledTimes(1)
     expect([...createSignedUrls.mock.calls[0][0]].sort()).toEqual(['u-batch/1.jpg', 'u-batch/2.jpg', 'u-batch/3.jpg'])
+  }, T)
+
+  it('clearingASeriesClearsItsNumbers', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', dateAdded: 3, series: 'Saga', seriesNumber: '2' }),
+      book('b', { title: 'Bravo', dateAdded: 2, series: 'Saga', seriesNumber: '10' }),
+    ])
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Select Bravo' }))
+    await user.click(screen.getByRole('button', { name: 'Set series' }))
+    for (const id of ['a', 'b']) {
+      expect(store.book(id)?.series).toBeNull()
+      expect(store.book(id)?.seriesNumber).toBeNull()
+    }
+  }, T)
+
+  it('holdingDeleteAsksOnce', async () => {
+    const store = await open([book('a', { title: 'Alpha', dateAdded: 3 })])
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const user = userEvent.setup()
+    show(store)
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+
+    fireEvent.keyDown(document.body, { key: 'Delete' })
+    // The key held down repeats: those are not new presses.
+    fireEvent.keyDown(document.body, { key: 'Delete', repeat: true })
+    fireEvent.keyDown(document.body, { key: 'Delete', repeat: true })
+    expect(confirm).toHaveBeenCalledTimes(1)
   }, T)
 })

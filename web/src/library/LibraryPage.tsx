@@ -134,7 +134,7 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || isTyping(e.target)) return
       if (e.key === '/') {
         e.preventDefault()
         searchRef.current?.focus()
@@ -171,6 +171,8 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
       for (const b of selected) {
         const fields: Record<string, unknown> = {}
         if (b.series !== series) fields.series = series
+        // No series, no number in it.
+        if (series === null && b.seriesNumber !== null) fields.series_number = null
         if (number !== '' && b.seriesNumber !== number) fields.series_number = number
         if (Object.keys(fields).length > 0) store.edit('books', b.id, fields)
       }

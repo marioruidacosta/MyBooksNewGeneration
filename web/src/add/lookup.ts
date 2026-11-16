@@ -56,6 +56,8 @@ export function isbnQuery(raw: string): IsbnQuery {
 }
 
 const TIMEOUT_MS = 12_000
+/** A call to the `lookup` function: its own 8 s upstream limit plus a cold start, then a dead connection ends here. */
+const FUNCTION_TIMEOUT_MS = 15_000
 
 /** No source had the book, and at least one could not be asked: not the same as a clean miss. */
 export class NotFoundWithErrors extends Error {
@@ -109,11 +111,11 @@ function fromFunction(o: Record<string, unknown>): Found | null {
 type Invoke = (path: string) => Promise<{ data: unknown; error: unknown }>
 
 /** The function through supabase-js (GET, with the session's token). */
-export function createLookupApi(invoke?: Invoke): LookupApi {
+export function createLookupApi(invoke?: Invoke, timeoutMs = FUNCTION_TIMEOUT_MS): LookupApi {
   const call: Invoke =
     invoke ?? ((path) => supabase.functions.invoke(path, { method: 'GET' }) as Promise<{ data: unknown; error: unknown }>)
   const get = async (query: string): Promise<Record<string, unknown>> => {
-    const { data, error } = await withTimeout(call(`lookup?${query}`))
+    const { data, error } = await withTimeout(call(`lookup?${query}`), timeoutMs)
     if (error) throw error instanceof Error ? error : new Error('The lookup service failed')
     return (data ?? {}) as Record<string, unknown>
   }
@@ -257,6 +259,8 @@ export function createLookup(api: LookupApi, fetchIt: Fetch = (u) => fetch(u), t
       const [google, ol] = await Promise.allSettled([api.google(q), openLibrarySearch(fetchIt, q, timeoutMs)])
       if (google.status === 'rejected' && ol.status === 'rejected') throw new Error('Search failed')
       const all = [...(google.status === 'fulfilled' ? google.value : []), ...(ol.status === 'fulfilled' ? ol.value : [])]
+      // Nothing found while a source was down is not a clean "no results".
+      if (all.length === 0 && (google.status === 'rejected' || ol.status === 'rejected')) throw new NotFoundWithErrors()
       const seen = new Set<string>()
       return all.filter((b) => {
         const key = b.isbn ?? `${b.title.toLowerCase()}|${b.authors[0]?.toLowerCase() ?? ''}`

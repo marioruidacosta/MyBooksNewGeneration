@@ -233,7 +233,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
             <Field kind="date" label="Started" shown={dayText(book.dateStarted)} onCommit={day('date_started', book.dateStarted)} />
             <Field kind="date" label="Finished" shown={dayText(book.dateRead)} onCommit={day('date_read', book.dateRead)} />
             <Field kind="number" label="Current page" shown={show(book.currentPage)} onCommit={whole('current_page', book.currentPage)} />
-            <Field kind="number" label="Progress (%)" shown={show(book.progressPercent)} onCommit={whole('progress_percent', book.progressPercent)} />
+            <Field kind="number" label="Progress (%)" max={100} shown={show(book.progressPercent)} onCommit={whole('progress_percent', book.progressPercent)} />
             <Field label="Lent to" limit={BOOK_LIMITS.lent_to} shown={book.lentTo ?? ''} onCommit={nullableText('lent_to', book.lentTo)} />
             <Field kind="date" label="Lent on" shown={dayText(book.lentOn)} onCommit={day('lent_on', book.lentOn)} />
             <Field kind="area" label="Description" limit={BOOK_LIMITS.description} shown={book.description ?? ''} onCommit={(t) => {

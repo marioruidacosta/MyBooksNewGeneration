@@ -13,12 +13,15 @@ type Props = {
   kind?: 'text' | 'number' | 'date' | 'area'
   /** The most characters the server accepts: the box stops typing there, and a longer value is refused. */
   limit?: number
+  /** The largest number a number box accepts: a bigger one is refused with a message, like `limit`. */
+  max?: number
 }
 
 /** A box that keeps what is typed until focus leaves, then hands it over once; untouched boxes never save. */
-export function Field({ label, shown, onCommit, kind = 'text', limit }: Props) {
+export function Field({ label, shown, onCommit, kind = 'text', limit, max }: Props) {
   const [draft, setDraft] = useState<string | null>(null)
   const [tooLong, setTooLong] = useState(false)
+  const [tooBig, setTooBig] = useState(false)
   const value = draft ?? shown
   const finish = (box: HTMLInputElement | HTMLTextAreaElement) => {
     if (draft === null) return
@@ -29,6 +32,11 @@ export function Field({ label, shown, onCommit, kind = 'text', limit }: Props) {
       return
     }
     setTooLong(false)
+    if (max !== undefined && Number(draft) > max) {
+      setTooBig(true)
+      return
+    }
+    setTooBig(false)
     // A number box reports partly typed text ("12e", "-") as empty with badInput: that is a typo, not a clearing.
     if ('validity' in box && box.validity?.badInput) return
     if (draft !== shown) onCommit(draft)
@@ -45,8 +53,9 @@ export function Field({ label, shown, onCommit, kind = 'text', limit }: Props) {
       {kind === 'area' ? (
         <textarea rows={4} {...common} />
       ) : (
-        <input type={kind === 'number' ? 'number' : kind === 'date' ? 'date' : 'text'} min={kind === 'number' ? 0 : undefined} {...common} />
+        <input type={kind === 'number' ? 'number' : kind === 'date' ? 'date' : 'text'} min={kind === 'number' ? 0 : undefined} max={kind === 'number' ? max : undefined} {...common} />
       )}
+      {tooBig && max !== undefined && <small role="alert">{`${label} can't be more than ${String(max)}.`}</small>}
       {tooLong && limit !== undefined && <small role="alert">{tooLongMessage(label, limit)}</small>}
     </label>
   )

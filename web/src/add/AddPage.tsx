@@ -4,7 +4,28 @@ import { addBook, inLibrary } from './addBook'
 import { defaultLookup, isbnQuery, NotFoundWithErrors, type Found, type Lookup } from './lookup'
 import { PasteIsbns } from './PasteIsbns'
 
-const UNREACHED = "Not found. A source couldn’t be reached. Try again later."
+const UNREACHED = "Not found. A source couldn't be reached. Try again later."
+const NO_RESULTS_UNREACHED = "No results. A source couldn't be reached. Try again later."
+
+/** At about this many characters a description would pass four lines. */
+const LONG_DESCRIPTION = 280
+
+/** A source's description: text only, clamped to about four lines with More/Less when long. */
+function Description({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const long = text.length > LONG_DESCRIPTION
+  return (
+    <>
+      {/* The description is untrusted: React renders it as text. */}
+      <p className={long && !open ? 'description clamped' : 'description'}>{text}</p>
+      {long && (
+        <button type="button" onClick={() => setOpen(!open)}>
+          {open ? 'Less' : 'More'}
+        </button>
+      )}
+    </>
+  )
+}
 
 type Props = { store: LibraryStore; lookup?: Lookup; onOpen: (id: string) => void }
 
@@ -37,7 +58,8 @@ export function AddPage({ store, lookup = defaultLookup, onOpen }: Props) {
         setResults(await lookup.searchTitle(q))
       }
     } catch (e) {
-      setError(e instanceof NotFoundWithErrors ? UNREACHED : "Couldn't search just now. Try again.")
+      const unreached = e instanceof NotFoundWithErrors
+      setError(unreached ? (asIsbn.kind === 'valid' ? UNREACHED : NO_RESULTS_UNREACHED) : "Couldn't search just now. Try again.")
     } finally {
       setBusy(false)
     }
@@ -89,8 +111,7 @@ export function AddPage({ store, lookup = defaultLookup, onOpen }: Props) {
               <li key={`${f.isbn ?? 'none'}-${String(i)}`}>
                 <strong>{f.title}</strong> <span>{f.authors.join(', ')}</span>
                 {f.year !== null && <span> ({f.year})</span>}
-                {/* The description is untrusted: React renders it as text. */}
-                {f.description && <p className="description">{f.description}</p>}
+                {f.description && <Description text={f.description} />}
                 {have && <span> Already in your library</span>}{' '}
                 <button type="button" onClick={() => add(f)}>
                   {have ? 'Open' : 'Add'}

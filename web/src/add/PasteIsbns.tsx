@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Book } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { addBook, authorsText, inLibrary } from './addBook'
@@ -32,6 +32,9 @@ export function PasteIsbns({ store, lookup, books }: Props) {
   const [lines, setLines] = useState<Line[]>([])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [adding, setAdding] = useState(false)
+  // Set synchronously, so a second click before the next render finds the work already done.
+  const addingRef = useRef(false)
 
   const set = (i: number, line: Line) => setLines((old) => old.map((l, k) => (k === i ? line : l)))
 
@@ -44,6 +47,8 @@ export function PasteIsbns({ store, lookup, books }: Props) {
     }
     const raws = [...byIsbn.values()]
     setMessage('')
+    addingRef.current = false
+    setAdding(false)
     setLines(raws.map((raw) => ({ raw, state: 'waiting' })))
     setBusy(true)
     try {
@@ -74,9 +79,13 @@ export function PasteIsbns({ store, lookup, books }: Props) {
   }
 
   const addAll = () => {
+    if (addingRef.current) return
+    addingRef.current = true
+    setAdding(true)
     let n = 0
     for (const l of toAdd) if (addBook(store, l.found).added) n += 1
     setMessage(n === 1 ? 'Added 1 book' : `Added ${String(n)} books`)
+    setAdding(false)
   }
 
   const label = (l: Line) => {
@@ -118,7 +127,7 @@ export function PasteIsbns({ store, lookup, books }: Props) {
         </ul>
       )}
       {toAdd.length > 0 && !busy && (
-        <button type="button" className="primary" onClick={addAll}>
+        <button type="button" className="primary" onClick={addAll} disabled={adding}>
           {toAdd.length === 1 ? 'Add 1 book' : `Add ${String(toAdd.length)} books`}
         </button>
       )}

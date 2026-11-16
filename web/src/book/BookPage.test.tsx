@@ -419,4 +419,48 @@ describe('BookPage', () => {
     expect(screen.getByText('Not shared')).toBeInTheDocument()
     second.stop()
   }, T)
+
+  it('addingAQuoteExplainsWhatsMissing', async () => {
+    const store = await open()
+    const user = userEvent.setup()
+    show(store)
+    const add = () => user.click(screen.getByRole('button', { name: 'Add quote' }))
+
+    await add()
+    expect(screen.getByRole('alert')).toHaveTextContent('Write the quote first.')
+    expect(store.quotes('1')).toHaveLength(0)
+
+    await user.type(screen.getByLabelText('New quote'), 'It is raining')
+    await user.type(screen.getByLabelText('Quote page'), '1.5')
+    await add()
+    expect(screen.getByRole('alert')).toHaveTextContent('The page must be a whole number.')
+    expect(store.quotes('1')).toHaveLength(0)
+
+    // Fixed, it adds and the message goes.
+    await user.clear(screen.getByLabelText('Quote page'))
+    await user.type(screen.getByLabelText('Quote page'), '3')
+    await add()
+    expect(store.quotes('1')).toHaveLength(1)
+    expect(screen.queryByRole('alert')).toBeNull()
+  }, T)
+
+  it('progressOver100IsRefused', async () => {
+    const store = await open(book({ status: 'READING', progressPercent: 40 }))
+    const edit = vi.spyOn(store, 'edit')
+    const user = userEvent.setup()
+    show(store)
+    const box = screen.getByLabelText('Progress (%)')
+    await user.clear(box)
+    await user.type(box, '150')
+    await user.tab()
+    expect(edit).not.toHaveBeenCalled()
+    expect(store.book('1')?.progressPercent).toBe(40)
+    expect(screen.getByRole('alert')).toHaveTextContent("Progress (%) can't be more than 100.")
+
+    await user.clear(box)
+    await user.type(box, '100')
+    await user.tab()
+    expect(store.book('1')?.progressPercent).toBe(100)
+    expect(screen.queryByRole('alert')).toBeNull()
+  }, T)
 })

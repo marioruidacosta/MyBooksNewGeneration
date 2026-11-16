@@ -10,12 +10,14 @@ export function QuoteList({ store, bookId }: { store: LibraryStore; bookId: stri
   const [text, setText] = useState('')
   const [page, setPage] = useState('')
   const [tooLong, setTooLong] = useState(false)
+  const [problem, setProblem] = useState('')
 
   const add = () => {
     const body = text.trim()
     const n = parseWhole(page)
     // The server refuses a longer quote (and then every later change to it), so it is never saved.
     setTooLong(body.length > MAX_QUOTE_TEXT)
+    setProblem(body === '' ? 'Write the quote first.' : n === undefined ? 'The page must be a whole number.' : '')
     if (body === '' || n === undefined || body.length > MAX_QUOTE_TEXT) return
     store.createQuote({
       id: crypto.randomUUID(), bookId, text: body, page: n, dateAdded: Date.now(), position: null, deleted: false,
@@ -68,6 +70,7 @@ export function QuoteList({ store, bookId }: { store: LibraryStore; bookId: stri
         <button type="button" className="primary" onClick={add}>
           Add quote
         </button>
+        {problem && <small role="alert">{problem}</small>}
       </div>
     </section>
   )

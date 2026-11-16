@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createLookup, createLookupApi, NotFoundWithErrors, normalizeIsbn, type Found, type LookupApi } from './lookup'
 
 const found = (over: Partial<Found> = {}): Found => ({
@@ -103,8 +103,9 @@ describe('lookup fix round 1', () => {
     const stalled = { ok: true, status: 200, json: () => new Promise(() => {}) } as unknown as Response
     const a = fakes({ timeoutMs: 20, ol: () => stalled })
     await expect(a.lookup.lookupIsbn('9789722015981')).rejects.toBeInstanceOf(NotFoundWithErrors)
+    // A title search that found nothing while a source was down says so (not a clean miss).
     const s = fakes({ timeoutMs: 20, ol: () => stalled })
-    await expect(s.lookup.searchTitle('x')).resolves.toEqual([])
+    await expect(s.lookup.searchTitle('x')).rejects.toBeInstanceOf(NotFoundWithErrors)
   })
 
   it('aNonHttpCoverIsDropped', async () => {
@@ -115,5 +116,36 @@ describe('lookup fix round 1', () => {
       }),
     )
     expect((await api.google('x')).map((r) => r.coverUrl)).toEqual([null, 'https://x.test/y.jpg'])
+  })
+})
+
+describe('lookup minors batch B', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('aSearchWithAFailedSourceSaysSo', async () => {
+    // One source down and nothing found: not a clean "no results".
+    const a = fakes({ google: () => Promise.reject(new Error('502')), ol: () => json({ docs: [] }) })
+    await expect(a.lookup.searchTitle('x')).rejects.toBeInstanceOf(NotFoundWithErrors)
+    // One source down but the other found something: the results stand.
+    const b = fakes({ google: () => Promise.reject(new Error('502')), ol: () => json({ docs: [{ title: 'Found it' }] }) })
+    expect((await b.lookup.searchTitle('x')).map((r) => r.title)).toEqual(['Found it'])
+    // Both answered with nothing: a clean empty list.
+    await expect(fakes({ ol: () => json({ docs: [] }) }).lookup.searchTitle('x')).resolves.toEqual([])
+  })
+
+  it('aStalledFunctionCallTimesOut', async () => {
+    vi.useFakeTimers()
+    const api = createLookupApi(() => new Promise(() => {}))
+    const result = api.google('x').then(
+      () => 'resolved',
+      (e: unknown) => (e as Error).message,
+    )
+    let settled = false
+    void result.then(() => (settled = true))
+    // Still waiting at 14 s: the function call gets about 15 s.
+    await vi.advanceTimersByTimeAsync(14_000)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(await result).toBe('Timed out')
   })
 })
