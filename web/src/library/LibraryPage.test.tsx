@@ -10,6 +10,7 @@ import { LibraryStore } from '../sync/store'
 import { CoverContext } from '../covers/storage'
 import { ToastProvider } from '../ui/Toast'
 import { COLUMN_STORAGE_KEY, VIEW_STORAGE_KEY } from './columns'
+import { quoteOfTheDay } from '../quotes/daily'
 import { LibraryPage } from './LibraryPage'
 
 const T = 10_000
@@ -917,5 +918,20 @@ describe('LibraryPage', () => {
     expect(order()).toEqual(['Alpha', 'Bravo', 'Charlie'])
     await user.selectOptions(sort, 'Recently added')
     expect(order()).toEqual(['Bravo', 'Alpha', 'Charlie'])
+  }, T)
+
+  it('theLibraryShowsTheQuoteOfTheDay', async () => {
+    const store = await open([book('1')])
+    const day = new Date(2026, 10, 16, 12)
+    const quote = quoteOfTheDay(day)
+    const fetchImpl = vi.fn().mockRejectedValue(new Error('offline'))
+    render(
+      <ToastProvider>
+        <LibraryPage store={store} year={2026} onAdd={vi.fn()} onOpen={vi.fn()} quoteDay={day} quoteFetch={fetchImpl} />
+      </ToastProvider>,
+    )
+    expect(screen.getByRole('blockquote')).toHaveAttribute('lang', quote.lang)
+    expect(screen.getByRole('link', { name: quote.author })).toBeInTheDocument()
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalled())
   }, T)
 })

@@ -5,6 +5,8 @@ import {
 } from '@tanstack/react-table'
 import { progressChange } from '../book/progress'
 import { statusChange } from '../book/status'
+import type { PortraitFetch } from '../quotes/daily'
+import { QuoteOfTheDay } from '../quotes/QuoteOfTheDay'
 import { STATUSES, type Book, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { useToast } from '../ui/toastContext'
@@ -125,10 +127,13 @@ export type LibraryPageProps = {
   year?: number
   onAdd: () => void
   onOpen: (id: string) => void
+  /** The day whose quote shows, and what brings its portrait; today and the browser's fetch when left out. */
+  quoteDay?: Date
+  quoteFetch?: PortraitFetch
 }
 
 /** Every book in a table: sort, search, filter, choose several and change them together. */
-export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onOpen }: LibraryPageProps) {
+export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onOpen, quoteDay, quoteFetch }: LibraryPageProps) {
   const books = useSyncExternalStore(store.subscribe, () => store.books())
   const firstVisitOffline = useSyncExternalStore(store.subscribe, () => store.firstVisitOffline)
   // Newest first until a column is chosen.
@@ -306,6 +311,7 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
           <span className="read-count">{readThisYear} read in {year}</span>
         </div>
       </header>
+      <QuoteOfTheDay place="library" now={quoteDay} fetchImpl={quoteFetch} />
 
       <ReadingShelf
         books={books}

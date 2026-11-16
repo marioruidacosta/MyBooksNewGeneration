@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { QuoteOfTheDay } from '../quotes/QuoteOfTheDay'
 import { supabase } from '../supabase'
 
 const CODE_ERROR = "That code didn't work. Check it, or send a new one."
@@ -45,6 +46,7 @@ export function SignIn() {
 
   return (
     <main className="sign-in">
+      <QuoteOfTheDay place="sign-in" />
       <div className="spines" aria-hidden="true" />
       <h1>MyBooks</h1>
       <p className="sign-in__lede">Your library at your desk. Sign in with the email you use in the app.</p>

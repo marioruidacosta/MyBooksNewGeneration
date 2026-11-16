@@ -301,4 +301,13 @@ describe('AddPage', () => {
     const { id } = addBook(store, found({ isbn: '9'.repeat(25) }))
     expect(store.book(id)?.isbn).toHaveLength(20)
   })
+
+  it('anIsbnFromTheJumpBoxStartsItsLookup', async () => {
+    const store = await open()
+    const lookupIsbn = vi.fn().mockResolvedValue(found())
+    render(<AddPage store={store} lookup={lookupOf({ lookupIsbn })} onOpen={vi.fn()} initialIsbn="9789722015981" />)
+    expect(await screen.findByText('Blindness')).toBeInTheDocument()
+    expect(lookupIsbn).toHaveBeenCalledWith('9789722015981')
+    expect(screen.getByLabelText('ISBN or title')).toHaveValue('9789722015981')
+  })
 })
