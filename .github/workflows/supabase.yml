@@ -1,7 +1,7 @@
 name: Supabase
 
 # Starts a throwaway local Supabase (Docker) and runs the pgTAP tests in supabase/tests
-# against the migrations in supabase/migrations.
+# against the migrations in supabase/migrations, and the lookup Edge Function's Deno tests.
 on:
   push:
     paths: ["supabase/**", ".github/workflows/supabase.yml"]
@@ -22,3 +22,15 @@ jobs:
         run: bash .github/scripts/annotate.sh supabase start
       - name: Database tests
         run: bash .github/scripts/annotate.sh supabase test db
+
+  lookup-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      # The lookup Edge Function against recorded BNP and Google Books responses; no network needed.
+      - name: Lookup function tests
+        run: deno test --allow-read supabase/functions/lookup

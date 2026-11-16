@@ -1,0 +1,25 @@
+{
+  "kind": "books#volumes",
+  "totalItems": 1,
+  "items": [
+    {
+      "kind": "books#volume",
+      "id": "B1hSG45JCX4C",
+      "volumeInfo": {
+        "title": "Dune",
+        "subtitle": "Deluxe Edition",
+        "authors": ["Frank Herbert"],
+        "publisher": "Ace",
+        "publishedDate": "1990-09-01",
+        "description": "Set on the desert planet Arrakis.",
+        "industryIdentifiers": [{ "type": "ISBN_13", "identifier": "9780441013593" }],
+        "pageCount": 535,
+        "imageLinks": {
+          "smallThumbnail": "http://books.google.com/books/content?id=B1hSG45JCX4C&zoom=5",
+          "thumbnail": "http://books.google.com/books/content?id=B1hSG45JCX4C&zoom=1"
+        },
+        "language": "en"
+      }
+    }
+  ]
+}
