@@ -16,6 +16,7 @@ import { BookPage } from './book/BookPage'
 import { CoverContext } from './covers/storage'
 import { LibraryPage } from './library/LibraryPage'
 import { PageBoundary } from './PageBoundary'
+import { ThemeSwitch } from './ThemeSwitch'
 import { Publisher } from './share/publisher'
 import { SharingContext } from './share/SharingContext'
 import { supabase } from './supabase'
@@ -41,14 +42,18 @@ function Shell() {
     <>
       {store && (
         <header className="app-bar">
+          <span className="wordmark">MyBooks</span>
           <nav aria-label="Pages">
-            <Link to="/">Library</Link>
+            <Link to="/" activeOptions={{ exact: true }}>
+              Library
+            </Link>
             <Link to="/add">Add a book</Link>
             <Link to="/import">Import</Link>
             <Link to="/tidy">Tidy up</Link>
           </nav>
           <SaveBadge store={store} />
-          <button type="button" onClick={() => void supabase.auth.signOut()}>
+          <ThemeSwitch />
+          <button type="button" className="quiet" onClick={() => void supabase.auth.signOut()}>
             Sign out
           </button>
         </header>

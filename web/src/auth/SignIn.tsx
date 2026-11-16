@@ -45,7 +45,9 @@ export function SignIn() {
 
   return (
     <main className="sign-in">
+      <div className="spines" aria-hidden="true" />
       <h1>MyBooks</h1>
+      <p className="sign-in__lede">Your library at your desk. Sign in with the email you use in the app.</p>
       {step === 'email' ? (
         <form onSubmit={sendCode}>
           <label>

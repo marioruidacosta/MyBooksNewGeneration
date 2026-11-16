@@ -27,7 +27,7 @@ export function QuoteList({ store, bookId }: { store: LibraryStore; bookId: stri
   }
 
   return (
-    <section className="quotes" aria-labelledby="quotes-title">
+    <section className="book-section quotes" aria-labelledby="quotes-title">
       <h2 id="quotes-title">Quotes</h2>
       <ul>
         {quotes.map((q, i) => (

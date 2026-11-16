@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>MyBooks</title>
+    <script>
+      // The chosen look before the first paint, so a Night page never flashes light (src/appearance.ts keeps the rule).
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem('mybooks.theme') === 'paper' ? 'paper' : 'night'
+      } catch (e) {
+        document.documentElement.dataset.theme = 'night'
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

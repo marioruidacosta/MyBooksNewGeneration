@@ -7,6 +7,7 @@ import { statusChange } from '../book/status'
 import { STATUSES, type Book } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { BulkBar, type BulkActions } from './BulkBar'
+import { ReadingShelf } from './ReadingShelf'
 import {
   COLUMN_LABELS, COLUMN_STORAGE_KEY, DEFAULT_VISIBILITY, makeColumns, type ColumnId,
 } from './columns'
@@ -55,7 +56,7 @@ function GoalEditor({ store, year }: { store: LibraryStore; year: number }) {
 
   return (
     <label className="goal">
-      <span>{year} goal:</span>
+      <span>{year} goal</span>
       <input
         type="number"
         min={0}
@@ -69,6 +70,24 @@ function GoalEditor({ store, year }: { store: LibraryStore; year: number }) {
         }}
       />
     </label>
+  )
+}
+
+/** How far the year's reading is towards its goal; nothing when there's no goal. */
+function GoalBar({ store, year, read }: { store: LibraryStore; year: number; read: number }) {
+  const goal = useSyncExternalStore(store.subscribe, () => store.goal(year))
+  if (goal === null || goal <= 0) return null
+  return (
+    <span
+      className="goal-bar"
+      role="progressbar"
+      aria-label={`${year} goal progress`}
+      aria-valuemin={0}
+      aria-valuemax={goal}
+      aria-valuenow={Math.min(read, goal)}
+    >
+      <span style={{ width: `${Math.min(100, (read / goal) * 100)}%` }} />
+    </span>
   )
 }
 
@@ -197,18 +216,26 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
   return (
     <main className="library-page">
       <header className="library-head">
-        <h1>Library</h1>
-        <p className="counts" aria-label="Counts">
-          <span>{plural(books.length, 'book')}</span>
-          {STATUSES.map((s) => (
-            <span key={s}>
-              {STATUS_LABELS[s]} · {plural(counts[s], 'book')}
-            </span>
-          ))}
-        </p>
-        <GoalEditor store={store} year={year} />
-        <span className="read-count">{readThisYear} read in {year}</span>
+        <div className="library-title">
+          <h1>Library</h1>
+          <p className="counts" aria-label="Counts">
+            {plural(books.length, 'book')}:{' '}
+            {STATUSES.map((s, i) => (
+              <span key={s}>
+                {counts[s]} {STATUS_LABELS[s].toLowerCase()}
+                {i < STATUSES.length - 1 ? ', ' : ''}
+              </span>
+            ))}
+          </p>
+        </div>
+        <div className="goal-panel">
+          <GoalEditor store={store} year={year} />
+          <GoalBar store={store} year={year} read={readThisYear} />
+          <span className="read-count">{readThisYear} read in {year}</span>
+        </div>
       </header>
+
+      <ReadingShelf books={books} onOpen={onOpen} />
 
       <div className="toolbar">
         <input

@@ -171,6 +171,30 @@ describe('LibraryPage', () => {
     expect(titles()).toEqual(['Alpha', 'Charlie'])
   }, T)
 
+  it('readingNowShowsTheBooksBeingReadWithHowFarAlong', async () => {
+    const store = await open([
+      book('a', { title: 'Alpha', status: 'READING', progressPercent: 53, dateStarted: 1 }),
+      book('b', { title: 'Bravo', status: 'READING', currentPage: 50, pageCount: 200, dateStarted: 2 }),
+      book('c', { title: 'Charlie', status: 'READ' }),
+    ])
+    const onOpen = vi.fn()
+    show(store, { onOpen })
+    const shelf = screen.getByRole('region', { name: 'Reading now' })
+    // Most recently started first; only the books being read.
+    expect(within(shelf).getAllByRole('link').map((a) => a.getAttribute('aria-label'))).toEqual(['Bravo', 'Alpha'])
+    expect(within(shelf).getByRole('progressbar', { name: 'Alpha progress' })).toHaveAttribute('aria-valuenow', '53')
+    // Without a percentage, the pages say how far along it is.
+    expect(within(shelf).getByRole('progressbar', { name: 'Bravo progress' })).toHaveAttribute('aria-valuenow', '25')
+    await userEvent.setup().click(within(shelf).getByRole('link', { name: 'Alpha' }))
+    expect(onOpen).toHaveBeenCalledWith('a')
+  }, T)
+
+  it('noShelfWhenNothingIsBeingRead', async () => {
+    const store = await open([book('c', { status: 'READ' })])
+    show(store)
+    expect(screen.queryByRole('region', { name: 'Reading now' })).not.toBeInTheDocument()
+  }, T)
+
   it('countsTheBooksByStatus', async () => {
     const store = await open([
       book('a', { status: 'READING' }), book('b', { status: 'READ' }), book('c', { status: 'READ' }),
@@ -178,9 +202,9 @@ describe('LibraryPage', () => {
     show(store)
     const counts = screen.getByLabelText('Counts')
     expect(counts).toHaveTextContent('3 books')
-    expect(counts).toHaveTextContent('Reading · 1 book')
-    expect(counts).toHaveTextContent('Read · 2 books')
-    expect(counts).toHaveTextContent('To buy · 0 books')
+    expect(counts).toHaveTextContent('1 reading')
+    expect(counts).toHaveTextContent('2 read')
+    expect(counts).toHaveTextContent('0 to buy')
   }, T)
 
   it('bulkSetStatusEditsEachSelectedBook', async () => {

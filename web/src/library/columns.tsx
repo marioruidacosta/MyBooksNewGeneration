@@ -124,9 +124,25 @@ export function makeColumns(onOpen: (id: string) => void): ColumnDef<Book>[] {
       ...label('status'),
       accessorFn: (b) => STATUSES.indexOf(b.status),
       sortingFn: 'basic',
-      cell: ({ row }) => STATUS_LABELS[row.original.status],
+      cell: ({ row }) => (
+        <span className={`status status--${row.original.status.toLowerCase()}`}>{STATUS_LABELS[row.original.status]}</span>
+      ),
     },
-    { ...label('score'), accessorFn: (b) => b.rating ?? undefined, sortingFn: 'basic', cell: ({ row }) => row.original.rating ?? '' },
+    {
+      ...label('score'),
+      accessorFn: (b) => b.rating ?? undefined,
+      sortingFn: 'basic',
+      cell: ({ row }) => {
+        const r = row.original.rating
+        if (r === null) return ''
+        return (
+          <span className="score" role="img" aria-label={`${r} of 5`}>
+            {'★'.repeat(r)}
+            <span className="score__rest">{'★'.repeat(5 - r)}</span>
+          </span>
+        )
+      },
+    },
     {
       ...label('tags'),
       accessorFn: (b) => sortText(b.tags.join(', ')),

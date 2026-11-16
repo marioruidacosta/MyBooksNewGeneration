@@ -1,4 +1,5 @@
-import { useState, useSyncExternalStore, type DragEvent } from 'react'
+import { useState, useSyncExternalStore, type CSSProperties, type DragEvent } from 'react'
+import { coverColorCss } from '../covers/coverColor'
 import { CoverImage } from '../covers/CoverImage'
 import { shrinkToJpeg, uploadCover } from '../covers/coverUpload'
 import { CoverContext, type CoverStorage } from '../covers/storage'
@@ -105,10 +106,17 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
     setCoverLink('')
   }
 
+  const facts = [
+    book.publisher,
+    book.publishedYear !== null ? String(book.publishedYear) : null,
+    book.pageCount !== null ? `${book.pageCount} pages` : null,
+  ].filter((f): f is string => f !== null && f !== '')
+
   return (
     <CoverContext.Provider value={{ owner, storage }}>
       <main
         className="book-page"
+        style={{ '--cloth': coverColorCss(book.title) } as CSSProperties}
         onDragOver={(e) => {
           if (hasFiles(e)) e.preventDefault()
         }}
@@ -118,19 +126,129 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
           void setCover(e.dataTransfer.files[0])
         }}
       >
-        <header className="book-head">
-          {onBack && (
-            <button type="button" onClick={onBack}>
-              Back to the library
-            </button>
-          )}
-          <h1>{book.title}</h1>
-          {shared !== null && <p className="share-state">{shared ? 'Shared with friends' : 'Not shared'}</p>}
+        <header className="book-hero">
+          <div className="book-hero__inner">
+            {onBack && (
+              <button type="button" className="back" onClick={onBack}>
+                Back to the library
+              </button>
+            )}
+            <CoverImage book={book} className="cover-large" />
+            <div className="book-hero__text">
+              <h1>{book.title}</h1>
+              {book.authors !== '' && <p className="book-hero__author">{book.authors}</p>}
+              {facts.length > 0 && <p className="book-hero__facts">{facts.join(', ')}</p>}
+              <div className="book-hero__state">
+                <div className="field">
+                  <label htmlFor="book-status">Status</label>
+                  <select
+                    id="book-status"
+                    value={book.status}
+                    onChange={(e) => {
+                      const status = e.target.value as Status
+                      if (status !== book.status) edit(statusChange(book, status, Date.now()))
+                    }}
+                  >
+                    {STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {STATUS_LABELS[s]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field" role="group" aria-label="Score">
+                  <span>Score</span>
+                  <span className="stars">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        className={`star ${book.rating !== null && n <= book.rating ? 'star--on' : ''}`}
+                        aria-label={n === 1 ? '1 star' : `${n} stars`}
+                        aria-pressed={book.rating === n}
+                        onClick={() => edit({ rating: book.rating === n ? null : n })}
+                      >
+                        ★
+                      </button>
+                    ))}
+                  </span>
+                </div>
+              </div>
+              {shared !== null && <p className="share-state">{shared ? 'Shared with friends' : 'Not shared'}</p>}
+            </div>
+          </div>
         </header>
 
-        <div className="book-layout">
-          <aside className="cover-panel" aria-label="Cover">
-            <CoverImage book={book} className="cover-large" />
+        <div className="book-body">
+          <form className="book-form" onSubmit={(e) => e.preventDefault()}>
+            <fieldset className="book-section">
+              <legend>Reading</legend>
+              <div className="book-fields">
+                <Field kind="date" label="Started" shown={dayText(book.dateStarted)} onCommit={day('date_started', book.dateStarted)} />
+                <Field kind="date" label="Finished" shown={dayText(book.dateRead)} onCommit={day('date_read', book.dateRead)} />
+                <Field kind="number" label="Current page" shown={show(book.currentPage)} onCommit={whole('current_page', book.currentPage)} />
+                <Field kind="number" label="Progress (%)" max={100} shown={show(book.progressPercent)} onCommit={whole('progress_percent', book.progressPercent)} />
+              </div>
+            </fieldset>
+
+            <fieldset className="book-section">
+              <legend>Your words</legend>
+              <div className="book-fields">
+                <Field kind="area" label="Review" limit={BOOK_LIMITS.review} shown={book.review} onCommit={plainText('review', book.review)} />
+                <Field kind="area" label="Notes" limit={BOOK_LIMITS.notes} shown={book.notes} onCommit={plainText('notes', book.notes)} />
+              </div>
+            </fieldset>
+
+            <fieldset className="book-section">
+              <legend>About the book</legend>
+              <div className="book-fields">
+                <Field
+                  label="Title"
+                  limit={BOOK_LIMITS.title}
+                  shown={book.title}
+                  onCommit={(t) => {
+                    // A book can't lose its title.
+                    if (t.trim() !== '' && t.trim() !== book.title) edit({ title: t.trim() })
+                  }}
+                />
+                <Field
+                  label="Authors"
+                  limit={BOOK_LIMITS.authors}
+                  shown={book.authors}
+                  onCommit={(t) => {
+                    if (t.trim() !== book.authors) edit({ authors: t.trim() })
+                  }}
+                />
+                <Field label="ISBN" limit={BOOK_LIMITS.isbn} shown={book.isbn ?? ''} onCommit={nullableText('isbn', book.isbn)} />
+                <Field label="Publisher" shown={book.publisher ?? ''} onCommit={nullableText('publisher', book.publisher)} />
+                <Field kind="number" label="Year" shown={show(book.publishedYear)} onCommit={whole('published_year', book.publishedYear)} />
+                <Field kind="number" label="Pages" shown={show(book.pageCount)} onCommit={whole('page_count', book.pageCount)} />
+                <Field label="Series" limit={BOOK_LIMITS.series} shown={book.series ?? ''} onCommit={nullableText('series', book.series)} />
+                <Field label="Series number" limit={BOOK_LIMITS.series_number} shown={book.seriesNumber ?? ''} onCommit={nullableText('series_number', book.seriesNumber)} />
+                <Field label="Tags" limit={BOOK_LIMITS.tags} shown={book.tags.join(', ')} onCommit={(t) => {
+                  const tags = [...new Set(t.split(',').map((x) => x.trim()).filter((x) => x !== ''))]
+                  if (!sameList(tags, book.tags)) edit({ tags })
+                }} />
+                <Field kind="area" label="Description" limit={BOOK_LIMITS.description} shown={book.description ?? ''} onCommit={(t) => {
+                  const next = t.trim() === '' ? null : t
+                  if (next !== book.description) edit({ description: next })
+                }} />
+              </div>
+            </fieldset>
+
+            <fieldset className="book-section">
+              <legend>Lending</legend>
+              <div className="book-fields">
+                <Field label="Lent to" limit={BOOK_LIMITS.lent_to} shown={book.lentTo ?? ''} onCommit={nullableText('lent_to', book.lentTo)} />
+                <Field kind="date" label="Lent on" shown={dayText(book.lentOn)} onCommit={day('lent_on', book.lentOn)} />
+              </div>
+            </fieldset>
+          </form>
+
+          <QuoteList store={store} bookId={id} />
+
+          <section className="book-section cover-panel" aria-label="Cover">
+            <h2>Cover</h2>
             <label className="field">
               <span>Upload cover</span>
               <input
@@ -163,98 +281,18 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
                 {coverError}
               </p>
             )}
-          </aside>
-
-          <form className="book-form" onSubmit={(e) => e.preventDefault()}>
-            <Field
-              label="Title"
-              limit={BOOK_LIMITS.title}
-              shown={book.title}
-              onCommit={(t) => {
-                // A book can't lose its title.
-                if (t.trim() !== '' && t.trim() !== book.title) edit({ title: t.trim() })
-              }}
-            />
-            <Field
-              label="Authors"
-              limit={BOOK_LIMITS.authors}
-              shown={book.authors}
-              onCommit={(t) => {
-                if (t.trim() !== book.authors) edit({ authors: t.trim() })
-              }}
-            />
-            <Field label="ISBN" limit={BOOK_LIMITS.isbn} shown={book.isbn ?? ''} onCommit={nullableText('isbn', book.isbn)} />
-            <Field label="Publisher" shown={book.publisher ?? ''} onCommit={nullableText('publisher', book.publisher)} />
-            <Field kind="number" label="Year" shown={show(book.publishedYear)} onCommit={whole('published_year', book.publishedYear)} />
-            <Field kind="number" label="Pages" shown={show(book.pageCount)} onCommit={whole('page_count', book.pageCount)} />
-            <Field label="Series" limit={BOOK_LIMITS.series} shown={book.series ?? ''} onCommit={nullableText('series', book.series)} />
-            <Field label="Series number" limit={BOOK_LIMITS.series_number} shown={book.seriesNumber ?? ''} onCommit={nullableText('series_number', book.seriesNumber)} />
-            <Field label="Tags" limit={BOOK_LIMITS.tags} shown={book.tags.join(', ')} onCommit={(t) => {
-              const tags = [...new Set(t.split(',').map((x) => x.trim()).filter((x) => x !== ''))]
-              if (!sameList(tags, book.tags)) edit({ tags })
-            }} />
-
-            <div className="field">
-              <label htmlFor="book-status">Status</label>
-              <select
-                id="book-status"
-                value={book.status}
-                onChange={(e) => {
-                  const status = e.target.value as Status
-                  if (status !== book.status) edit(statusChange(book, status, Date.now()))
-                }}
-              >
-                {STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {STATUS_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="field" role="group" aria-label="Score">
-              <span>Score</span>
-              <span className="stars">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    className="star"
-                    aria-label={n === 1 ? '1 star' : `${n} stars`}
-                    aria-pressed={book.rating === n}
-                    onClick={() => edit({ rating: book.rating === n ? null : n })}
-                  >
-                    {book.rating !== null && n <= book.rating ? '★' : '☆'}
-                  </button>
-                ))}
-              </span>
-            </div>
-
-            <Field kind="date" label="Started" shown={dayText(book.dateStarted)} onCommit={day('date_started', book.dateStarted)} />
-            <Field kind="date" label="Finished" shown={dayText(book.dateRead)} onCommit={day('date_read', book.dateRead)} />
-            <Field kind="number" label="Current page" shown={show(book.currentPage)} onCommit={whole('current_page', book.currentPage)} />
-            <Field kind="number" label="Progress (%)" max={100} shown={show(book.progressPercent)} onCommit={whole('progress_percent', book.progressPercent)} />
-            <Field label="Lent to" limit={BOOK_LIMITS.lent_to} shown={book.lentTo ?? ''} onCommit={nullableText('lent_to', book.lentTo)} />
-            <Field kind="date" label="Lent on" shown={dayText(book.lentOn)} onCommit={day('lent_on', book.lentOn)} />
-            <Field kind="area" label="Description" limit={BOOK_LIMITS.description} shown={book.description ?? ''} onCommit={(t) => {
-              const next = t.trim() === '' ? null : t
-              if (next !== book.description) edit({ description: next })
-            }} />
-            <Field kind="area" label="Notes" limit={BOOK_LIMITS.notes} shown={book.notes} onCommit={plainText('notes', book.notes)} />
-            <Field kind="area" label="Review" limit={BOOK_LIMITS.review} shown={book.review} onCommit={plainText('review', book.review)} />
-            <p className="hint">Added {new Date(book.dateAdded).toLocaleDateString()}</p>
-          </form>
-        </div>
-
-        {ebook && (
-          <section className="ebook" aria-labelledby="ebook-title">
-            <h2 id="ebook-title">Ebook on a phone</h2>
-            <p>{[ebook.fileName, ebook.format, ebook.size !== null ? `${Math.max(1, Math.round(ebook.size / 1024))} KB` : null].filter(Boolean).join(' · ') || 'Yes'}</p>
-            <p className="hint">The ebook is read on the phone; the site only shows that it is there.</p>
           </section>
-        )}
 
-        <QuoteList store={store} bookId={id} />
+          {ebook && (
+            <section className="book-section ebook" aria-labelledby="ebook-title">
+              <h2 id="ebook-title">Ebook on a phone</h2>
+              <p>{[ebook.fileName, ebook.format, ebook.size !== null ? `${Math.max(1, Math.round(ebook.size / 1024))} KB` : null].filter(Boolean).join(', ') || 'Yes'}</p>
+              <p className="hint">The ebook is read on the phone; the site only shows that it is there.</p>
+            </section>
+          )}
+
+          <p className="hint added">Added {new Date(book.dateAdded).toLocaleDateString()}</p>
+        </div>
       </main>
     </CoverContext.Provider>
   )
