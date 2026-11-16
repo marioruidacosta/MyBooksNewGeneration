@@ -244,7 +244,7 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
                 )
               })}
             </ul>
-            <p>You can undo it for a few seconds afterwards.</p>
+            <p>You can undo the merge for a few seconds; bookmarks, e-books and a replaced cover photo won't come back.</p>
             <button type="button" disabled={busy !== null} onClick={() => void merge(keep.id, others.map((o) => o.id))}>
               Merge and delete
             </button>

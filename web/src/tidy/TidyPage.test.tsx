@@ -99,7 +99,11 @@ describe('TidyPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
     await user.click(screen.getByRole('button', { name: 'Merge' }))
 
-    expect(screen.getByText(/undo it for a few seconds/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        "You can undo the merge for a few seconds; bookmarks, e-books and a replaced cover photo won't come back.",
+      ),
+    ).toBeInTheDocument()
     expect(screen.getByText(/1 quote moves/i)).toBeInTheDocument()
     expect(store.book('b')).toBeDefined()
 
@@ -192,7 +196,7 @@ describe('TidyPage merging, more', () => {
     await user.click(screen.getByRole('button', { name: 'Merge and delete' }))
 
     await waitFor(() => expect(store.book('b')).toBeUndefined())
-    expect(screen.getByRole('status')).toHaveTextContent('Merged into Blindness.')
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Merged into Blindness.'))
     expect(store.book('a')).toMatchObject({ publisher: 'House', rating: 4 })
     expect(store.quotes('a')).toHaveLength(1)
 
@@ -219,6 +223,7 @@ describe('TidyPage merging, more', () => {
     await user.click(screen.getByRole('button', { name: 'Merge' }))
     await user.click(screen.getByRole('button', { name: 'Merge and delete' }))
     await waitFor(() => expect(store.book('b')).toBeUndefined())
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Merged into Blindness.'))
     expect(store.book('a')).toMatchObject({ publisher: 'House', rating: 4 })
 
     // The phone changes the score during the eight seconds.
