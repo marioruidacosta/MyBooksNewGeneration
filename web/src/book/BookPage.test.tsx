@@ -237,6 +237,32 @@ describe('BookPage', () => {
     expect(store.book('1')).toMatchObject({ status: 'READ', dateStarted: 100, dateRead: 9_000_000 })
   }, T)
 
+  it('aQuoteOverTheLimitIsNotSaved', async () => {
+    const store = await open()
+    const user = userEvent.setup()
+    show(store)
+    const quotes = () => store.quotes('1')
+
+    // Adding: the box stops at the limit, and a longer value that arrives anyway is refused with a message.
+    const box = screen.getByLabelText('New quote')
+    expect(box).toHaveAttribute('maxlength', '5000')
+    fireEvent.change(box, { target: { value: 'x'.repeat(5001) } })
+    await user.click(screen.getByRole('button', { name: 'Add quote' }))
+    expect(quotes()).toHaveLength(0)
+    expect(screen.getByRole('alert')).toHaveTextContent('New quote is too long (5000 characters at most)')
+
+    // Editing: same rule.
+    fireEvent.change(box, { target: { value: 'short' } })
+    await user.click(screen.getByRole('button', { name: 'Add quote' }))
+    expect(quotes()).toHaveLength(1)
+    const text = screen.getByLabelText('Quote 1 text')
+    expect(text).toHaveAttribute('maxlength', '5000')
+    await user.click(text)
+    fireEvent.change(text, { target: { value: 'y'.repeat(5001) } })
+    await user.tab()
+    expect(quotes()[0].text).toBe('short')
+  }, T)
+
   it('quotesAddEditDelete', async () => {
     const store = await open()
     const user = userEvent.setup()
