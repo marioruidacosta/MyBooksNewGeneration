@@ -54,7 +54,7 @@ describe('planImport', () => {
     // 2 of the 5 are already here: one by ISBN, one by title and first author (the ISBNs differ).
     const store = await open([
       book('dune', { title: 'Dune', authors: 'Frank Herbert', isbn: '9780441013593', notes: 'mine', publisher: 'Ace' }),
-      book('emma', { title: 'Emma', authors: 'Jane Austen', isbn: '9780141439587', rating: 4 }),
+      book('emma', { title: 'Emma', authors: 'Jane Austen', isbn: null, rating: 4 }),
     ])
     const rows = parseGoodreads(csv([
       'Dune,Frank Herbert,="9780441013593",read,5,my note,Other Press',
@@ -75,7 +75,7 @@ describe('planImport', () => {
     expect(dune.notes).toBe('my note\n\nmine')
     expect(dune).toMatchObject({ status: 'READ', rating: 5, publisher: 'Ace' })
     // Emma keeps her rating (Goodreads' empty one never erases), and the id.
-    expect(store.book('emma')).toMatchObject({ rating: 4, status: 'TO_READ', isbn: '9780141439587' })
+    expect(store.book('emma')).toMatchObject({ rating: 4, status: 'TO_READ', isbn: '9780140434262' })
   })
 
   it('countsWhatCannotBeImportedAsSkipped', async () => {

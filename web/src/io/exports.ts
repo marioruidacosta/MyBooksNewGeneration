@@ -42,6 +42,8 @@ export function goodreadsExport(store: LibraryStore): { name: string; file: Blob
   return { name: 'mybooks-goodreads.csv', file: new Blob([writeGoodreads(store.books())], { type: 'text/csv' }) }
 }
 
+const PHOTO_CONCURRENCY = 4
+
 const pad = (n: number) => String(n).padStart(2, '0')
 
 /** The library as the app's backup ZIP, with the cover photos that can be fetched. */
@@ -49,20 +51,37 @@ export async function backupExport(
   store: LibraryStore,
   now: number,
   getPhoto: GetPhoto,
-): Promise<{ name: string; file: Blob }> {
+): Promise<{ name: string; file: Blob; missingPhotos: number }> {
   const books = store.books()
   const covers = new Map<string, Uint8Array>()
-  for (const b of books) {
-    if (b.coverUrl !== 'photo') continue
-    const bytes = await getPhoto(b.id)
-    if (bytes) covers.set(b.id, bytes)
+  const photos = books.filter((b) => b.coverUrl === 'photo')
+  let missingPhotos = 0
+  let next = 0
+  // A few photos at a time.
+  const worker = async () => {
+    while (next < photos.length) {
+      const id = photos[next++].id
+      let bytes: Uint8Array | null = null
+      try {
+        bytes = await getPhoto(id)
+      } catch {
+        bytes = null
+      }
+      if (bytes) covers.set(id, bytes)
+      else missingPhotos++
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(PHOTO_CONCURRENCY, photos.length) }, worker))
   const file = writeBackup(
     { books, quotes: books.flatMap((b) => store.quotes(b.id)), challenges: store.goals(), covers },
     now,
   )
   const d = new Date(now)
-  return { name: `mybooks-backup-${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.zip`, file }
+  return {
+    name: `mybooks-backup-${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.zip`,
+    file,
+    missingPhotos,
+  }
 }
 
 /** What the person chose to import: a backup (a ZIP, or JSON) or a Goodreads CSV, told apart by what's in it. */

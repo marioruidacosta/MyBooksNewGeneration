@@ -56,7 +56,7 @@ describe('ImportPage', () => {
     const user = userEvent.setup()
     const store = await open([
       book('dune', { title: 'Dune', authors: 'Frank Herbert', isbn: '9780441013593', notes: 'my own' }),
-      book('emma', { title: 'Emma', authors: 'Jane Austen', isbn: '9780141439587' }),
+      book('emma', { title: 'Emma', authors: 'Jane Austen', isbn: null }),
     ])
     render(<ImportPage store={store} now={() => Date.now() + 10_000} />)
 

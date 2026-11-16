@@ -25,7 +25,7 @@ export function authorKey(name: string): string {
     .join(' ')
 }
 
-function firstAuthorKey(authors: string): string {
+export function firstAuthorKey(authors: string): string {
   const i = authors.indexOf(',')
   return authorKey((i < 0 ? authors : authors.slice(0, i)).trim())
 }

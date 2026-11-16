@@ -27,6 +27,7 @@ export function ImportPage({ store, owner, storage, download = browserDownload, 
   const [error, setError] = useState('')
   const [done, setDone] = useState('')
   const [busy, setBusy] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const input = useRef<HTMLInputElement>(null)
 
   const choose = async (file: File | undefined) => {
@@ -68,14 +69,18 @@ export function ImportPage({ store, owner, storage, download = browserDownload, 
     }
   }
 
-  const exportFile = async (make: () => Promise<{ name: string; file: Blob }> | { name: string; file: Blob }) => {
+  const exportFile = async (make: () => Promise<{ name: string; file: Blob; missingPhotos?: number }> | { name: string; file: Blob; missingPhotos?: number }) => {
     setError('')
     setDone('')
+    setExporting(true)
     try {
-      const { name, file } = await make()
+      const { name, file, missingPhotos = 0 } = await make()
       download(name, file)
+      if (missingPhotos > 0) setDone(`${count(missingPhotos, 'photo', 'photos')} could not be included.`)
     } catch {
       setError("The file couldn't be made. Try again.")
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -126,13 +131,14 @@ export function ImportPage({ store, owner, storage, download = browserDownload, 
       <section aria-labelledby="export-title">
         <h2 id="export-title">Export</h2>
         <p>
-          <button type="button" onClick={() => void exportFile(() => goodreadsExport(store))}>
+          <button type="button" disabled={exporting} onClick={() => void exportFile(() => goodreadsExport(store))}>
             Export for Goodreads
           </button>{' '}
-          <button type="button" onClick={() => void exportFile(() => backupExport(store, now(), photos))}>
+          <button type="button" disabled={exporting} onClick={() => void exportFile(() => backupExport(store, now(), photos))}>
             Export a backup
           </button>
         </p>
+        {exporting && <p role="status">Preparing the export…</p>}
         <p>The backup is the same file the phone makes, with your cover photos. Goodreads leaves out your private notes.</p>
       </section>
     </main>

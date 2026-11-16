@@ -4,7 +4,7 @@ import { bookToFields, rowToBook } from '../sync/codec'
 import type { Book, Quote, Status, SyncRow } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { combineRows, type FieldTimes } from '../sync/twin'
-import { findInLibrary } from '../text/keys'
+import { catalogTitleKey, firstAuthorKey } from '../text/keys'
 import type { Backup, BackupChallenge } from './backup'
 import { photoRefName } from './backup'
 import { cleanTags, MAX_REVIEW_LENGTH, normalizeIsbn } from './goodreads'
@@ -16,13 +16,13 @@ const MAX_GOAL = 999
 /** A book read from a file, and when each of its fields counts as last changed (by the server's field name). */
 export type Incoming = { book: Book; times: FieldTimes }
 
-/** What a file holds. [invent]: a book restored as Read with no date gets today's (as the app does for a backup). */
+/** What a file holds. [keepRead]: a Goodreads file, which never un-reads a book the library has as Read. */
 export type ImportSource = {
   items: Incoming[]
   quotes: Quote[]
   challenges: BackupChallenge[]
   covers: Map<string, Blob>
-  invent: boolean
+  keepRead: boolean
 }
 
 const allFields = (b: Book, time: number): FieldTimes =>
@@ -41,7 +41,7 @@ export function goodreadsItems(books: Book[], now: number): ImportSource {
       book,
       times: { ...allFields(book, 0), ...Object.fromEntries(shelf.map((f) => [f, now])) },
     })),
-    quotes: [], challenges: [], covers: new Map(), invent: false,
+    quotes: [], challenges: [], covers: new Map(), keepRead: true,
   }
 }
 
@@ -49,7 +49,7 @@ export function goodreadsItems(books: Book[], now: number): ImportSource {
 export function backupItems(backup: Backup): ImportSource {
   return {
     items: backup.books.map((book) => ({ book, times: allFields(book, backup.exportedAt) })),
-    quotes: backup.quotes, challenges: backup.challenges, covers: backup.covers, invent: true,
+    quotes: backup.quotes, challenges: backup.challenges, covers: backup.covers, keepRead: false,
   }
 }
 
@@ -117,32 +117,74 @@ function statusDates(b: Book, previous: Status | null, now: number): Book {
 
 const rowOf = (b: Book, times: FieldTimes): SyncRow => ({ table: 'books', id: b.id, fields: bookToFields(b), times })
 
+/** The books of a library by ISBN and by title and first author, built once (as the app's `TitleIndex`). */
+class BookIndex {
+  private byIsbn = new Map<string, Book>()
+  private byKey = new Map<string, Book[]>()
+
+  constructor(books: Book[]) {
+    books.forEach((b) => this.add(b))
+  }
+
+  private static key(b: Book) {
+    return `${catalogTitleKey(b.title)}|${firstAuthorKey(b.authors)}`
+  }
+
+  add(b: Book) {
+    if (b.isbn !== null) this.byIsbn.set(b.isbn, b)
+    const k = BookIndex.key(b)
+    const list = this.byKey.get(k)
+    if (list) list.push(b)
+    else this.byKey.set(k, [b])
+  }
+
+  replace(old: Book, next: Book) {
+    if (old.isbn !== null && this.byIsbn.get(old.isbn)?.id === old.id) this.byIsbn.delete(old.isbn)
+    const k = BookIndex.key(old)
+    const list = this.byKey.get(k)?.filter((b) => b.id !== old.id)
+    if (list) this.byKey.set(k, list)
+    this.add(next)
+  }
+
+  /** The same ISBN, or the same title and first author where one of the two has no ISBN (two ISBNs are two books). */
+  find(b: Book): Book | undefined {
+    if (b.isbn !== null) {
+      const hit = this.byIsbn.get(b.isbn)
+      if (hit) return hit
+    }
+    return this.byKey.get(BookIndex.key(b))?.find((x) => b.isbn === null || x.isbn === null)
+  }
+}
+
 /**
  * What importing [source] would do, without doing it. Each book is the library's copy when it has one (the same ISBN,
- * or else the same title and first author), and then the two are combined by the twin rule (`combineRows`);
- * otherwise it is new. A book that can't be kept (no title, a bad rating or ISBN, a review over the limit) or that
- * repeats an earlier row of the file is skipped.
+ * or the same title and first author where one side has no ISBN: two ISBNs are two books), and then the two are
+ * combined by the twin rule (`combineRows`); otherwise it is new. Rows of the file that match the same library book
+ * are merged into it once. A book that can't be kept (no title, a bad rating or ISBN, a review over the limit) or that
+ * repeats an earlier new row of the file is skipped.
  */
 export function planImport(source: ImportSource, store: Pick<LibraryStore, 'books' | 'bookTimes' | 'quotes' | 'goal'>, now: number): Plan {
   const library = store.books()
-  const pool = [...library]
+  const index = new BookIndex(library)
+  const libraryIds = new Set(library.map((b) => b.id))
   const fresh = new Set<string>()
   const seenIsbns = new Set<string>()
   const plan: Plan = { added: [], merged: [], skipped: 0, quotes: [], quoteCount: 0, goals: [], uploads: [] }
   /** The library's id for each of the file's books (the book's own when it is new). */
   const target = new Map<string, string>()
-  const libraryIds = new Set(library.map((b) => b.id))
+  /** Each merged library book: as it was, as combined so far, and its entry in the plan. */
+  const running = new Map<string, { original: Book; row: SyncRow; merge: Merge; upload: number }>()
 
   for (const { book: raw, times } of source.items) {
     // A photo travels by its name: it is used only when the file has it.
     const photoName = photoRefName(raw.coverUrl)
     const photo = photoName !== null ? source.covers.get(photoName) : undefined
-    const book = clean({ ...raw, coverUrl: photo ? 'photo' : photoName !== null ? null : raw.coverUrl })
+    const book = clean({ ...raw, coverUrl: photoName !== null ? null : raw.coverUrl })
     if (book === null || (book.isbn !== null && seenIsbns.has(book.isbn))) {
       plan.skipped++
       continue
     }
-    const twin = findInLibrary(book, pool)
+    const twin = index.find(book)
     if (twin && fresh.has(twin.id)) {
       plan.skipped++ // the file has this book twice
       continue
@@ -150,31 +192,49 @@ export function planImport(source: ImportSource, store: Pick<LibraryStore, 'book
     if (book.isbn !== null) seenIsbns.add(book.isbn)
 
     if (twin && libraryIds.has(twin.id)) {
-      const mine = twin
-      target.set(raw.id, mine.id)
-      // The library's date added stays, as in the app.
-      const incoming = { ...book, id: mine.id, dateAdded: mine.dateAdded }
-      const combined = combineRows(rowOf(mine, store.bookTimes(mine.id)), rowOf(incoming, times))
-      const merged = statusDates(rowToBook(combined), book.status, now)
-      const before = bookToFields(mine)
+      const state = running.get(twin.id)
+      const original = state?.original ?? twin
+      const keepRow = state?.row ?? rowOf(twin, store.bookTimes(twin.id))
+      const current = state ? rowToBook(state.row) : twin
+      // The library's date added stays, as in the app; a photo is set only by its upload.
+      const incoming: Book = { ...book, id: twin.id, dateAdded: current.dateAdded, coverUrl: book.coverUrl }
+      // An old Goodreads export doesn't un-read a book.
+      if (source.keepRead && current.status === 'READ' && book.status !== 'READ') {
+        Object.assign(incoming, {
+          status: current.status, dateRead: current.dateRead, dateStarted: current.dateStarted,
+          currentPage: current.currentPage, progressPercent: current.progressPercent,
+        })
+      }
+      const combined = combineRows(keepRow, rowOf(incoming, times))
+      const merged = statusDates(rowToBook(combined), incoming.status, now)
+      const row = rowOf(merged, combined.times)
+      const before = bookToFields(original)
       const after = bookToFields(merged)
       const changes: Record<string, unknown> = {}
       for (const f of Object.keys(after)) {
         if (f !== 'deleted' && after[f] !== before[f]) changes[f] = after[f]
       }
-      plan.merged.push({ id: mine.id, changes })
-      if (photo && mine.coverUrl === null) plan.uploads.push({ bookId: mine.id, blob: photo })
+      if (state) {
+        state.merge.changes = changes
+        state.row = row
+      } else {
+        const merge = { id: twin.id, changes }
+        plan.merged.push(merge)
+        running.set(twin.id, { original, row, merge, upload: -1 })
+      }
+      const held = running.get(twin.id) as { upload: number }
+      if (photo && merged.coverUrl === null && held.upload < 0) {
+        held.upload = plan.uploads.length
+        plan.uploads.push({ bookId: twin.id, blob: photo })
+      }
+      index.replace(current, merged)
+      target.set(raw.id, twin.id)
       continue
     }
 
-    const added = statusDates(
-      { ...book, dateAdded: book.dateAdded > 0 ? book.dateAdded : now },
-      source.invent ? null : book.status,
-      now,
-    )
-    // Stored without the marker until its photo is up.
-    plan.added.push({ ...added, coverUrl: photo ? null : added.coverUrl })
-    pool.push(added)
+    const added = statusDates({ ...book, dateAdded: book.dateAdded > 0 ? book.dateAdded : now }, book.status, now)
+    plan.added.push(added)
+    index.add(added)
     fresh.add(added.id)
     target.set(raw.id, added.id)
     if (photo) plan.uploads.push({ bookId: added.id, blob: photo })

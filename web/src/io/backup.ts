@@ -1,4 +1,4 @@
-import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
+import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate'
 import { stripBom } from './blobBytes'
 import { STATUSES, type Book, type Quote, type Status } from '../sync/model'
 
@@ -178,7 +178,7 @@ export const photoName = (bookId: string) => `${bookId}.jpg`
  */
 export function writeBackup(data: BackupData, exportedAt: number): Blob {
   const live = data.books.filter((b) => !b.deleted)
-  const entries: Record<string, Uint8Array> = {}
+  const entries: Zippable = {}
   const library = {
     version: VERSION,
     exportedAt,
@@ -187,7 +187,8 @@ export function writeBackup(data: BackupData, exportedAt: number): Blob {
       if (coverUrl === 'photo') {
         const bytes = data.covers.get(b.id)
         if (bytes) {
-          entries[COVERS + photoName(b.id)] = bytes
+          // A JPEG is already compressed: stored as it is.
+          entries[COVERS + photoName(b.id)] = [bytes, { level: 0 }]
           coverUrl = PHOTO_REF + photoName(b.id)
         } else coverUrl = null
       }
@@ -208,7 +209,7 @@ export function writeBackup(data: BackupData, exportedAt: number): Blob {
     challenges: data.challenges.map((c) => ({ year: c.year, goal: c.goal })),
     hiddenSuggestions: [] as string[],
   }
-  const files: Record<string, Uint8Array> = { [LIBRARY]: strToU8(JSON.stringify(library)), ...entries }
+  const files: Zippable = { [LIBRARY]: strToU8(JSON.stringify(library)), ...entries }
   return new Blob([zipSync(files) as BlobPart], { type: 'application/zip' })
 }
 
