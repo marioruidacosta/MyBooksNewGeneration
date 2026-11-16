@@ -3,8 +3,10 @@ import { IDBFactory } from 'fake-indexeddb'
 import { readFileSync } from 'node:fs'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { strFromU8, unzipSync } from 'fflate'
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { CoverStorage } from '../covers/storage'
+import type { ImageDecoder } from '../covers/coverUpload'
 import { rowKey, type SyncApi } from '../sync/api'
 import type { Book } from '../sync/model'
 import { LibraryStore } from '../sync/store'
@@ -138,5 +140,58 @@ describe('ImportPage', () => {
     expect(Object.keys(entries).sort()).toEqual(['covers/a.jpg', 'library.json'])
     expect(getPhoto).toHaveBeenCalledWith('a')
     expect(JSON.parse(strFromU8(entries['library.json'])).challenges).toEqual([{ year: 2026, goal: 30 }])
+  })
+
+  it('importShowsPhotoUploadProgress', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    const gates: (() => void)[] = []
+    const upload = vi.fn(() => new Promise<{ error: null }>((resolve) => gates.push(() => resolve({ error: null }))))
+    const storage: CoverStorage = { from: () => ({ upload, createSignedUrls: vi.fn() }) }
+    const decode: ImageDecoder = async () => ({
+      width: 10, height: 10, encode: async () => new Blob(['jpeg'], { type: 'image/jpeg' }),
+    })
+    const library = {
+      version: 1, exportedAt: 1,
+      books: [
+        { title: 'Dune', authors: 'Frank Herbert', coverUrl: 'cover:a.jpg' },
+        { title: 'Emma', authors: 'Jane Austen', coverUrl: 'cover:b.jpg' },
+      ],
+    }
+    const zip = zipSync({
+      'library.json': strToU8(JSON.stringify(library)), 'covers/a.jpg': new Uint8Array([1]), 'covers/b.jpg': new Uint8Array([2]),
+    })
+    render(<ImportPage store={store} owner="u1" storage={storage} decode={decode} />)
+    await user.upload(screen.getByLabelText('Goodreads or MyBooks file'), new File([zip], 'backup.zip'))
+    await user.click(await screen.findByRole('button', { name: 'Import' }))
+
+    expect(await screen.findByText('Uploading photos 1 of 2…')).toBeInTheDocument()
+    gates[0]()
+    expect(await screen.findByText('Uploading photos 2 of 2…')).toBeInTheDocument()
+    await waitFor(() => expect(gates).toHaveLength(2))
+    gates[1]()
+    expect(await screen.findByText('Imported 2 new books.')).toBeInTheDocument()
+    expect(screen.queryByText(/Uploading photos/)).not.toBeInTheDocument()
+  })
+
+  it('aChangedLibraryIsPlannedAgainBeforeImport', async () => {
+    const user = userEvent.setup()
+    const store = await open()
+    render(<ImportPage store={store} now={() => Date.now() + 10_000} />)
+    await user.upload(screen.getByLabelText('Goodreads or MyBooks file'), file(FIVE))
+    expect(await screen.findByText('5 new · 0 already in your library (merged) · 0 skipped')).toBeInTheDocument()
+
+    // A sync brings one of the books in while the preview is open.
+    store.create(book('dune', { title: 'Dune', authors: 'Frank Herbert', isbn: '9780441013593' }))
+    await user.click(screen.getByRole('button', { name: 'Import' }))
+
+    // Nothing was written from the old counts: the new ones are shown to confirm.
+    expect(await screen.findByText('4 new · 1 already in your library (merged) · 0 skipped')).toBeInTheDocument()
+    expect(screen.getByRole('alert')).toHaveTextContent('Your library changed. Check the new counts, then import.')
+    expect(store.books()).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'Import' }))
+    expect(await screen.findByText('Imported 4 new books and merged 1.')).toBeInTheDocument()
+    expect(store.books()).toHaveLength(5)
   })
 })

@@ -32,3 +32,17 @@ export function statusChange(book: Book, status: Status, now: number): Record<st
   }
   return Object.fromEntries(Object.entries(next).filter(([k, v]) => v !== was[k]))
 }
+
+/** The dates a status goes with (the app's `withStatusDates`); [previous] is the status the book had. */
+export function statusDates(b: Book, previous: Status | null, now: number): Book {
+  switch (b.status) {
+    case 'READING':
+      return { ...b, dateRead: null, dateStarted: b.dateStarted ?? (previous !== 'READING' ? now : null) }
+    case 'READ': {
+      const read = b.dateRead ?? (previous !== 'READ' ? now : null)
+      return { ...b, dateRead: read, dateStarted: b.dateStarted !== null && (read === null || b.dateStarted <= read) ? b.dateStarted : null }
+    }
+    default:
+      return { ...b, dateRead: null, dateStarted: null, currentPage: null, progressPercent: null }
+  }
+}

@@ -23,6 +23,11 @@ export type Backup = {
   exportedAt: number
 }
 
+/** What a backup may hold once unzipped: a photo or the library is far smaller; this stops a "zip bomb". */
+const MAX_ENTRY_BYTES = 50 * 1024 * 1024
+const MAX_TOTAL_BYTES = 500 * 1024 * 1024
+const DAMAGED = 'This backup file is damaged.'
+
 const VERSION = 1
 const LIBRARY = 'library.json'
 const COVERS = 'covers/'
@@ -32,6 +37,78 @@ const PHOTO_REF = 'cover:'
 const isSafeName = (name: string) => /^[A-Za-z0-9._-]+$/.test(name) && name !== '.' && name !== '..'
 
 export const isZip = (b: Uint8Array) => b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] <= 0x07 && b[3] <= 0x08
+
+const damaged = (): BackupFormatException => new BackupFormatException(DAMAGED)
+
+const crcTable = Uint32Array.from({ length: 256 }, (_, n) => {
+  let c = n
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+  return c >>> 0
+})
+
+/** CRC-32 (IEEE 802.3) as ZIP stores it. */
+function crc32(data: Uint8Array): number {
+  let c = 0xffffffff
+  for (const b of data) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8)
+  return (c ^ 0xffffffff) >>> 0
+}
+
+/** The CRC and size each entry of the ZIP's central directory promises, by name (as the app's `Zip.read`). */
+function centralDirectory(zip: Uint8Array): Map<string, { crc: number; size: number }> {
+  const v = new DataView(zip.buffer, zip.byteOffset, zip.byteLength)
+  let end = -1
+  for (let i = zip.length - 22; i >= Math.max(0, zip.length - 22 - 0xffff); i--) {
+    if (v.getUint32(i, true) === 0x06054b50) {
+      end = i
+      break
+    }
+  }
+  if (end < 0) throw damaged()
+  const count = v.getUint16(end + 10, true)
+  let pos = v.getUint32(end + 16, true)
+  const out = new Map<string, { crc: number; size: number }>()
+  for (let i = 0; i < count; i++) {
+    if (pos + 46 > zip.length || v.getUint32(pos, true) !== 0x02014b50) throw damaged()
+    const nameLength = v.getUint16(pos + 28, true)
+    const name = strFromU8(zip.subarray(pos + 46, pos + 46 + nameLength))
+    out.set(name, { crc: v.getUint32(pos + 16, true), size: v.getUint32(pos + 24, true) })
+    pos += 46 + nameLength + v.getUint16(pos + 30, true) + v.getUint16(pos + 32, true)
+  }
+  return out
+}
+
+/** The entries of a ZIP, each checked against its CRC and size, and refused past the size caps. */
+function unzipChecked(zip: Uint8Array, limits: BackupLimits): Record<string, Uint8Array> {
+  const maxEntry = limits.maxEntryBytes ?? MAX_ENTRY_BYTES
+  const maxTotal = limits.maxTotalBytes ?? MAX_TOTAL_BYTES
+  let total = 0
+  let entries: Record<string, Uint8Array>
+  let promised: Map<string, { crc: number; size: number }>
+  try {
+    promised = centralDirectory(zip)
+    entries = unzipSync(zip, {
+      filter: (file) => {
+        // The sizes come from the archive, so a huge entry is refused before it is inflated.
+        total += file.originalSize
+        if (file.originalSize > maxEntry || total > maxTotal) throw damaged()
+        return true
+      },
+    })
+  } catch (e) {
+    throw e instanceof BackupFormatException ? e : damaged()
+  }
+  for (const [name, data] of Object.entries(entries)) {
+    const p = promised.get(name)
+    if (!p) {
+      if (data.length === 0) continue
+      throw damaged()
+    }
+    if (data.length !== p.size || crc32(data) !== p.crc) throw damaged()
+  }
+  return entries
+}
+
+export type BackupLimits = { maxEntryBytes?: number; maxTotalBytes?: number }
 
 const bad = (cause?: unknown): BackupFormatException =>
   new BackupFormatException(cause instanceof Error && cause.message.startsWith('Unsupported') ? cause.message : 'Not a MyBooks backup file')
@@ -72,16 +149,11 @@ function item(v: unknown): Obj {
  * Throws [BackupFormatException] before anything is used if it isn't one. Unknown fields are ignored and missing ones
  * take their defaults, so older backups stay readable.
  */
-export function parseBackup(fileBytes: Uint8Array): Backup {
+export function parseBackup(fileBytes: Uint8Array, limits: BackupLimits = {}): Backup {
   const covers = new Map<string, Blob>()
   let library: string
   if (isZip(fileBytes)) {
-    let entries: Record<string, Uint8Array>
-    try {
-      entries = unzipSync(fileBytes)
-    } catch (e) {
-      throw bad(e)
-    }
+    const entries = unzipChecked(fileBytes, limits)
     const lib = entries[LIBRARY]
     if (!lib) throw bad()
     library = strFromU8(lib)

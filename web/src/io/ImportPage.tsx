@@ -5,7 +5,7 @@ import type { LibraryStore } from '../sync/store'
 import {
   backupExport, browserDownload, goodreadsExport, readImportFile, storagePhotos, type Download, type GetPhoto,
 } from './exports'
-import { applyPlan, planImport, previewText, type Plan } from './importPlan'
+import { applyPlan, planImport, previewText, type ImportSource, type Plan } from './importPlan'
 
 type Props = {
   store: LibraryStore
@@ -28,18 +28,22 @@ export function ImportPage({ store, owner, storage, download = browserDownload, 
   const [done, setDone] = useState('')
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [photoProgress, setPhotoProgress] = useState('')
   const input = useRef<HTMLInputElement>(null)
+  // What the chosen file holds, kept to plan again if the library changes before Import.
+  const source = useRef<ImportSource | null>(null)
 
   const choose = async (file: File | undefined) => {
     setPlan(null)
+    source.current = null
     setError('')
     setDone('')
     if (!file) return
     setBusy(true)
     try {
       const at = now()
-      const source = await readImportFile(file, at)
-      setPlan(planImport(source, store, at))
+      source.current = await readImportFile(file, at)
+      setPlan(planImport(source.current, store, at))
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : "That file couldn't be read.")
     } finally {
@@ -51,12 +55,27 @@ export function ImportPage({ store, owner, storage, download = browserDownload, 
 
   const confirm = async () => {
     if (!plan) return
+    let current = plan
+    // The library may have changed since the preview (a sync arrived): plan again, and ask if the counts differ.
+    if (source.current) {
+      const again = planImport(source.current, store, now())
+      if (previewText(again) !== previewText(current)) {
+        setPlan(again)
+        setError('Your library changed. Check the new counts, then import.')
+        return
+      }
+      setError('')
+      current = again
+    }
     setBusy(true)
     try {
-      const { coverFailures } = await applyPlan(plan, store, { owner, storage, decode })
-      const merged = plan.merged.length
+      const { coverFailures } = await applyPlan(current, store, {
+        owner, storage, decode,
+        onPhoto: (n, total) => setPhotoProgress(`Uploading photos ${String(n)} of ${String(total)}…`),
+      })
+      const merged = current.merged.length
       setDone(
-        `Imported ${count(plan.added.length, 'new book', 'new books')}` +
+        `Imported ${count(current.added.length, 'new book', 'new books')}` +
           (merged > 0 ? ` and merged ${String(merged)}` : '') +
           '.' +
           (coverFailures > 0 ? ` ${count(coverFailures, 'photo', 'photos')} could not be added.` : ''),
@@ -65,6 +84,7 @@ export function ImportPage({ store, owner, storage, download = browserDownload, 
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : "The import didn't finish.")
     } finally {
+      setPhotoProgress('')
       setBusy(false)
     }
   }
@@ -125,6 +145,7 @@ export function ImportPage({ store, owner, storage, download = browserDownload, 
             </button>
           </div>
         )}
+        {photoProgress && <p role="status">{photoProgress}</p>}
         {done && <p role="status">{done}</p>}
       </section>
 

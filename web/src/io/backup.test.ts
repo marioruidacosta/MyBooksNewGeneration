@@ -123,4 +123,30 @@ describe('writeBackup', () => {
     expect(out.challenges).toEqual([{ year: 2024, goal: 5 }])
     expect([...out.covers.keys()]).toEqual(['a.jpg'])
   })
+
+  it('aCorruptBackupSaysItIsDamaged', () => {
+    const damaged = 'This backup file is damaged.'
+    const stored = zipSync({ 'library.json': [bytes(json), { level: 0 }] })
+
+    // A flipped byte inside the stored data: the CRC no longer matches (the JSON may still parse).
+    const flipped = stored.slice()
+    flipped[30 + 'library.json'.length + 5] ^= 0x20
+    expect(() => parseBackup(flipped)).toThrow(damaged)
+
+    // Cut short: the end of the archive is gone.
+    expect(() => parseBackup(stored.slice(0, stored.length - 30))).toThrow(damaged)
+
+    // A compressed entry with damaged data.
+    const packed = zipSync({ 'library.json': bytes(json.repeat(20)) })
+    const broken = packed.slice()
+    for (let i = 40; i < 60; i++) broken[i] ^= 0xff
+    expect(() => parseBackup(broken)).toThrow(damaged)
+
+    // More than the cap says it holds: refused from the sizes, before anything is inflated.
+    expect(() => parseBackup(stored, { maxEntryBytes: 100 })).toThrow(damaged)
+    expect(() => parseBackup(zipSync({ 'library.json': bytes(json), 'covers/a.jpg': new Uint8Array(50) }), { maxTotalBytes: json.length })).toThrow(damaged)
+
+    // An intact one still reads.
+    expect(parseBackup(stored).books).toHaveLength(2)
+  })
 })

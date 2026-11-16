@@ -1,7 +1,8 @@
 import { shrinkToJpeg, uploadCover, MAX_BYTES, MAX_SIDE, type ImageDecoder } from '../covers/coverUpload'
 import type { CoverStorage } from '../covers/storage'
 import { bookToFields, rowToBook } from '../sync/codec'
-import type { Book, Quote, Status, SyncRow } from '../sync/model'
+import { statusDates } from '../book/status'
+import type { Book, Quote, SyncRow } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { BOOK_LIMITS } from '../sync/limits'
 import { combineRows, type FieldTimes } from '../sync/twin'
@@ -116,20 +117,6 @@ function clean(b: Book): Book | null {
   }
 }
 
-/** The dates a status goes with (the app's `withStatusDates`); [previous] is the status the book had. */
-export function statusDates(b: Book, previous: Status | null, now: number): Book {
-  switch (b.status) {
-    case 'READING':
-      return { ...b, dateRead: null, dateStarted: b.dateStarted ?? (previous !== 'READING' ? now : null) }
-    case 'READ': {
-      const read = b.dateRead ?? (previous !== 'READ' ? now : null)
-      return { ...b, dateRead: read, dateStarted: b.dateStarted !== null && (read === null || b.dateStarted <= read) ? b.dateStarted : null }
-    }
-    default:
-      return { ...b, dateRead: null, dateStarted: null, currentPage: null, progressPercent: null }
-  }
-}
-
 const rowOf = (b: Book, times: FieldTimes): SyncRow => ({ table: 'books', id: b.id, fields: bookToFields(b), times })
 
 /** The books of a library by ISBN and by title and first author, built once (as the app's `TitleIndex`). */
@@ -187,6 +174,8 @@ export function planImport(source: ImportSource, store: Pick<LibraryStore, 'book
   const plan: Plan = { added: [], merged: [], skipped: 0, quotes: [], quoteCount: 0, goals: [], uploads: [] }
   /** The library's id for each of the file's books (the book's own when it is new). */
   const target = new Map<string, string>()
+  /** Queued photos given up because a later row of the file set a web cover. */
+  const cancelled = new Set<number>()
   /** Each merged library book: as it was, as combined so far, and its entry in the plan. */
   const running = new Map<string, { original: Book; row: SyncRow; merge: Merge; upload: number }>()
 
@@ -241,6 +230,9 @@ export function planImport(source: ImportSource, store: Pick<LibraryStore, 'book
       if (photo && merged.coverUrl === null && held.upload < 0) {
         held.upload = plan.uploads.length
         plan.uploads.push({ bookId: twin.id, blob: photo })
+      } else if (held.upload >= 0 && merged.coverUrl !== null) {
+        // A later row gave the book a web cover: the queued photo must not replace it.
+        cancelled.add(held.upload)
       }
       index.replace(current, merged)
       target.set(raw.id, twin.id)
@@ -271,6 +263,7 @@ export function planImport(source: ImportSource, store: Pick<LibraryStore, 'book
     })
   }
   plan.quoteCount = plan.quotes.length
+  if (cancelled.size > 0) plan.uploads = plan.uploads.filter((_, i) => !cancelled.has(i))
 
   // A goal replaces the same year's goal.
   for (const c of source.challenges) {
@@ -284,6 +277,8 @@ export type ApplyDeps = {
   owner?: string
   storage?: CoverStorage
   decode?: ImageDecoder
+  /** Called as each photo starts uploading: its place (from 1) among `total`. */
+  onPhoto?: (n: number, total: number) => void
 }
 
 /**
@@ -297,7 +292,8 @@ export async function applyPlan(plan: Plan, store: LibraryStore, deps: ApplyDeps
   for (const g of plan.goals) store.edit('challenges', String(g.year), { goal: g.goal })
 
   let coverFailures = 0
-  for (const { bookId, blob } of plan.uploads) {
+  for (const [i, { bookId, blob }] of plan.uploads.entries()) {
+    deps.onPhoto?.(i + 1, plan.uploads.length)
     try {
       if (!deps.owner || !deps.storage) throw new Error('No place to keep photos.')
       const jpeg = await shrinkToJpeg(blob, MAX_SIDE, MAX_BYTES, deps.decode)

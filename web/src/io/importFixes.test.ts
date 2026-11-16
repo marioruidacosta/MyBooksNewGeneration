@@ -169,3 +169,37 @@ describe('field limits', () => {
     for (const m of plan.merged) check(m.changes)
   })
 })
+
+describe('batch B import', () => {
+  const decode: ImageDecoder = async () => ({
+    width: 10, height: 10, encode: async () => new Blob(['jpeg'], { type: 'image/jpeg' }),
+  })
+
+  it('aLaterUrlCoverCancelsAQueuedPhoto', async () => {
+    const upload = vi.fn(async () => ({ error: null }))
+    const storage: CoverStorage = { from: () => ({ upload, createSignedUrls: vi.fn() }) }
+    const store = await open([book('a', { title: 'Dune', authors: 'Frank Herbert' })])
+    const rows = (...covers: string[]) =>
+      parseBackup(zipSync({
+        'library.json': strToU8(JSON.stringify({
+          version: 1, exportedAt: 1, books: covers.map((coverUrl) => ({ title: 'Dune', authors: 'Frank Herbert', coverUrl })),
+        })),
+        'covers/p.jpg': new Uint8Array([1]),
+      }))
+
+    // A photo first, a web cover later: the web cover wins, and the photo is not uploaded over it.
+    const plan = planImport(backupItems(rows('cover:p.jpg', 'https://x.test/c.jpg')), store, NOW)
+    expect(plan.uploads).toHaveLength(0)
+    await applyPlan(plan, store, { owner: 'u1', storage, decode })
+    expect(upload).not.toHaveBeenCalled()
+    expect(store.book('a')?.coverUrl).toBe('https://x.test/c.jpg')
+
+    // The other order, and a photo alone, still upload.
+    globalThis.indexedDB = new IDBFactory()
+    const other = await open([book('b', { title: 'Dune', authors: 'Frank Herbert' })])
+    expect(planImport(backupItems(rows('https://x.test/c.jpg', 'cover:p.jpg')), other, NOW).uploads).toHaveLength(0)
+    globalThis.indexedDB = new IDBFactory()
+    const alone = await open([book('c', { title: 'Dune', authors: 'Frank Herbert' })])
+    expect(planImport(backupItems(rows('cover:p.jpg')), alone, NOW).uploads).toHaveLength(1)
+  })
+})

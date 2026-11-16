@@ -3,7 +3,7 @@ import { bookToFields, rowToBook } from '../sync/codec'
 import type { Book, SyncRow } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { combineRows } from '../sync/twin'
-import { statusDates } from '../io/importPlan'
+import { statusDates } from '../book/status'
 
 /** Supabase Storage as merging needs it: the cover bucket's copy (the real `supabase.storage` fits). */
 export type PhotoStorage = {
