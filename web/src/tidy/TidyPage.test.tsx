@@ -8,6 +8,7 @@ import { rowKey, type SyncApi } from '../sync/api'
 import type { Book, SyncRow } from '../sync/model'
 import { LibraryStore } from '../sync/store'
 import type { PhotoStorage } from './mergeBooks'
+import { ToastProvider } from '../ui/Toast'
 import { TidyPage } from './TidyPage'
 
 const T = 15_000
@@ -91,7 +92,7 @@ describe('TidyPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
     await user.click(screen.getByRole('button', { name: 'Merge' }))
 
-    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument()
+    expect(screen.getByText(/undo it for a few seconds/i)).toBeInTheDocument()
     expect(screen.getByText(/1 quote moves/i)).toBeInTheDocument()
     expect(store.book('b')).toBeDefined()
 
@@ -166,5 +167,32 @@ describe('TidyPage merging, more', () => {
     expect(screen.getByRole('button', { name: 'Merge' })).toBeDisabled()
     await user.click(screen.getByRole('checkbox', { name: 'Not a duplicate: Blindness: one' }))
     expect(screen.getByRole('button', { name: 'Merge' })).toBeEnabled()
+  }, T)
+
+  it('undoingAMergeRestoresBothBooks', async () => {
+    const user = userEvent.setup()
+    const keepBefore = book({ id: 'a', title: 'Blindness', publisher: null, rating: null })
+    const dropBefore = book({ id: 'b', title: 'Blindness: a novel', publisher: 'House', rating: 4, tags: ['x'] })
+    const store = await open(keepBefore, dropBefore)
+    store.createQuote({ id: 'q1', bookId: 'b', text: 'A line', page: 2, dateAdded: 1, position: null, deleted: false })
+    render(
+      <ToastProvider>
+        <TidyPage store={store} owner="u1" storage={storage} />
+      </ToastProvider>,
+    )
+    await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
+    await user.click(screen.getByRole('button', { name: 'Merge' }))
+    await user.click(screen.getByRole('button', { name: 'Merge and delete' }))
+
+    await waitFor(() => expect(store.book('b')).toBeUndefined())
+    expect(screen.getByRole('status')).toHaveTextContent('Merged into Blindness.')
+    expect(store.book('a')).toMatchObject({ publisher: 'House', rating: 4 })
+    expect(store.quotes('a')).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(store.book('a')).toEqual(keepBefore)
+    expect(store.book('b')).toEqual(dropBefore)
+    expect(store.quotes('a')).toEqual([])
+    expect(store.quotes('b').map((q) => q.id)).toEqual(['q1'])
   }, T)
 })

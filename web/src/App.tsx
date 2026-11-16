@@ -25,6 +25,7 @@ import { SaveBadge } from './sync/SaveBadge'
 import { LibraryStore } from './sync/store'
 import { StoreContext, useOptionalStore, useStore } from './sync/StoreContext'
 import { useLibraryStore, useWarnBeforeClosing } from './sync/useLibraryStore'
+import { ToastProvider } from './ui/Toast'
 
 // The import and tidy pages (with the ZIP reader and the import code) load when first opened.
 const ImportPage = lazy(() => import('./io/ImportPage').then((m) => ({ default: m.ImportPage })))
@@ -39,7 +40,7 @@ interface RouterContext {
 function Shell() {
   const store = useOptionalStore()
   return (
-    <>
+    <ToastProvider>
       {store && (
         <header className="app-bar">
           <span className="wordmark">MyBooks</span>
@@ -59,7 +60,7 @@ function Shell() {
         </header>
       )}
       <Outlet />
-    </>
+    </ToastProvider>
   )
 }
 

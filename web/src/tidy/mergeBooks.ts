@@ -71,14 +71,21 @@ export function planMerge(store: LibraryStore, keep: Book, drop: Book, now = Dat
  * edited, so it syncs), then [drop] is removed. A photo cover that wins from [drop] is first copied to [keep]'s own
  * file (the path is tied to the book's id); if that fails [keep] stays as it was for the cover, and `coverKept` is
  * true. No storage object is ever deleted.
+ *
+ * `undo` puts it back: [keep] gets every field it had (a normal edit, so each field that changed is stamped anew and
+ * syncs), [drop] is created again with all its fields, and its quotes move back. A cover photo that was copied to
+ * [keep]'s file can't be un-copied (storage is never touched), so Undo only restores [keep]'s previous `cover_url`
+ * value, which is good enough. Bookmarks and an e-book record of [drop] on a phone were removed with it and stay so.
  */
 export async function mergeBooks(
   store: LibraryStore,
   keep: Book,
   drop: Book,
   photos?: { owner: string; storage: PhotoStorage },
-): Promise<{ coverKept: boolean }> {
+): Promise<{ coverKept: boolean; undo: () => void }> {
   const plan = planMerge(store, keep, drop)
+  const keepBefore = keep
+  const dropBefore = drop
   const changes: Record<string, unknown> = {}
   const after = bookToFields(plan.merged)
   for (const f of plan.fields) changes[f] = after[f]
@@ -123,5 +130,10 @@ export async function mergeBooks(
   }
   for (const q of quotes) store.edit('quotes', q.id, { book_id: keep.id })
   store.remove('books', drop.id)
-  return { coverKept }
+  const undo = () => {
+    store.create(keepBefore)
+    store.create(dropBefore)
+    for (const q of quotes) store.edit('quotes', q.id, { book_id: dropBefore.id })
+  }
+  return { coverKept, undo }
 }
