@@ -1,4 +1,5 @@
 import type { ColumnDef, Row } from '@tanstack/react-table'
+import { CoverImage } from '../covers/CoverImage'
 import { searchKey } from '../text/keys'
 import { STATUSES, type Book } from '../sync/model'
 import { STATUS_LABELS } from './filters'
@@ -97,14 +98,9 @@ export function makeColumns(onOpen: (id: string) => void): ColumnDef<Book>[] {
     },
     {
       ...label('cover'),
-      accessorFn: (b) => (b.coverUrl?.startsWith('http') ? 0 : 1),
+      accessorFn: (b) => (b.coverUrl ? 0 : 1),
       sortingFn: 'basic',
-      cell: ({ row }) =>
-        row.original.coverUrl?.startsWith('http') ? (
-          <img className="thumb" src={row.original.coverUrl} alt="" loading="lazy" />
-        ) : (
-          <span className="thumb thumb--none" aria-hidden="true" />
-        ),
+      cell: ({ row }) => <CoverImage book={row.original} compact className="thumb" />,
     },
     {
       ...label('title'),

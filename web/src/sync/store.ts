@@ -255,6 +255,18 @@ export class LibraryStore {
     return out
   }
 
+  /** The ebook a phone keeps for a book (the site only shows it), or undefined. A new object each call. */
+  ebook(bookId: string): { format: string | null; fileName: string | null; size: number | null } | undefined {
+    const row = this.rows.get(rowKey('ebooks', bookId))
+    if (!row || isDeleted(row)) return undefined
+    const text = (v: unknown) => (typeof v === 'string' ? v : null)
+    return {
+      format: text(row.fields.format),
+      fileName: text(row.fields.file_name),
+      size: typeof row.fields.size === 'number' ? row.fields.size : null,
+    }
+  }
+
   /** The reading goal for [year], or null. Rows whose id isn't a year are skipped. */
   goal(year: number): number | null {
     if (!Number.isInteger(year)) return null

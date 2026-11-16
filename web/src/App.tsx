@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useContext, useMemo } from 'react'
 import {
   Link,
   Outlet,
@@ -11,6 +11,8 @@ import {
 } from '@tanstack/react-router'
 import { SignIn } from './auth/SignIn'
 import { useSession } from './auth/useSession'
+import { BookPage } from './book/BookPage'
+import { CoverContext } from './covers/storage'
 import { LibraryPage } from './library/LibraryPage'
 import { supabase } from './supabase'
 import { createSupabaseSyncApi, type SyncApi } from './sync/api'
@@ -64,6 +66,15 @@ function LibraryRoute() {
   return <LibraryPage store={store} onAdd={onAdd} onOpen={onOpen} />
 }
 
+function BookRoute() {
+  const store = useStore()
+  const { id } = bookRoute.useParams()
+  const owner = useContext(CoverContext)?.owner
+  if (!owner) throw new Error('BookRoute: no signed-in account')
+  const navigate = useNavigate()
+  return <BookPage store={store} owner={owner} id={id} onBack={() => void navigate({ to: '/' })} />
+}
+
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Shell })
 
 const requireSession = ({ context }: { context: RouterContext }) => {
@@ -88,7 +99,7 @@ const bookRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/book/$id',
   beforeLoad: requireSession,
-  component: page('Book'),
+  component: BookRoute,
 })
 const addRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -134,6 +145,8 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
   // One store for the signed-in account; closed on sign-out and when the account changes.
   const { store, error } = useLibraryStore(userId, (id) => new LibraryStore({ api: createApi(id), owner: id }))
   useWarnBeforeClosing(store)
+  // Whose cover photos to show, and where they are kept.
+  const covers = useMemo(() => (userId ? { owner: userId, storage: supabase.storage } : null), [userId])
 
   if (loading) return <p className="loading">Loading…</p>
   if (session && !store) {
@@ -152,7 +165,9 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
   }
   return (
     <StoreContext.Provider value={store}>
-      <RouterProvider key={session ? 'in' : 'out'} router={router} context={{ signedIn: session !== null }} />
+      <CoverContext.Provider value={covers}>
+        <RouterProvider key={session ? 'in' : 'out'} router={router} context={{ signedIn: session !== null }} />
+      </CoverContext.Provider>
     </StoreContext.Provider>
   )
 }
