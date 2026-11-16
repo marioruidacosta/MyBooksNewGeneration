@@ -71,14 +71,25 @@ export function planMerge(store: LibraryStore, keep: Book, drop: Book, now = Dat
  * edited, so it syncs), then [drop] is removed. A photo cover that wins from [drop] is first copied to [keep]'s own
  * file (the path is tied to the book's id); if that fails [keep] stays as it was for the cover, and `coverKept` is
  * true. No storage object is ever deleted.
+ *
+ * `undo` puts it back, writing as little as it can so that nothing changed since is lost (the phone may have edited
+ * within the seconds Undo is on offer): of the fields the merge wrote to [keep], only those whose value is still the
+ * one the merge wrote go back to what they were; [drop] gets `deleted: false` and nothing else; its quotes that are
+ * still on [keep] move back. A cover photo copied to [keep]'s file can't be un-copied (storage is never touched):
+ * Undo only puts back [keep]'s previous `cover_url` value, so when [keep] already had a photo its original image is
+ * not restored (the new one stays in its file). Bookmarks and an e-book record of [drop] on a phone were removed with
+ * it and are not brought back.
  */
 export async function mergeBooks(
   store: LibraryStore,
   keep: Book,
   drop: Book,
   photos?: { owner: string; storage: PhotoStorage },
-): Promise<{ coverKept: boolean }> {
+): Promise<{ coverKept: boolean; undo: () => void }> {
   const plan = planMerge(store, keep, drop)
+  const keepBefore = keep
+  const dropBefore = drop
+  const dropTimes = store.bookTimes(drop.id)
   const changes: Record<string, unknown> = {}
   const after = bookToFields(plan.merged)
   for (const f of plan.fields) changes[f] = after[f]
@@ -123,5 +134,19 @@ export async function mergeBooks(
   }
   for (const q of quotes) store.edit('quotes', q.id, { book_id: keep.id })
   store.remove('books', drop.id)
-  return { coverKept }
+  const wrote = { ...changes }
+  const undo = () => {
+    const now = store.book(keep.id)
+    if (now) {
+      const current = bookToFields(now)
+      const was = bookToFields(keepBefore)
+      const back: Record<string, unknown> = {}
+      for (const [f, v] of Object.entries(wrote)) if (current[f] === v) back[f] = was[f]
+      if (Object.keys(back).length > 0) store.edit('books', keep.id, back)
+    }
+    store.restoreBook(dropBefore, dropTimes)
+    const onKeep = new Set(store.quotes(keep.id).map((q) => q.id))
+    for (const q of quotes) if (onKeep.has(q.id)) store.edit('quotes', q.id, { book_id: dropBefore.id })
+  }
+  return { coverKept, undo }
 }

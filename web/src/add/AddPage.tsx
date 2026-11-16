@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { LibraryStore } from '../sync/store'
 import { addBook, inLibrary } from './addBook'
 import { defaultLookup, isbnQuery, NotFoundWithErrors, type Found, type Lookup } from './lookup'
@@ -27,19 +27,25 @@ function Description({ text }: { text: string }) {
   )
 }
 
-type Props = { store: LibraryStore; lookup?: Lookup; onOpen: (id: string) => void }
+type Props = {
+  store: LibraryStore
+  lookup?: Lookup
+  onOpen: (id: string) => void
+  /** An ISBN to look up as the page opens (from the jump box). */
+  initialIsbn?: string
+}
 
 /** Add books: a search box (an ISBN or a title) and a list of pasted ISBNs. */
-export function AddPage({ store, lookup = defaultLookup, onOpen }: Props) {
+export function AddPage({ store, lookup = defaultLookup, onOpen, initialIsbn }: Props) {
   const books = useSyncExternalStore(store.subscribe, () => store.books())
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(initialIsbn ?? '')
   const [results, setResults] = useState<Found[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [added, setAdded] = useState<{ id: string; title: string } | null>(null)
 
-  const search = async () => {
-    const q = query.trim()
+  const search = async (text: string = query) => {
+    const q = text.trim()
     if (q === '') return
     setError('')
     setAdded(null)
@@ -64,6 +70,17 @@ export function AddPage({ store, lookup = defaultLookup, onOpen }: Props) {
       setBusy(false)
     }
   }
+
+  // Each ISBN the jump box hands over is looked up once, as the page opens.
+  const lookedUp = useRef<string | null>(null)
+  useEffect(() => {
+    // StrictMode runs this twice; the ref remembers the ISBN already asked for.
+    if (initialIsbn && lookedUp.current !== initialIsbn) {
+      lookedUp.current = initialIsbn
+      void search(initialIsbn)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialIsbn])
 
   const add = (found: Found) => {
     const r = addBook(store, found)

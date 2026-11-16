@@ -27,7 +27,7 @@ export function QuoteList({ store, bookId }: { store: LibraryStore; bookId: stri
   }
 
   return (
-    <section className="quotes" aria-labelledby="quotes-title">
+    <section className="book-section quotes" aria-labelledby="quotes-title">
       <h2 id="quotes-title">Quotes</h2>
       <ul>
         {quotes.map((q, i) => (
@@ -39,7 +39,9 @@ export function QuoteList({ store, bookId }: { store: LibraryStore; bookId: stri
               limit={MAX_QUOTE_TEXT}
               onCommit={(t) => {
                 // A quote can't be emptied; delete it instead.
-                if (t.trim() !== '' && t !== q.text) store.edit('quotes', q.id, { text: t })
+                if (t.trim() === '' || t === q.text) return false
+                store.edit('quotes', q.id, { text: t })
+                return true
               }}
             />
             <Field
@@ -48,7 +50,9 @@ export function QuoteList({ store, bookId }: { store: LibraryStore; bookId: stri
               shown={q.page === null ? '' : String(q.page)}
               onCommit={(t) => {
                 const n = parseWhole(t)
-                if (n !== undefined && n !== q.page) store.edit('quotes', q.id, { page: n })
+                if (n === undefined || n === q.page) return false
+                store.edit('quotes', q.id, { page: n })
+                return true
               }}
             />
             <button type="button" className="danger" onClick={() => store.remove('quotes', q.id)}>

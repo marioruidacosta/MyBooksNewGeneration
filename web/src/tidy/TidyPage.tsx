@@ -7,6 +7,7 @@ import type { LibraryStore } from '../sync/store'
 import { catalogTitleKey, firstAuthorKey } from '../text/keys'
 import { duplicateGroups, missingCover, missingIsbn, missingPages } from './duplicates'
 import { fillEmpty } from './fillEmpty'
+import { useToast } from '../ui/toastContext'
 import { mergeBooks, planMerge, type PhotoStorage } from './mergeBooks'
 
 type Props = {
@@ -26,6 +27,7 @@ const quoteText = (n: number) => `${String(n)} ${n === 1 ? 'quote moves' : 'quot
 /** Books that need tidying: what is missing, and likely duplicates, each with a quick fix. */
 export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink = shrinkToJpeg }: Props) {
   const books = useSyncExternalStore(store.subscribe, () => store.books())
+  const toast = useToast()
   const [tab, setTab] = useState<TabId>('cover')
   const [busy, setBusy] = useState<string | null>(null)
   const [message, setMessage] = useState('')
@@ -110,26 +112,31 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
     setMessage('')
     setError('')
     setBusy(keepId)
+    let coverKept = false
+    const undos: (() => void)[] = []
     try {
-      let coverKept = false
-      let done = 0
       for (const id of dropIds) {
         const keep = store.book(keepId)
         const drop = store.book(id)
         if (!keep || !drop) continue
         const r = await mergeBooks(store, keep, drop, { owner, storage })
         coverKept = coverKept || r.coverKept
-        done++
+        undos.push(r.undo)
       }
-      const title = store.book(keepId)?.title ?? 'the book'
-      setMessage(
-        `Merged ${String(done)} ${done === 1 ? 'book' : 'books'} into ${title}.` +
-          (coverKept ? " The other book's cover photo could not be used, so the book keeps its own cover." : ''),
-      )
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : 'The books could not be merged.')
     } finally {
       setBusy(null)
+      // Merges that went through can still be undone, even when a later one failed.
+      if (undos.length > 0) {
+        const title = store.book(keepId)?.title ?? 'the book'
+        toast.show(
+          `Merged into ${title}.` +
+            (coverKept ? " The other book's cover photo could not be used, so the book keeps its own cover." : ''),
+          // Newest first, so the kept book ends as it was before the first merge.
+          { label: 'Undo', run: () => undos.reverse().forEach((u) => u()) },
+        )
+      }
     }
   }
 
@@ -237,7 +244,7 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
                 )
               })}
             </ul>
-            <p>It cannot be undone.</p>
+            <p>You can undo the merge for a few seconds; bookmarks, e-books and a replaced cover photo won't come back.</p>
             <button type="button" disabled={busy !== null} onClick={() => void merge(keep.id, others.map((o) => o.id))}>
               Merge and delete
             </button>

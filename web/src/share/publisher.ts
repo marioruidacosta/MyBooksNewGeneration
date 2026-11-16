@@ -265,6 +265,19 @@ export class Publisher {
       if (before) this.queueUnpublish(before.id)
       return
     }
+    if (!before && origin === 'restore') {
+      // Undo of a removal. Not a book created on the site, however it looks to the store (it was "deleted", now it
+      // isn't): posting it as new would put a book the phone excluded into the community, bring back the copy a Tidy
+      // merge dropped, or give a book already taken down a fresh feed entry. So: when its unpublish hasn't gone out
+      // yet, cancel it and the book stays shared with nothing posted; otherwise publish only if the server still
+      // lists it (created: false), which after a sent unpublish it doesn't. The phone shares it again if wanted.
+      if (this.sendingId !== after.id && this.pending.get(after.id)?.kind === 'unpublish') {
+        this.deletePending(after.id)
+        return
+      }
+      this.queuePublish(null, after, false)
+      return
+    }
     if (!before) {
       this.created.add(after.id)
       this.refused.delete(after.id)

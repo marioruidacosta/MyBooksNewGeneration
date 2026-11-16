@@ -12,10 +12,11 @@ export function GeneratedCover({
       {...(compact ? { 'aria-hidden': true } : { role: 'img', 'aria-label': `Cover of ${title}` })}
     >
       {!compact && (
-        <>
+        // The face sits inside the cover, so its sizes (in cqw) are taken from the cover's own width.
+        <span className="generated-cover__face">
           <span className="generated-cover__title">{title}</span>
           {author !== '' && <span className="generated-cover__author">{author}</span>}
-        </>
+        </span>
       )}
     </span>
   )

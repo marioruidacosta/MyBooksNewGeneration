@@ -30,9 +30,10 @@ export type LocalChangeArgs = {
 
 /**
  * Where a local change comes from, when it isn't an ordinary edit: `import` is a bulk write (a backup or Goodreads
- * import, filling in details) that, as on the phone, is never posted to the community.
+ * import, filling in details) that, as on the phone, is never posted to the community; `restore` is an Undo bringing a
+ * removed book back, which is not a book created on the site.
  */
-export type ChangeOrigin = 'import'
+export type ChangeOrigin = 'import' | 'restore'
 
 /** What [LibraryStore.onLocalChangeWithOrigin] calls: the change, then its [ChangeOrigin] (undefined for an ordinary edit). */
 export type LocalChangeWithOrigin = (...args: [...LocalChangeArgs, origin: ChangeOrigin | undefined]) => void
@@ -373,6 +374,12 @@ export class LibraryStore {
     return row && !isDeleted(row) ? { ...row.times } : {}
   }
 
+  /** When each field of a live quote last changed (ms, by the server's field name); empty for one that isn't here. */
+  quoteTimes(id: string): Record<string, number> {
+    const row = this.rows.get(rowKey('quotes', id))
+    return row && !isDeleted(row) ? { ...row.times } : {}
+  }
+
   /** A book's live quotes, oldest first. */
   quotes(bookId: string): Quote[] {
     let out = this.quotesMemo.get(bookId)
@@ -495,9 +502,27 @@ export class LibraryStore {
     this.write(table, id, { deleted: true }, [], false)
   }
 
+  /**
+   * Brings back a book this site removed, writing only `deleted: false`, so a field someone else changed since (a
+   * phone, within the seconds Undo is on offer) keeps its newer value. When the row is gone for good (the server's
+   * deleted copy came back and it was dropped) it is put back from [book] with [times], the field times it had before
+   * (see [bookTimes], taken before removing it): only `deleted` is stamped now, so the server's per-field merge keeps
+   * any newer value of the phone's. Until the next pull this copy may show the older value.
+   */
+  restoreBook(book: Book, times: Record<string, number> = {}): void {
+    if (this.rows.has(rowKey('books', book.id))) this.write('books', book.id, { deleted: false }, [], false, 'restore')
+    else this.write('books', book.id, { ...bookToFields(book), deleted: false }, [], true, 'restore', times)
+  }
+
+  /** As [restoreBook], for a quote ([times] from [quoteTimes]). */
+  restoreQuote(quote: Quote, times: Record<string, number> = {}): void {
+    if (this.rows.has(rowKey('quotes', quote.id))) this.write('quotes', quote.id, { deleted: false }, [], false)
+    else this.write('quotes', quote.id, { ...quoteToFields(quote), deleted: false }, [], true, undefined, times)
+  }
+
   private write(
     table: SyncTable, id: string, fields: Record<string, unknown>, restamp: string[], allowNew: boolean,
-    origin?: ChangeOrigin,
+    origin?: ChangeOrigin, times: Record<string, number> = {},
   ) {
     if (!this.loaded || this.closed) throw new Error('LibraryStore: not loaded')
     const key = rowKey(table, id)
@@ -525,7 +550,10 @@ export class LibraryStore {
     // and the server alike, and lost while showing "Saved". Unchanged fields keep their times.
     const now = this.now()
     const old = current?.times ?? {}
-    const stamped = Object.fromEntries(changed.map((f) => [f, Math.max(now, (old[f] ?? 0) + 1)]))
+    // [times] are the times a row had before (a restore): its fields keep them, `deleted` is always new.
+    const stamped = Object.fromEntries(
+      changed.map((f) => [f, f !== 'deleted' && times[f] !== undefined ? times[f] : Math.max(now, (old[f] ?? 0) + 1)]),
+    )
     const next: SyncRow = { table, id, fields: nextFields, times: { ...old, ...stamped } }
     this.rows.set(key, next)
 

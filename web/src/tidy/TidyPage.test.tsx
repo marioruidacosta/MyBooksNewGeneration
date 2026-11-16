@@ -8,13 +8,20 @@ import { rowKey, type SyncApi } from '../sync/api'
 import type { Book, SyncRow } from '../sync/model'
 import { LibraryStore } from '../sync/store'
 import type { PhotoStorage } from './mergeBooks'
+import { ToastProvider } from '../ui/Toast'
 import { TidyPage } from './TidyPage'
 
 const T = 15_000
 
 let pulled: SyncRow[] = []
+/** Rows the phone changes after the first pull. */
+let later: SyncRow[] = []
 const api: SyncApi = {
-  pull: async (after) => (after === 0 ? { rows: pulled, last: pulled.length } : { rows: [], last: after }),
+  pull: async (after) => {
+    if (after === 0) return { rows: pulled, last: pulled.length }
+    const rows = later.splice(0)
+    return { rows, last: after + rows.length }
+  },
   push: async (changes) => ({ applied: changes.map((c) => rowKey(c.table, c.id)), rejected: [] }),
   onPing: () => () => {},
 }
@@ -46,6 +53,7 @@ function fakeLookup(found: Found | null): Lookup {
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
   pulled = []
+  later = []
 })
 afterEach(async () => {
   await Promise.all(stores.splice(0).map((s) => s.close()))
@@ -91,7 +99,11 @@ describe('TidyPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
     await user.click(screen.getByRole('button', { name: 'Merge' }))
 
-    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        "You can undo the merge for a few seconds; bookmarks, e-books and a replaced cover photo won't come back.",
+      ),
+    ).toBeInTheDocument()
     expect(screen.getByText(/1 quote moves/i)).toBeInTheDocument()
     expect(store.book('b')).toBeDefined()
 
@@ -166,5 +178,61 @@ describe('TidyPage merging, more', () => {
     expect(screen.getByRole('button', { name: 'Merge' })).toBeDisabled()
     await user.click(screen.getByRole('checkbox', { name: 'Not a duplicate: Blindness: one' }))
     expect(screen.getByRole('button', { name: 'Merge' })).toBeEnabled()
+  }, T)
+
+  it('undoingAMergeRestoresBothBooks', async () => {
+    const user = userEvent.setup()
+    const keepBefore = book({ id: 'a', title: 'Blindness', publisher: null, rating: null })
+    const dropBefore = book({ id: 'b', title: 'Blindness: a novel', publisher: 'House', rating: 4, tags: ['x'] })
+    const store = await open(keepBefore, dropBefore)
+    store.createQuote({ id: 'q1', bookId: 'b', text: 'A line', page: 2, dateAdded: 1, position: null, deleted: false })
+    render(
+      <ToastProvider>
+        <TidyPage store={store} owner="u1" storage={storage} />
+      </ToastProvider>,
+    )
+    await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
+    await user.click(screen.getByRole('button', { name: 'Merge' }))
+    await user.click(screen.getByRole('button', { name: 'Merge and delete' }))
+
+    await waitFor(() => expect(store.book('b')).toBeUndefined())
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Merged into Blindness.'))
+    expect(store.book('a')).toMatchObject({ publisher: 'House', rating: 4 })
+    expect(store.quotes('a')).toHaveLength(1)
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(store.book('a')).toEqual(keepBefore)
+    expect(store.book('b')).toEqual(dropBefore)
+    expect(store.quotes('a')).toEqual([])
+    expect(store.quotes('b').map((q) => q.id)).toEqual(['q1'])
+  }, T)
+
+  it('undoingAMergeKeepsAFieldChangedSince', async () => {
+    const user = userEvent.setup()
+    // The first pull gives the cursor a start, so the next pull is a new one.
+    pulled = [{ table: 'bookmarks', id: 'm0', fields: { book_id: 'zz', deleted: false }, times: { book_id: 1 }, seq: 1 }]
+    const keepBefore = book({ id: 'a', title: 'Blindness', publisher: null, rating: null })
+    const dropBefore = book({ id: 'b', title: 'Blindness: a novel', publisher: 'House', rating: 4 })
+    const store = await open(keepBefore, dropBefore)
+    render(
+      <ToastProvider>
+        <TidyPage store={store} owner="u1" storage={storage} />
+      </ToastProvider>,
+    )
+    await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
+    await user.click(screen.getByRole('button', { name: 'Merge' }))
+    await user.click(screen.getByRole('button', { name: 'Merge and delete' }))
+    await waitFor(() => expect(store.book('b')).toBeUndefined())
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Merged into Blindness.'))
+    expect(store.book('a')).toMatchObject({ publisher: 'House', rating: 4 })
+
+    // The phone changes the score during the eight seconds.
+    later.push({ table: 'books', id: 'a', fields: { rating: 2 }, times: { rating: Date.now() + 60_000 }, seq: 2 })
+    await store.refresh()
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+    // What the merge filled in goes back; what changed since is left alone; the dropped book is back as it was.
+    expect(store.book('a')).toMatchObject({ publisher: null, rating: 2 })
+    expect(store.book('b')).toEqual(dropBefore)
   }, T)
 })

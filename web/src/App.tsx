@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import {
   Link,
   Outlet,
@@ -14,8 +14,10 @@ import { useSession } from './auth/useSession'
 import { AddPage } from './add/AddPage'
 import { BookPage } from './book/BookPage'
 import { CoverContext } from './covers/storage'
+import { JumpBox } from './jump/JumpBox'
 import { LibraryPage } from './library/LibraryPage'
 import { PageBoundary } from './PageBoundary'
+import { ThemeSwitch } from './ThemeSwitch'
 import { Publisher } from './share/publisher'
 import { SharingContext } from './share/SharingContext'
 import { supabase } from './supabase'
@@ -23,11 +25,14 @@ import { createSupabaseSyncApi, type SyncApi } from './sync/api'
 import { SaveBadge } from './sync/SaveBadge'
 import { LibraryStore } from './sync/store'
 import { StoreContext, useOptionalStore, useStore } from './sync/StoreContext'
+import type { LibraryStore as Store } from './sync/store'
 import { useLibraryStore, useWarnBeforeClosing } from './sync/useLibraryStore'
+import { ToastProvider } from './ui/Toast'
 
 // The import and tidy pages (with the ZIP reader and the import code) load when first opened.
 const ImportPage = lazy(() => import('./io/ImportPage').then((m) => ({ default: m.ImportPage })))
 const TidyPage = lazy(() => import('./tidy/TidyPage').then((m) => ({ default: m.TidyPage })))
+const YearPage = lazy(() => import('./year/YearPage').then((m) => ({ default: m.YearPage })))
 
 const loadingPage = <p className="loading">Loading…</p>
 
@@ -35,26 +40,45 @@ interface RouterContext {
   signedIn: boolean
 }
 
+/** Ctrl K from any signed-in page: a book to open, or an ISBN to add. */
+function Jump({ store }: { store: Store }) {
+  const books = useSyncExternalStore(store.subscribe, () => store.books())
+  const navigate = useNavigate()
+  return (
+    <JumpBox
+      books={books}
+      onOpen={(id) => void navigate({ to: '/book/$id', params: { id } })}
+      onAddIsbn={(isbn) => void navigate({ to: '/add', search: { isbn } })}
+    />
+  )
+}
+
 function Shell() {
   const store = useOptionalStore()
   return (
-    <>
+    <ToastProvider>
       {store && (
         <header className="app-bar">
+          <span className="wordmark">MyBooks</span>
           <nav aria-label="Pages">
-            <Link to="/">Library</Link>
+            <Link to="/" activeOptions={{ exact: true }}>
+              Library
+            </Link>
             <Link to="/add">Add a book</Link>
             <Link to="/import">Import</Link>
             <Link to="/tidy">Tidy up</Link>
+            <Link to="/year">Year in books</Link>
           </nav>
+          <Jump store={store} />
           <SaveBadge store={store} />
-          <button type="button" onClick={() => void supabase.auth.signOut()}>
+          <ThemeSwitch />
+          <button type="button" className="quiet" onClick={() => void supabase.auth.signOut()}>
             Sign out
           </button>
         </header>
       )}
       <Outlet />
-    </>
+    </ToastProvider>
   )
 }
 
@@ -69,7 +93,8 @@ function LibraryRoute() {
 function AddRoute() {
   const store = useStore()
   const navigate = useNavigate()
-  return <AddPage store={store} onOpen={(id) => void navigate({ to: '/book/$id', params: { id } })} />
+  const { isbn } = addRoute.useSearch()
+  return <AddPage key={isbn ?? ''} store={store} initialIsbn={isbn} onOpen={(id) => void navigate({ to: '/book/$id', params: { id } })} />
 }
 
 function ImportRoute() {
@@ -92,6 +117,22 @@ function TidyRoute() {
     <PageBoundary>
       <Suspense fallback={loadingPage}>
         <TidyPage store={store} owner={covers.owner} storage={supabase.storage} />
+      </Suspense>
+    </PageBoundary>
+  )
+}
+
+function YearRoute() {
+  const store = useStore()
+  const navigate = useNavigate()
+  return (
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>
+        <YearPage
+          store={store}
+          onOpen={(id) => void navigate({ to: '/book/$id', params: { id } })}
+          onLibrary={() => void navigate({ to: '/' })}
+        />
       </Suspense>
     </PageBoundary>
   )
@@ -136,6 +177,8 @@ const addRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/add',
   beforeLoad: requireSession,
+  validateSearch: (search: Record<string, unknown>): { isbn?: string } =>
+    typeof search.isbn === 'string' && search.isbn !== '' ? { isbn: search.isbn } : {},
   component: AddRoute,
 })
 const importRoute = createRoute({
@@ -151,7 +194,14 @@ const tidyRoute = createRoute({
   component: TidyRoute,
 })
 
-const routeTree = rootRoute.addChildren([signInRoute, libraryRoute, bookRoute, addRoute, importRoute, tidyRoute])
+const yearRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/year',
+  beforeLoad: requireSession,
+  component: YearRoute,
+})
+
+const routeTree = rootRoute.addChildren([signInRoute, libraryRoute, bookRoute, addRoute, importRoute, tidyRoute, yearRoute])
 
 const router = createRouter({
   routeTree,

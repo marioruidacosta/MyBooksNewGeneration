@@ -3,12 +3,20 @@ import {
   flexRender, getCoreRowModel, getFilteredRowModel, getSortedRowModel, useReactTable,
   type RowSelectionState, type SortingState, type VisibilityState,
 } from '@tanstack/react-table'
+import { progressChange } from '../book/progress'
 import { statusChange } from '../book/status'
-import { STATUSES, type Book } from '../sync/model'
+import { bookToFields } from '../sync/codec'
+import type { PortraitFetch } from '../quotes/daily'
+import { QuoteOfTheDay } from '../quotes/QuoteOfTheDay'
+import { STATUSES, type Book, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
+import { useToast } from '../ui/toastContext'
 import { BulkBar, type BulkActions } from './BulkBar'
+import { CoverGrid } from './CoverGrid'
+import { ReadingShelf } from './ReadingShelf'
 import {
-  COLUMN_LABELS, COLUMN_STORAGE_KEY, DEFAULT_VISIBILITY, makeColumns, type ColumnId,
+  COLUMN_LABELS, COLUMN_STORAGE_KEY, DEFAULT_VISIBILITY, makeColumns, VIEW_STORAGE_KEY, type CellActions, type ColumnId,
+  type LibraryView,
 } from './columns'
 import {
   allTags, countByStatus, matches, NO_FILTERS, plural, STATUS_LABELS, type Filters, type LentFilter,
@@ -30,6 +38,30 @@ function saveVisibility(v: VisibilityState) {
     window.localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(v))
   } catch {
     // Not kept this time; the columns still change.
+  }
+}
+
+/** The sorts the covers view offers, as the table's sorting state (the same state, so the two views agree). */
+const COVER_SORTS: Record<string, SortingState> = {
+  title: [{ id: 'title', desc: false }],
+  authors: [{ id: 'authors', desc: false }],
+  added: [{ id: 'added', desc: true }],
+  read: [{ id: 'read', desc: true }],
+}
+
+function loadView(): LibraryView {
+  try {
+    return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'covers' ? 'covers' : 'table'
+  } catch {
+    return 'table'
+  }
+}
+
+function saveView(v: LibraryView) {
+  try {
+    window.localStorage.setItem(VIEW_STORAGE_KEY, v)
+  } catch {
+    // Not kept this time; the view still changes.
   }
 }
 
@@ -55,7 +87,7 @@ function GoalEditor({ store, year }: { store: LibraryStore; year: number }) {
 
   return (
     <label className="goal">
-      <span>{year} goal:</span>
+      <span>{year} goal</span>
       <input
         type="number"
         min={0}
@@ -72,26 +104,76 @@ function GoalEditor({ store, year }: { store: LibraryStore; year: number }) {
   )
 }
 
+/** How far the year's reading is towards its goal; nothing when there's no goal. */
+function GoalBar({ store, year, read }: { store: LibraryStore; year: number; read: number }) {
+  const goal = useSyncExternalStore(store.subscribe, () => store.goal(year))
+  if (goal === null || goal <= 0) return null
+  return (
+    <span
+      className="goal-bar"
+      role="progressbar"
+      aria-label={`${year} goal progress`}
+      aria-valuemin={0}
+      aria-valuemax={goal}
+      aria-valuenow={Math.min(read, goal)}
+    >
+      <span style={{ width: `${Math.min(100, (read / goal) * 100)}%` }} />
+    </span>
+  )
+}
+
 export type LibraryPageProps = {
   store: LibraryStore
   /** The year whose goal is shown; this year when left out. */
   year?: number
   onAdd: () => void
   onOpen: (id: string) => void
+  /** The day whose quote shows, and what brings its portrait; today and the browser's fetch when left out. */
+  quoteDay?: Date
+  quoteFetch?: PortraitFetch
 }
 
 /** Every book in a table: sort, search, filter, choose several and change them together. */
-export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onOpen }: LibraryPageProps) {
+export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onOpen, quoteDay, quoteFetch }: LibraryPageProps) {
   const books = useSyncExternalStore(store.subscribe, () => store.books())
   const firstVisitOffline = useSyncExternalStore(store.subscribe, () => store.firstVisitOffline)
   // Newest first until a column is chosen.
   const data = useMemo(() => books.slice().sort((a, b) => b.dateAdded - a.dateAdded), [books])
-  const columns = useMemo(() => makeColumns(onOpen), [onOpen])
+  const toast = useToast()
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  const cellActions = useMemo<CellActions>(
+    () => ({
+      // The status and the dates it goes with, exactly as the book page and the bulk bar do.
+      setStatus: (b: Book, status: Status) => {
+        const change = statusChange(b, status, Date.now())
+        if (b.status === status || Object.keys(change).length === 0) return
+        store.edit('books', b.id, change)
+        toast.show(`Status changed to ${STATUS_LABELS[status]}.`, {
+          label: 'Undo',
+          // Only the fields the change wrote that still hold what it wrote go back: a newer edit (here or from a
+          // phone) keeps its value, as with the merge Undo.
+          run: () => {
+            const now = store.book(b.id)
+            if (!now) return
+            const current = bookToFields(now)
+            const was = bookToFields(b)
+            const back: Record<string, unknown> = {}
+            for (const [f, v] of Object.entries(change)) if (current[f] === v) back[f] = was[f]
+            if (Object.keys(back).length > 0) store.edit('books', b.id, back)
+          },
+        })
+      },
+      setRating: (b, rating) => store.edit('books', b.id, { rating }),
+      filterByTag: (tag) => setFilters((f) => ({ ...f, tag })),
+    }),
+    [store, toast],
+  )
+  const columns = useMemo(() => makeColumns(onOpen, cellActions), [onOpen, cellActions])
 
   const [sorting, setSorting] = useState<SortingState>([])
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(loadVisibility)
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  const [view, setView] = useState<LibraryView>(loadView)
   const searchRef = useRef<HTMLInputElement>(null)
 
   const table = useReactTable({
@@ -127,10 +209,36 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
 
   const remove = useCallback(() => {
     if (selected.length === 0) return
-    if (!window.confirm(`Delete ${plural(selected.length, 'book')}?`)) return
+    // Bookmarks and an e-book on the phone go with the book and Undo can't bring them back: that one asks first.
+    const withPhoneData = selected.filter((b) => store.hasPhoneData(b.id)).length
+    if (
+      withPhoneData > 0 &&
+      !window.confirm(
+        `${String(withPhoneData)} of these books have bookmarks or an e-book on your phone. Those won't come back with Undo. Delete anyway?`,
+      )
+    ) {
+      return
+    }
+    // What undo needs, taken before the books go: every field of each book (the book itself) and its quotes.
+    const gone = selected.map((b) => ({
+      book: b,
+      times: store.bookTimes(b.id),
+      quotes: store.quotes(b.id).map((q) => ({ quote: q, times: store.quoteTimes(q.id) })),
+    }))
     for (const b of selected) store.remove('books', b.id)
     setRowSelection({})
-  }, [selected, store])
+    toast.show(`Deleted ${plural(gone.length, 'book')}.`, {
+      label: 'Undo',
+      // Only `deleted: false` is written, for the books and for the quotes this delete took: a field changed on the
+      // phone meanwhile keeps its newer value. It is a normal stamped edit, so it syncs.
+      run: () => {
+        for (const { book, times, quotes } of gone) {
+          store.restoreBook(book, times)
+          for (const q of quotes) store.restoreQuote(q.quote, q.times)
+        }
+      },
+    }, { focus: true })
+  }, [selected, store, toast])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -141,13 +249,13 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
       } else if (e.key === 'n') {
         e.preventDefault()
         onAdd()
-      } else if (e.key === 'Delete') {
+      } else if (e.key === 'Delete' && view === 'table') {
         remove()
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onAdd, remove])
+  }, [onAdd, remove, view])
 
   // Each change goes through `edit` for each book, and only where the book would change: the rest is not stamped.
   const bulk: BulkActions = {
@@ -191,24 +299,44 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
   }
 
   const rows = table.getRowModel().rows
+  // Newest first until a column is chosen; a sort made in the table that the covers don't offer shows as "Table order".
+  const coverSort =
+    sorting.length === 0
+      ? 'added'
+      : (Object.keys(COVER_SORTS).find((k) => sorting.length === 1 && COVER_SORTS[k][0].id === sorting[0].id && COVER_SORTS[k][0].desc === sorting[0].desc) ?? '')
   const filtered = filters.query !== '' || filters.status !== '' || filters.tag !== '' || filters.lent !== ''
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => setFilters((f) => ({ ...f, [key]: value }))
 
   return (
     <main className="library-page">
+      <div className="library-band">
       <header className="library-head">
-        <h1>Library</h1>
-        <p className="counts" aria-label="Counts">
-          <span>{plural(books.length, 'book')}</span>
-          {STATUSES.map((s) => (
-            <span key={s}>
-              {STATUS_LABELS[s]} · {plural(counts[s], 'book')}
-            </span>
-          ))}
-        </p>
-        <GoalEditor store={store} year={year} />
-        <span className="read-count">{readThisYear} read in {year}</span>
+        <div className="library-title">
+          <h1>Library</h1>
+          <p className="counts" aria-label="Counts">
+            {plural(books.length, 'book')}:{' '}
+            {STATUSES.map((s, i) => (
+              <span key={s}>
+                {counts[s]} {STATUS_LABELS[s].toLowerCase()}
+                {i < STATUSES.length - 1 ? ', ' : ''}
+              </span>
+            ))}
+          </p>
+        </div>
+        <div className="goal-panel">
+          <GoalEditor store={store} year={year} />
+          <GoalBar store={store} year={year} read={readThisYear} />
+          <span className="read-count">{readThisYear} read in {year}</span>
+        </div>
       </header>
+      <QuoteOfTheDay place="library" now={quoteDay} fetchImpl={quoteFetch} />
+
+      <ReadingShelf
+        books={books}
+        onOpen={onOpen}
+        onProgress={(b, input) => store.edit('books', b.id, progressChange(b, input))}
+      />
+      </div>
 
       <div className="toolbar">
         <input
@@ -253,6 +381,33 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
             Clear filters
           </button>
         )}
+        <div className="view-switch" role="group" aria-label="View">
+          {(['table', 'covers'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={view === v}
+              onClick={() => {
+                setView(v)
+                saveView(v)
+                // Choosing books is for the table: nothing stays selected out of sight.
+                if (v === 'covers') setRowSelection({})
+              }}
+            >
+              {v === 'table' ? 'Table' : 'Covers'}
+            </button>
+          ))}
+        </div>
+        {view === 'covers' && (
+          <select aria-label="Sort covers" value={coverSort} onChange={(e) => setSorting(COVER_SORTS[e.target.value] ?? [])}>
+            {coverSort === '' && <option value="">Table order</option>}
+            <option value="title">Title</option>
+            <option value="authors">Author</option>
+            <option value="added">Recently added</option>
+            <option value="read">Recently read</option>
+          </select>
+        )}
+        {view === 'table' && (
         <details className="columns">
           <summary>Columns</summary>
           <div className="columns-list">
@@ -267,14 +422,18 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
               ))}
           </div>
         </details>
+        )}
         <button type="button" className="primary" onClick={onAdd}>
           Add a book
         </button>
       </div>
 
-      {selected.length > 0 && <BulkBar count={selected.length} tags={tags} actions={bulk} />}
+      {view === 'table' && selected.length > 0 && <BulkBar count={selected.length} tags={tags} actions={bulk} />}
+
+      {view === 'covers' && <CoverGrid books={rows.map((r) => r.original)} onOpen={onOpen} />}
 
       <div className="table-wrap">
+        {view === 'table' && (
         <table className="library-table">
           <thead>
             {table.getHeaderGroups().map((group) => (
@@ -311,6 +470,7 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
             ))}
           </tbody>
         </table>
+        )}
         {rows.length === 0 && (
           <p className="empty">
             {books.length > 0
