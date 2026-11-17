@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { buildNews, loadPrevious, type NewsFile } from './build-news'
@@ -19,6 +20,8 @@ const old = (over: Partial<NewsItem>): NewsItem => ({
   id: 'x', title: 'Old', summary: '', url: 'https://old.test/1', source: 'old', lang: 'en', published: NOW - DAY, image: null, ...over,
 })
 type F = typeof fetch
+const f = (fn: (url: string) => Promise<Response>) => fn as unknown as F
+const noSleep = () => Promise.resolve()
 
 describe('buildNews', () => {
   it('dedupesByUrlThenTitle', async () => {
@@ -26,15 +29,30 @@ describe('buildNews', () => {
       url.includes('a.test')
         ? respond(rss([
             { title: 'Same story', url: 'https://x.test/p?utm=1#top', date: NOW - 1000 },
-            { title: 'Other', url: 'https://x.test/q', date: NOW - 2000 },
+            { title: 'A rather long identical headline', url: 'https://x.test/q', date: NOW - 2000 },
+            { title: 'Short', url: 'https://x.test/s1', date: NOW - 2500 },
           ]))
         : respond(rss([
             { title: 'Same story again', url: 'https://x.test/p', date: NOW - 3000 },
-            { title: 'other ', url: 'https://y.test/z', date: NOW - 4000 },
+            { title: 'a rather long identical headline ', url: 'https://y.test/z', date: NOW - 4000 },
+            { title: 'short', url: 'https://y.test/s2', date: NOW - 4500 },
           ])),
     )
     const out = await buildNews({ feeds: [feed('a'), feed('b')], fetch: fetchFn as unknown as F, now: NOW, previous: null })
-    expect(out.file.items.map((i) => i.title)).toEqual(['Same story', 'Other'])
+    // the same URL is one story; titles are only compared inside one source, and only when longer than 15 characters
+    expect(out.file.items.map((i) => i.title)).toEqual(['Same story', 'A rather long identical headline', 'Short', 'a rather long identical headline', 'short'])
+    const dup = await buildNews({
+      feeds: [feed('a')],
+      fetch: f(() => respond(rss([
+        { title: 'A rather long identical headline', url: 'https://x.test/1', date: NOW - 1000 },
+        { title: 'a rather long identical headline', url: 'https://x.test/2', date: NOW - 2000 },
+        { title: 'Short', url: 'https://x.test/3', date: NOW - 3000 },
+        { title: 'short', url: 'https://x.test/4', date: NOW - 4000 },
+      ]))),
+      now: NOW,
+      previous: null,
+    })
+    expect(dup.file.items.map((i) => i.url)).toEqual(['https://x.test/1', 'https://x.test/3', 'https://x.test/4'])
   })
 
   it('keepsThirtyDaysNewestFirstAtMost200', async () => {
@@ -53,12 +71,12 @@ describe('buildNews', () => {
   })
 
   it('aFailingFeedDoesNotFailTheBuild', async () => {
-    const fetchFn = vi.fn((url: string) => {
+    const fetchFn = f((url) => {
       if (url.includes('good')) return respond(fixture('sample.atom.xml'))
       if (url.includes('html')) return respond('<!doctype html><html><body>Error</body></html>')
       if (url.includes('down')) return respond('nope', 503)
       return Promise.reject(new Error('socket hang up'))
-    }) as unknown as F
+    })
     const feeds = [feed('good'), feed('html'), feed('down'), feed('boom')]
     const out = await buildNews({ feeds, fetch: fetchFn, now: NOW, previous: null })
     expect(out.file.items).toHaveLength(2)
@@ -66,15 +84,17 @@ describe('buildNews', () => {
     expect(out.log.join('\n')).toMatch(/boom.*socket hang up/)
     expect(out.log).toHaveLength(4)
 
-    // every feed failing keeps the previous items
+    // every feed failing keeps the previous items and the previous generatedAt
     const prev: NewsFile = { generatedAt: NOW - DAY, sources: [], items: [old({})] }
-    const allDown = await buildNews({ feeds: [feed('down')], fetch: fetchFn, now: NOW, previous: prev })
+    const allDown = await buildNews({ feeds: [feed('down'), feed('old')], fetch: fetchFn, now: NOW, previous: prev })
     expect(allDown.file.items.map((i) => i.title)).toEqual(['Old'])
     expect(allDown.file.sources[0].ok).toBe(false)
+    expect(allDown.file.generatedAt).toBe(NOW - DAY)
+    expect(out.file.generatedAt).toBe(NOW)
   })
 
   it('allFeedsFailingWithNoPreviousPublishesAnEmptyList', async () => {
-    const fetchFn = (() => respond('nope', 503)) as unknown as F
+    const fetchFn = f(() => respond('nope', 503))
     const out = await buildNews({ feeds: [feed('a'), feed('b')], fetch: fetchFn, now: NOW, previous: null })
     expect(out.file.items).toEqual([])
     expect(out.file.sources.map((s) => s.ok)).toEqual([false, false])
@@ -96,19 +116,77 @@ describe('buildNews', () => {
         old({ title: 'Http', url: 'http://old.test/http', published: NOW - DAY }),
       ],
     }
-    const fetchFn = (() => respond(rss([{ title: 'Dup updated', url: 'https://n.test/1', date: NOW - 1000 }, { title: 'Fresh', url: 'https://n.test/2', date: NOW - 2000 }]))) as unknown as F
-    const out = await buildNews({ feeds: [feed('n')], fetch: fetchFn, now: NOW, previous: prev })
-    expect(out.file.items.map((i) => i.title)).toEqual(['Dup updated', 'Fresh', 'Kept'])
+    const fetchFn = f((url) => url.includes('n.test') ? respond(rss([{ title: 'Dup updated', url: 'https://n.test/1', date: NOW - 1000 }, { title: 'Fresh', url: 'https://n.test/2', date: NOW - 2000 }])) : respond('', 503))
+    const out = await buildNews({ feeds: [feed('n'), feed('old')], fetch: fetchFn, now: NOW, previous: prev })
+    // a story already in the previous file keeps its earlier date
+    expect(out.file.items.map((i) => i.title)).toEqual(['Fresh', 'Dup updated', 'Kept'])
     expect(out.file.generatedAt).toBe(NOW)
   })
 
-  it('treatsAMissingOrBrokenPreviousFileAsNoPrevious', async () => {
-    const f = (fn: () => Promise<Response>) => fn as unknown as F
-    expect(await loadPrevious('https://p.test/news.json', f(() => respond('Not found', 404)))).toBeNull()
-    expect(await loadPrevious('https://p.test/news.json', f(() => respond('<html>', 200)))).toBeNull()
-    expect(await loadPrevious('https://p.test/news.json', f(() => Promise.reject(new Error('x'))))).toBeNull()
-    expect(await loadPrevious(undefined, f(() => respond('{}')))).toBeNull()
+  it('anUndatedStoryKeepsItsFirstDate', async () => {
+    const prev: NewsFile = { generatedAt: NOW - DAY, sources: [], items: [old({ title: 'Undated', url: 'https://n.test/u', source: 'n', published: NOW - 3 * DAY })] }
+    const out = await buildNews({ feeds: [feed('n')], fetch: f(() => respond(rss([{ title: 'Undated', url: 'https://n.test/u' }]))), now: NOW, previous: prev })
+    expect(out.file.items).toHaveLength(1)
+    expect(out.file.items[0].published).toBe(NOW - 3 * DAY)
+  })
+
+  it('aHostilePreviousFileIsCleaned', async () => {
+    const url = 'https://old.test/hostile'
+    const prev = {
+      generatedAt: NOW - DAY,
+      sources: [],
+      items: [
+        { ...old({}), id: 'forged', url, title: `<b>Giant</b> ${'x'.repeat(10000)}`, summary: 'Hello <script>alert(1)</script>there &lt;img src=x onerror=1&gt;', published: NOW + 10 * DAY, image: 'http://old.test/i.jpg', extra: 'x', admin: true },
+        { ...old({}), url: 'https://evil.test/1', source: 'unknown' },
+        { ...old({}), url: 'https://user:pw@old.test/creds' },
+        { ...old({}), url: 'https://old.test/nodate', published: 'yesterday' },
+      ],
+    } as unknown as NewsFile
+    const out = await buildNews({ feeds: [feed('old')], fetch: f(() => respond('', 503)), now: NOW, previous: prev })
+    expect(out.file.items).toHaveLength(1)
+    const item = out.file.items[0] as unknown as Record<string, unknown>
+    expect(Object.keys(item).sort()).toEqual(['id', 'image', 'lang', 'published', 'source', 'summary', 'title', 'url'])
+    expect(item.id).toBe(createHash('sha1').update(url).digest('hex'))
+    expect((item.title as string).length).toBeLessThanOrEqual(200)
+    expect(item.title).not.toMatch(/[<>]/)
+    expect(item.summary).toBe('Hello there')
+    expect(item.published).toBe(NOW)
+    expect(item.image).toBeNull()
+  })
+
+  it('aMissingPreviousFileIsNone', async () => {
+    expect(await loadPrevious('https://p.test/news.json', f(() => respond('Not found', 404)), noSleep)).toBeNull()
+    expect(await loadPrevious(undefined, f(() => respond('{}')), noSleep)).toBeNull()
     const good = { generatedAt: 1, sources: [], items: [old({})] }
-    expect((await loadPrevious('https://p.test/news.json', f(() => respond(JSON.stringify(good)))))?.items).toHaveLength(1)
+    expect((await loadPrevious('https://p.test/news.json', f(() => respond(JSON.stringify(good))), noSleep))?.items).toHaveLength(1)
+  })
+
+  it('aPreviousFileServerErrorFailsRatherThanWiping', async () => {
+    const calls = vi.fn()
+    const bad = (make: () => Promise<Response>) => f(() => { calls(); return make() })
+    await expect(loadPrevious('https://p.test/n.json', bad(() => respond('oops', 500)), noSleep)).rejects.toThrow(/previous/i)
+    expect(calls).toHaveBeenCalledTimes(3)
+    await expect(loadPrevious('https://p.test/n.json', bad(() => Promise.reject(new Error('reset'))), noSleep)).rejects.toThrow(/previous/i)
+    await expect(loadPrevious('https://p.test/n.json', bad(() => respond('<html>', 200)), noSleep)).rejects.toThrow(/previous/i)
+    await expect(loadPrevious('https://p.test/n.json', bad(() => respond('{"nope":1}', 200)), noSleep)).rejects.toThrow(/previous/i)
+    // a blip is retried
+    let n = 0
+    const flaky = f(() => (++n < 3 ? respond('x', 502) : respond(JSON.stringify({ generatedAt: 1, sources: [], items: [] }))))
+    expect((await loadPrevious('https://p.test/n.json', flaky, noSleep))?.items).toEqual([])
+  })
+
+  it('anOversizedFeedIsRejected', async () => {
+    const MB = 1024 * 1024
+    const huge = new Response('<rss/>', { headers: { 'content-length': String(6 * MB) } })
+    const chunk = new Uint8Array(MB).fill(32)
+    let sent = 0
+    const streamed = new Response(new ReadableStream({ pull(c) { if (sent++ < 8) c.enqueue(chunk); else c.close() } }))
+    const ok = respond(rss([{ title: 'Fine', url: 'https://ok.test/1', date: NOW - 1000 }]))
+    const fetchFn = f((url) => (url.includes('huge') ? Promise.resolve(huge) : url.includes('stream') ? Promise.resolve(streamed) : ok))
+    const out = await buildNews({ feeds: [feed('huge'), feed('stream'), feed('ok')], fetch: fetchFn, now: NOW, previous: null })
+    expect(out.file.sources.map((s) => s.ok)).toEqual([false, false, true])
+    expect(out.log.join('\n')).toMatch(/huge: FAILED.*too large/i)
+    expect(out.log.join('\n')).toMatch(/stream: FAILED.*too large/i)
+    expect(sent).toBeLessThan(8)
   })
 })

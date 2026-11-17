@@ -12,13 +12,26 @@ export interface Feed {
 const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 
 // "prémio" (a prize) only counts together with one of these, so it needs no entry of its own.
-const BOOK_WORDS = ['livro', 'livros', 'escritor', 'escritora', 'poeta', 'poesia', 'romance', 'literatura', 'literario', 'literaria', 'editora']
-const BOOK_PATTERN = new RegExp(`(?<![a-z])(?:${BOOK_WORDS.join('|')})(?![a-z])`)
+const BOOK_WORDS = [
+  'livro', 'livros', 'escritor', 'escritora', 'escritores', 'escritoras', 'poeta', 'poetas', 'poesia', 'literatura', 'literario', 'literaria',
+  'editora', 'editoras', 'editores', 'autores', 'autoras', 'leitores', 'leitura',
+]
+// "romance" is left out on purpose: it is also gossip ("romance between two actors"), so it never counts on its own.
+const wordPattern = (words: string[]) => new RegExp(`(?<![a-z])(?:${words.join('|')})(?![a-z])`)
+const BOOK_PATTERN = wordPattern(BOOK_WORDS)
+// Phrases that contain a book word but are not about books. Tested on the folded text.
+const NOT_BOOKS = [
+  'livro de reclama', 'livro branco', 'livro verde', 'livro negro', 'livro de recordes', 'livro de ponto', 'livro de cheques',
+  'livro de registo', 'editora de moda', 'editora-chefe',
+]
 
 /** RTP Cultura, Expresso, Observador and SAPO Mag cover far more than books: keep only the stories about books, ignoring case and accents. */
 export function keepsBookStory(title: string, summary: string): boolean {
-  return BOOK_PATTERN.test(fold(`${title} ${summary}`))
+  let text = fold(`${title} ${summary}`)
+  for (const phrase of NOT_BOOKS) text = text.split(phrase).join(' ')
+  return BOOK_PATTERN.test(text)
 }
+
 
 export const FEEDS: Feed[] = [
   { id: 'apel', name: 'APEL', lang: 'pt', url: 'https://www.apel.pt/rss' },

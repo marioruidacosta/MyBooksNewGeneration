@@ -39,18 +39,37 @@ function decodeEntities(s: string): string {
   })
 }
 
+// Tags longer than this are not tags. The bound also keeps a hostile "<<<<<..." from costing quadratic time.
+const MAX_TAG = 500
+// Raw text is cut to this before any stripping, so no input can make the cleaning slow.
+const MAX_RAW = 20_000
+
 function stripTags(s: string): string {
   return s
-    .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<\/?(p|br|div|li|ul|ol|h[1-6]|blockquote|tr|table)\b[^>]*>/gi, ' ')
-    .replace(/<[^>]*>/g, '')
+    .replace(/<(script|style)\b[\s\S]{0,20000}?<\/\1\s*>/gi, ' ')
+    .replace(/<!--[\s\S]{0,20000}?-->/g, ' ')
+    .replace(new RegExp(`<\\/?(p|br|div|li|ul|ol|h[1-6]|blockquote|tr|table)\\b[^>]{0,${MAX_TAG}}>`, 'gi'), ' ')
+    .replace(new RegExp(`<[^>]{0,${MAX_TAG}}>`, 'g'), '')
 }
+
+// Control characters, bidirectional overrides and isolates, zero-width marks, and lone surrogates.
+const INVISIBLE = new RegExp(
+  '[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F-\\u009F\\u200B-\\u200F\\u202A-\\u202E\\u2066-\\u2069]' +
+    '|[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|(?<![\\uD800-\\uDBFF])[\\uDC00-\\uDFFF]',
+  'g',
+)
 
 /** Plain text from an HTML fragment: tags and scripts gone, entities decoded, whitespace collapsed. */
 export function toPlainText(html: string): string {
   // A second pass catches markup that only appears once the entities are decoded.
-  return stripTags(decodeEntities(stripTags(html))).replace(/\s+/g, ' ').trim()
+  return stripTags(decodeEntities(stripTags(html.slice(0, MAX_RAW))))
+    .replace(INVISIBLE, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+export function cleanTitle(raw: string): string {
+  return cap(toPlainText(raw), MAX_TITLE)
 }
 
 function cap(text: string, max: number): string {
@@ -88,7 +107,7 @@ export function httpsUrl(value: unknown): string | null {
   if (typeof value !== 'string') return null
   try {
     const u = new URL(value.trim())
-    return u.protocol === 'https:' ? u.toString() : null
+    return u.protocol === 'https:' && !u.username && !u.password ? u.toString() : null
   } catch {
     return null
   }
@@ -140,7 +159,7 @@ function imageOf(entry: Node, bodyHtml: string): string | null {
   for (const l of asArray(entry.link)) {
     if (attr(l, 'rel') === 'enclosure' && attr(l, 'type').startsWith('image/')) candidates.push(attr(l, 'href'))
   }
-  const img = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/i.exec(bodyHtml)
+  const img = /<img\b[^>]{0,2000}?\bsrc\s*=\s*["']([^"']{1,2000})["']/i.exec(bodyHtml.slice(0, 100_000))
   if (img) candidates.push(decodeEntities(img[1]))
   for (const c of candidates) {
     const ok = httpsUrl(c)
@@ -184,7 +203,7 @@ export function parseFeed(xml: string, ctx: ParseContext): NewsItem[] {
   for (const e of entries) {
     if (!isNode(e)) continue
     const url = linkOf(e)
-    const title = cap(toPlainText(text(e.title)), MAX_TITLE)
+    const title = cleanTitle(text(e.title))
     if (!url || !title) continue
     const body = text(e['content:encoded']) || text(e.content) || text(e.description) || text(e.summary)
     const short = text(e.description) || text(e.summary) || body

@@ -25,7 +25,7 @@ describe('feeds', () => {
     const rtp = FEEDS.find((f) => f.id === 'rtp')!
     expect(expresso.url).toBe('https://feeds.feedburner.com/expresso-geral')
     expect(expresso.filter).toBe(rtp.filter) // one shared filter
-    expect(expresso.filter!('Nova edição do romance de Gonçalo M. Tavares', '')).toBe(true)
+    expect(expresso.filter!('Gonçalo M. Tavares publica novo livro', '')).toBe(true)
     expect(expresso.filter!('SpaceX recupera a nave Starship', 'Economia espacial')).toBe(false)
     const publico = FEEDS.find((f) => f.id === 'publico')!
     expect(publico.url).toBe('https://www.publico.pt/api/list/rss/livros')
@@ -39,7 +39,7 @@ describe('feeds', () => {
     expect(sapo.url).toBe('https://mag.sapo.pt/rss')
     expect(obs.filter).toBe(rtp.filter)
     expect(sapo.filter).toBe(rtp.filter)
-    expect(obs.filter!('Lídia Jorge lança novo romance', '')).toBe(true)
+    expect(obs.filter!('Lídia Jorge lança novo livro', '')).toBe(true)
     expect(sapo.filter!('Receitas de outono', 'Seis pratos para o frio')).toBe(false)
   })
 
@@ -48,5 +48,30 @@ describe('feeds', () => {
     const feed = { id: 'c', name: 'C', lang: 'pt' as const, url: 'https://c.test/feed', filter: keepsBookStory }
     const out = await buildNews({ feeds: [feed], fetch: (() => Promise.resolve(new Response(xml))) as unknown as typeof fetch, now: Date.now(), previous: null })
     expect(out.file.items.map((i) => i.title)).toEqual(['Novo livro de poesia'])
+  })
+  it('bookFilterSkipsComplaintsBooksAndGossip', () => {
+    const keep = keepsBookStory
+    expect(keep('Livro de reclamações online chega aos hotéis', '')).toBe(false)
+    expect(keep('Governo publica Livro Branco da saúde', '')).toBe(false)
+    expect(keep('Livro Verde do clima', '')).toBe(false)
+    expect(keep('Livro Negro da corrupção', '')).toBe(false)
+    expect(keep('Novo livro de recordes', '')).toBe(false)
+    expect(keep('Livro de ponto digital', '')).toBe(false)
+    expect(keep('Banco acaba com o livro de cheques', '')).toBe(false)
+    expect(keep('Livro de registo de visitas', '')).toBe(false)
+    expect(keep('A nova editora de moda da Vogue', '')).toBe(false)
+    expect(keep('A editora-chefe demitiu-se', '')).toBe(false)
+    // romance alone is gossip; it counts with another book word
+    expect(keep('Romance entre dois atores', '')).toBe(false)
+    expect(keep('Romance premiado', 'A editora apresentou o romance')).toBe(true)
+    expect(keep('Livro de reclamações', 'Mas também um novo livro de poesia')).toBe(true)
+  })
+
+  it('bookFilterKeepsPlurals', () => {
+    for (const w of ['escritores', 'escritoras', 'poetas', 'editoras', 'editores', 'autores', 'autoras', 'leitores', 'leitura']) {
+      expect(keepsBookStory(`Encontro de ${w} em Lisboa`, '')).toBe(true)
+    }
+    expect(keepsBookStory('Os romances do ano', 'Escolhidos pelos leitores')).toBe(true)
+    expect(keepsBookStory('Os romances do ano', '')).toBe(false)
   })
 })

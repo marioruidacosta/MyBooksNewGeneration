@@ -201,3 +201,8 @@ feeds (`web/scripts/news/feeds.ts` lists them). It keeps 30 days of headlines, s
 with the file that is live, so a bad run never empties it. Every 3 hours, because the busy general feeds (Expresso, Observador, SAPO Mag) only hold a few hours of items; each run keeps what the earlier ones caught. It publishes `news.json` and the hand-kept `events.json`
 at `https://marioruidacosta.github.io/MyBooksNewGeneration/news/`. It needs no key or setting. To run it by hand from
 `web/`: `npm run news -- --out <folder>`.
+
+GitHub pauses scheduled workflows after 60 days without repository activity, so the news stops refreshing on a quiet
+repository. To start it again, open **Actions**, then **Web Pages**, then press **Enable workflow**. If the live
+`news.json` cannot be read (anything but "not found"), the job stops and the old site stays, rather than overwriting
+30 days of news.

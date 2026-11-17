@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { parseFeed, summarize } from './parse'
+import { httpsUrl, parseFeed, summarize, toPlainText } from './parse'
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')
 const NOW = Date.parse('2026-11-16T12:00:00Z')
@@ -89,6 +89,30 @@ describe('parseFeed', () => {
     for (const i of items) expect(i.title).not.toMatch(/[<>]|&[a-z#0-9]+;/i)
     const xml = '<rss version="2.0"><channel><item><title>A &amp;lt;b&amp;gt;bold&amp;lt;/b&amp;gt; &amp;amp; move</title><link>https://a.test/1</link></item></channel></rss>'
     expect(parseFeed(xml, ctx('a', 'pt'))[0].title).toBe('A bold & move')
+  })
+
+  it('aHostileDescriptionIsQuick', () => {
+    const t0 = Date.now()
+    summarize('<'.repeat(200000))
+    const xml = `<rss version="2.0"><channel><item><title><![CDATA[${'<'.repeat(200000)}]]></title><link>https://a.test/1</link><description><![CDATA[${'<'.repeat(200000)}]]></description></item></channel></rss>`
+    parseFeed(xml, ctx('a', 'en'))
+    // about 20 ms on a quiet machine; the margin is for the full parallel suite (a bad regex takes tens of seconds)
+    expect(Date.now() - t0).toBeLessThan(1000)
+  })
+
+  it('controlAndBidiCharactersAreRemoved', () => {
+    const dirty = 'A\u0000B\u0007C‮D⁦E​F‏G\u007FH\u0085I\uD800J\uDC00K ok'
+    expect(toPlainText(dirty)).toBe('ABCDEFGHIJK ok')
+    expect(summarize('<p>x‮y</p>')).toBe('xy')
+    expect(toPlainText('tab\there\nnew')).toBe('tab here new')
+    expect(toPlainText('smile 😀')).toBe('smile 😀')
+    expect(toPlainText('&#8238;rtl&#x0;')).toBe('rtl')
+  })
+
+  it('urlsWithCredentialsAreRejected', () => {
+    expect(httpsUrl('https://user:pw@a.test/x')).toBeNull()
+    expect(httpsUrl('https://user@a.test/x')).toBeNull()
+    expect(httpsUrl('https://a.test/x')).toBe('https://a.test/x')
   })
 
   it('rejectsAnHtmlErrorPage', () => {
