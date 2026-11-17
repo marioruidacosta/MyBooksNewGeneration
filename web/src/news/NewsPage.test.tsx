@@ -135,6 +135,42 @@ describe('NewsPage', () => {
     expect(screen.queryByText('Plain http story')).not.toBeInTheDocument()
   })
 
+  it('showsFortyThenMore', async () => {
+    const user = userEvent.setup()
+    const many = Array.from({ length: 95 }, (_, i) => ({
+      ...stories[0],
+      id: `m${String(i)}`,
+      title: `Story number ${String(i)}`,
+      url: `https://example.com/story-${String(i)}`,
+      lang: i % 2 === 0 ? 'pt' : 'en',
+      image: null,
+      // Newest first, a few minutes apart, so the days stay in order.
+      published: NOW - i * 45 * 60_000,
+    }))
+    renderPage((url) => (url.endsWith('events.json') ? json(eventsJson) : json({ ...newsJson, items: many })))
+    const count = () => document.querySelectorAll('.news-story').length
+    await screen.findByRole('heading', { name: 'Today' })
+    expect(count()).toBe(40)
+    expect(screen.getByRole('link', { name: 'Story number 39' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Story number 40' })).not.toBeInTheDocument()
+    // The day headings stay in place across the cut.
+    expect(screen.getByRole('heading', { name: 'Yesterday' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show more' }))
+    expect(count()).toBe(80)
+    await user.click(screen.getByRole('button', { name: 'Show more' }))
+    expect(count()).toBe(95)
+    expect(screen.queryByRole('button', { name: 'Show more' })).not.toBeInTheDocument()
+
+    // Changing the language starts again at 40 (48 Portuguese stories here).
+    await user.click(screen.getByRole('button', { name: 'Português' }))
+    expect(count()).toBe(40)
+    await user.click(screen.getByRole('button', { name: 'Show more' }))
+    expect(count()).toBe(48)
+    await user.click(screen.getByRole('button', { name: 'English' }))
+    expect(count()).toBe(40)
+  })
+
   it('imagesAreLazyPrivateAndHiddenWhenTheyFail', async () => {
     renderPage()
     await screen.findByRole('heading', { name: 'Today' })

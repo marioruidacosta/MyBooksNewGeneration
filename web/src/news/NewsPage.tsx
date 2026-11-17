@@ -11,7 +11,9 @@ type Props = {
 
 type Filter = 'all' | NewsLang
 
-const FILTER_KEY = 'mybooks.news.lang'
+/** How many stories show at first, and how many each "Show more" adds. */
+const PAGE_SIZE = 40
+const FILTER_KEY ='mybooks.news.lang'
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'pt', label: 'Português' },
@@ -127,6 +129,7 @@ export function NewsPage({ fetcher = browserFetch, now = Date.now }: Props = {})
   const [data, setData] = useState<NewsData | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [filter, setFilter] = useState<Filter>(loadFilter)
+  const [limit, setLimit] = useState(PAGE_SIZE)
   const [failedImages, setFailedImages] = useState<ReadonlySet<string>>(new Set())
 
   useEffect(() => {
@@ -144,10 +147,12 @@ export function NewsPage({ fetcher = browserFetch, now = Date.now }: Props = {})
   const news = data?.news ?? null
   const sourceNames = useMemo(() => new Map((news?.sources ?? []).map((s) => [s.id, s.name])), [news])
   const shown = useMemo(() => (news ? news.items.filter((i) => filter === 'all' || i.lang === filter) : []), [news, filter])
-  const groups = useMemo(() => groupByDay(shown, current), [shown, current])
+  const visible = useMemo(() => shown.slice(0, limit), [shown, limit])
+  const groups = useMemo(() => groupByDay(visible, current), [visible, current])
 
   const choose = (next: Filter) => {
     setFilter(next)
+    setLimit(PAGE_SIZE)
     saveFilter(next)
   }
 
@@ -202,6 +207,11 @@ export function NewsPage({ fetcher = browserFetch, now = Date.now }: Props = {})
                     </ul>
                   </section>
                 ))}
+                {shown.length > limit && (
+                  <button type="button" className="news-more" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+                    Show more
+                  </button>
+                )}
               </>
             )}
           </div>
