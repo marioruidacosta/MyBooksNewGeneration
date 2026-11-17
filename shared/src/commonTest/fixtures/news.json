@@ -1,0 +1,97 @@
+{
+ "generatedAt": 1794873827904,
+ "sources": [
+  {
+   "id": "apel",
+   "name": "APEL",
+   "lang": "pt",
+   "ok": true
+  },
+  {
+   "id": "sapomag",
+   "name": "SAPO Mag",
+   "lang": "pt",
+   "ok": true
+  },
+  {
+   "id": "rtp",
+   "name": "RTP Cultura",
+   "lang": "pt",
+   "ok": true
+  },
+  {
+   "id": "lithub",
+   "name": "Literary Hub",
+   "lang": "en",
+   "ok": true
+  },
+  {
+   "id": "nyt",
+   "name": "The New York Times Books",
+   "lang": "en",
+   "ok": true
+  }
+ ],
+ "items": [
+  {
+   "id": "8ad93537b5980b35c8a8a7c2bb9b0c253c2a3746",
+   "title": "Book Review: ‘Rome’s Age of Revolution,’ by Tim Whitmarsh",
+   "summary": "In “Rome’s Age of Revolution,” Tim Whitmarsh argues that movements advanced by Augustus and Paul the Apostle, far from being at odds, were two sides of the same imperial coin.",
+   "url": "https://www.nytimes.com/2026/11/10/books/review/romes-age-of-revolution-tim-whitmarsh.html",
+   "source": "nyt",
+   "lang": "en",
+   "published": 1794869340000,
+   "image": null
+  },
+  {
+   "id": "919a223646f876b8c69bfb05b572c32a1a11bcad",
+   "title": "Teodoro e a liberdade mal-educada",
+   "summary": "Um escritor pode dizer coisas cruas, desagradáveis, até lúgubres. Pode imaginar o pior dos futuros. Pode olhar para uma sociedade e dizer: isto vai acabar mal. Nada disso deve ser assunto do Estado.",
+   "url": "https://sapo.pt/artigo/teodoro-e-a-liberdade-mal-educada-6afb698c56a09239b44285bf",
+   "source": "sapomag",
+   "lang": "pt",
+   "published": 1794864217000,
+   "image": null
+  },
+  {
+   "id": "8259112df89b27112f41b6aeb224c8d65387f031",
+   "title": "Curtis Sittenfeld’s Prep is coming to the small screen. Who should play Lee?",
+   "summary": "Back in 2005, Curtis Sittenfeld’s debut novel Prep was the talk of the town. We debated everything from its genre to its striving protagonist, whose moral universe felt like something straight outta Wharton. Sittenfeld was praised and derided for her",
+   "url": "https://lithub.com/curtis-sittenfelds-prep-is-coming-to-the-small-screen-who-should-play-lee/",
+   "source": "lithub",
+   "lang": "en",
+   "published": 1794858377000,
+   "image": "https://s26162.pcdn.co/wp-content/uploads/2026/11/Untitled-Design-18-768x384.png"
+  },
+  {
+   "id": "a873f3c095637dd0fe3b036329e18cab8c91d7f4",
+   "title": "Equipa de reportagem da RTP recebe Prémio Gazeta de Televisão",
+   "summary": "O Prémio Gazeta de Televisão foi entregue esta segunda-feira. Na cerimónia está presente a equipa da RTP composta por Sandra Vindeirinho, pelos repórteres de imagem Tiago M. P. Costa e Rui Machado Rodrigues e pelo editor Carlos Felgueiras e Sousa, autores da reportagem…",
+   "url": "https://www.rtp.pt/noticias/cultura/equipa-de-reportagem-da-rtp-recebe-premio-gazeta-de-televisao_n1779576",
+   "source": "rtp",
+   "lang": "pt",
+   "published": 1794853448000,
+   "image": "https://cdn-images.rtp.pt/icm/noticias/images/c8/c8b85ddfe27b6963be83399f6db13e1b?w=350&q=50&rect=0,15,1340,735&auto=format"
+  },
+  {
+   "id": "ddb1ab2df130105ad05dba2283185a19a7283df3",
+   "title": "The 2026 Cercador Prize goes to The Song of Stork and Dromedary.",
+   "summary": "Today, the Cercador Prize announced David McKay as the winner of the 2026 prize for his translation of Anjet Daanje’s The Song of Stork and Dromedary, published by Two Lines Press. “Even amongst this year’s impressive finalists, The Song of",
+   "url": "https://lithub.com/the-2026-cercador-prize-goes-to-david-mckays-translation-of-the-song-of-stork-and-dromedary/",
+   "source": "lithub",
+   "lang": "en",
+   "published": 1794852112000,
+   "image": "https://s26162.pcdn.co/wp-content/uploads/2026/11/cercador-prize-logo-2026-768x410.jpg"
+  },
+  {
+   "id": "334efa5d3e6f612a09cf617baa6076160a825ae5",
+   "title": "Feira do Livro Infantil e Juvenil de Bolonha 2027 – Inscrições Abertas",
+   "summary": "",
+   "url": "https://apel.pt/2026/11/04/feira-do-livro-infantil-e-juvenil-de-bolonha-2027-inscricoes-abertas/",
+   "source": "apel",
+   "lang": "pt",
+   "published": 1793811291000,
+   "image": "https://apel.pt/wp-content/uploads/2026/11/egrwe.png"
+  }
+ ]
+}

@@ -1,0 +1,18 @@
+{
+  "note": "Hand-kept calendar of recurring book events. Dates change every year, so each entry gives the month it is usually held and its official page.",
+  "events": [
+    { "name": "Correntes d'Escritas", "place": "Póvoa de Varzim", "month": 2, "kind": "festival", "lang": "pt", "url": "https://www.cm-pvarzim.pt/correntes-d-escritas" },
+    { "name": "Festival Literário da Madeira", "place": "Funchal", "month": 3, "kind": "festival", "lang": "pt", "url": "https://www.festivalliterariodamadeira.pt" },
+    { "name": "London Book Fair", "place": "London", "month": 3, "kind": "fair", "lang": "en", "url": "https://www.londonbookfair.co.uk" },
+    { "name": "Bologna Children's Book Fair", "place": "Bologna", "month": 4, "kind": "fair", "lang": "en", "url": "https://www.bolognachildrensbookfair.com" },
+    { "name": "Festival du Livre de Paris", "place": "Paris", "month": 4, "kind": "fair", "lang": "en", "url": "https://www.festivaldulivredeparis.fr" },
+    { "name": "World Book and Copyright Day", "place": "Everywhere, 23 April", "month": 4, "kind": "day", "lang": "en", "url": "https://www.un.org/en/observances/book-and-copyright-day" },
+    { "name": "Pulitzer Prizes", "place": "New York", "month": 5, "kind": "prize", "lang": "en", "url": "https://www.pulitzer.org" },
+    { "name": "Feira do Livro de Lisboa", "place": "Parque Eduardo VII, Lisboa", "month": 6, "kind": "fair", "lang": "pt", "url": "https://feiradolivrodelisboa.pt" },
+    { "name": "Feira do Livro do Porto", "place": "Jardins do Palácio de Cristal, Porto", "month": 9, "kind": "fair", "lang": "pt", "url": "https://www.porto.pt/pt/feira-do-livro-do-porto" },
+    { "name": "Nobel Prize in Literature", "place": "Stockholm", "month": 10, "kind": "prize", "lang": "en", "url": "https://www.nobelprize.org/prizes/literature/" },
+    { "name": "Frankfurter Buchmesse", "place": "Frankfurt", "month": 10, "kind": "fair", "lang": "en", "url": "https://www.buchmesse.de/en" },
+    { "name": "FOLIO – Festival Literário Internacional de Óbidos", "place": "Óbidos", "month": 10, "kind": "festival", "lang": "pt", "url": "https://foliofestival.com" },
+    { "name": "Booker Prize", "place": "London", "month": 11, "kind": "prize", "lang": "en", "url": "https://thebookerprizes.com" }
+  ]
+}

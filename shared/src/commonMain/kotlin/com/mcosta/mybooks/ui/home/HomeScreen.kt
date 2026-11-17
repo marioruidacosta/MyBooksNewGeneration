@@ -67,6 +67,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.domain.Book
+import com.mcosta.mybooks.ui.news.HomeNewsCard
+import com.mcosta.mybooks.ui.news.NewsState
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.ui.activity.countText
 import com.mcosta.mybooks.ui.activity.text
@@ -102,6 +104,10 @@ fun HomeScreen(
     onOpenSuggestion: (Suggestion) -> Unit = {},
     onNotInterested: (String) -> Unit = {},
     onSeeAllSuggestions: () -> Unit = {},
+    /** "Book news": the newest headlines (hidden until there are some), opening a story's link, and the full screen. */
+    news: NewsState = NewsState(),
+    onOpenNews: (String) -> Unit = {},
+    onSeeAllNews: () -> Unit = {},
     onAddManually: () -> Unit,
     onScan: () -> Unit,
     /** A pinned tag's books. */
@@ -207,6 +213,7 @@ fun HomeScreen(
                     ChallengeCard(state, onClick = onOpenReadingActivity, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp))
                 }
                 item { SuggestedForYou(suggestions, onOpenSuggestion, onNotInterested, onSeeAllSuggestions) }
+                item { HomeNewsCard(news, onOpenNews, onSeeAllNews) }
                 item { SectionTitle("Shelves") }
                 items(state.shelves, key = { it.status?.name ?: "ALL" }) { shelf ->
                     ShelfRow(shelf, onClick = { onOpenShelf(shelf.status) })
