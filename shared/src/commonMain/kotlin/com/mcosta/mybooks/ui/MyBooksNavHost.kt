@@ -271,7 +271,7 @@ fun MyBooksNavHost(
                 val suggestions by suggestionsVm.state.collectAsStateWithLifecycle()
                 // The account's library couldn't be opened: the phone's is shown, and Home says so (as Account does).
                 val openFailed by container.libraries.openFailed.collectAsStateWithLifecycle()
-                val newsVm = viewModel { NewsViewModel(container.news) }
+                val newsVm = viewModel { NewsViewModel(container.news, container.preferences) }
                 val news by newsVm.state.collectAsStateWithLifecycle()
                 val openLink = rememberLinkOpener(snackbar)
                 HomeScreen(
@@ -495,7 +495,7 @@ fun MyBooksNavHost(
                 )
             }
             screen(Routes.NEWS) {
-                NewsScreen(viewModel = viewModel { NewsViewModel(container.news) }, onBack = { nav.popBackStack() })
+                NewsScreen(viewModel = viewModel { NewsViewModel(container.news, container.preferences) }, onBack = { nav.popBackStack() })
             }
             screen(Routes.RELEASES) {
                 ReleasesScreen(

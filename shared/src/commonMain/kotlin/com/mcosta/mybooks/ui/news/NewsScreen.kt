@@ -1,5 +1,6 @@
 package com.mcosta.mybooks.ui.news
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,6 +43,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontFamily
@@ -58,6 +63,8 @@ import com.mcosta.mybooks.ui.formatDate
 import com.mcosta.mybooks.ui.releases.Message
 import com.mcosta.mybooks.ui.releases.tryOpen
 import kotlinx.coroutines.launch
+
+private const val OPEN_LABEL = "Open in browser"
 
 /** Opens a link in the browser, saying so in [snackbar] when nothing on the phone can open it. */
 @Composable
@@ -90,9 +97,10 @@ fun NewsScreen(viewModel: NewsViewModel, onBack: () -> Unit) {
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Book calendar") })
             }
             when {
-                tab == 1 -> CalendarList(state.events, open)
+                tab == 1 -> CalendarList(state.events, state.eventsLoading, open)
                 state.loading && state.items.isEmpty() ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                state.items.isEmpty() && state.loaded -> Message(NO_NEWS)
                 state.items.isEmpty() -> Message(state.error ?: NEWS_ERROR, onRetry = viewModel::retry)
                 else -> SyncRefreshBox(viewModel::refresh, Modifier.fillMaxSize()) {
                     LazyColumn(Modifier.fillMaxSize()) {
@@ -117,13 +125,16 @@ fun NewsScreen(viewModel: NewsViewModel, onBack: () -> Unit) {
                                 )
                             }
                         }
+                        if (state.days.isEmpty()) {
+                            item(key = "none") { Message("No news in ${state.language.label} right now.") }
+                        }
                         for (day in state.days) {
                             item(key = "day:${day.label}") {
                                 Text(
                                     day.label,
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+                                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp).semantics { heading() },
                                 )
                             }
                             items(day.items, key = { it.id }) { story ->
@@ -142,12 +153,12 @@ fun NewsScreen(viewModel: NewsViewModel, onBack: () -> Unit) {
 @Composable
 private fun StoryRow(story: NewsItem, source: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().clickable(onClickLabel = OPEN_LABEL, role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(source, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(story.title, style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.Serif)
+            Text(story.title, style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.Serif, maxLines = 3, overflow = TextOverflow.Ellipsis)
             if (story.summary.isNotBlank()) {
                 Text(
                     story.summary,
@@ -159,18 +170,26 @@ private fun StoryRow(story: NewsItem, source: String, onClick: () -> Unit) {
             }
         }
         story.image?.let { image ->
+            // A plain block of colour shows while the picture loads and when it cannot be loaded.
+            val blank = ColorPainter(MaterialTheme.colorScheme.surfaceVariant)
             AsyncImage(
                 model = image,
                 contentDescription = null,
+                placeholder = blank,
+                error = blank,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)),
+                modifier = Modifier.size(72.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
             )
         }
     }
 }
 
 @Composable
-private fun CalendarList(events: List<BookEvent>, open: (String) -> Unit) {
+private fun CalendarList(events: List<BookEvent>, loading: Boolean, open: (String) -> Unit) {
+    if (events.isEmpty() && loading) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
     if (events.isEmpty()) {
         Message("The book calendar is not available right now.")
         return
@@ -178,7 +197,7 @@ private fun CalendarList(events: List<BookEvent>, open: (String) -> Unit) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(events, key = { it.name }) { event ->
             Column(
-                Modifier.fillMaxWidth().clickable { open(event.url) }.padding(horizontal = 16.dp, vertical = 12.dp),
+                Modifier.fillMaxWidth().clickable(onClickLabel = OPEN_LABEL, role = Role.Button) { open(event.url) }.padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(event.name, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
@@ -207,7 +226,7 @@ fun HomeNewsCard(state: NewsState, onOpenStory: (String) -> Unit, onSeeAll: () -
             latest.forEachIndexed { i, story ->
                 if (i > 0) HorizontalDivider()
                 Column(
-                    Modifier.fillMaxWidth().clickable { onOpenStory(story.url) }.padding(horizontal = 16.dp, vertical = 10.dp),
+                    Modifier.fillMaxWidth().clickable(onClickLabel = OPEN_LABEL, role = Role.Button) { onOpenStory(story.url) }.padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(state.sourceName(story.source), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

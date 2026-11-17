@@ -16,6 +16,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
@@ -112,5 +113,96 @@ class NewsRepositoryTest {
         val other = NewsRepository(NewsClient(HttpClient(engine) { expectSuccess = false }, "https://pages.test/news/"), FakeFileSystem(), "/n".toPath(), { now })
         offline = true
         assertEquals(emptyList(), other.events())
+    }
+
+    private fun itemJson(id: String, title: String = "T $id", published: Long = 1_000, url: String = "https://a.test/$id", extra: String = "") =
+        """{"id":"$id","title":"$title","summary":"","url":"$url","source":"s","lang":"en","published":$published$extra}"""
+
+    private fun feedJson(vararg items: String) = """{"generatedAt":1,"sources":[],"items":[${items.joinToString(",")}]}"""
+
+    @Test
+    fun duplicateIdsDoNotCrashAndAreDropped() = runTest {
+        newsBody = feedJson(itemJson("a", published = 3), itemJson("a", title = "Again", published = 2), itemJson("b", published = 1))
+        assertEquals(listOf("a", "b"), repo.news().value.items.map { it.id })
+        val events = """{"events":[
+            {"name":"Fair","place":"x","month":3,"kind":"fair","lang":"en","url":"https://e.test/1"},
+            {"name":"Fair","place":"y","month":4,"kind":"fair","lang":"en","url":"https://e.test/2"}]}"""
+        val dupEvents = NewsRepository(
+            NewsClient(HttpClient(MockEngine { respond(events, HttpStatusCode.OK) }) { expectSuccess = false }, "https://pages.test/news/"),
+            FakeFileSystem(), "/e".toPath(), { now },
+        )
+        assertEquals(1, dupEvents.events().size)
+    }
+
+    @Test
+    fun aMalformedItemIsDroppedNotTheFeed() = runTest {
+        newsBody = feedJson(
+            itemJson("a", published = 3),
+            """{"id":"x","summary":"","url":"https://a.test/x","source":"s","lang":"en","published":2}""",
+            """{"id":"y","title":"Y","summary":"","url":"https://a.test/y","source":"s","lang":"en","published":"x"}""",
+            itemJson("b", published = 1),
+        )
+        assertEquals(listOf("a", "b"), repo.news().value.items.map { it.id })
+    }
+
+    @Test
+    fun aWrongTopLevelStillFailsTheWholeFile() = runTest {
+        newsBody = """{"items":5}"""
+        assertFailsWith<NewsUnavailable> { repo.news() }
+    }
+
+    @Test
+    fun capsTheItemsAndTheTextAndClampsFutureDates() = runTest {
+        val long = "word ".repeat(100)
+        val future = now.toEpochMilliseconds() + 400.days.inWholeMilliseconds
+        newsBody = feedJson(
+            *(1..305).map { itemJson("i$it", published = it.toLong()) }.toTypedArray(),
+            """{"id":"long","title":"$long","summary":"$long$long","url":"https://a.test/l","source":"s","lang":"en","published":$future}""",
+        )
+        val items = repo.news().value.items
+        assertEquals(300, items.size)
+        val top = items.first()
+        assertEquals("long", top.id)
+        assertTrue(top.title.length <= 200 && top.title.endsWith("…"))
+        assertTrue(top.summary.length <= 280 && top.summary.endsWith("…"))
+        assertEquals(now.toEpochMilliseconds() + 1.days.inWholeMilliseconds, top.published)
+    }
+
+    @Test
+    fun aResponseOverTwoMegabytesIsRejected() = runTest {
+        newsBody = feedJson(itemJson("a", extra = ""","pad":"${"x".repeat(2_100_000)}""""))
+        assertFailsWith<NewsUnavailable> { repo.news() }
+        val declared = NewsRepository(
+            NewsClient(HttpClient(MockEngine { respond("x".repeat(3_000_000), HttpStatusCode.OK, headersOf("Content-Length", "3000000")) }) { expectSuccess = false }, "https://pages.test/news/"),
+            FakeFileSystem(), "/h".toPath(), { now },
+        )
+        assertFailsWith<NewsUnavailable> { declared.news() }
+    }
+
+    @Test
+    fun aTruncatedCacheIsIgnoredAndHealed() = runTest {
+        fs.createDirectories("/news".toPath())
+        fs.write("/news/news.json".toPath()) { writeUtf8("""{"generatedAt":1,"items":[{"id":"a","ti""") }
+        fs.write("/news/news.at".toPath()) { writeUtf8(now.toEpochMilliseconds().toString()) }
+        val feed = repo.news()
+        assertFalse(feed.offline)
+        assertEquals(6, feed.value.items.size)
+        assertEquals(1, requests)
+        assertEquals(6, repo.news().value.items.size)
+        assertEquals(1, requests)
+        assertTrue(fs.list("/news".toPath()).none { it.name.endsWith(".tmp") })
+        // And with no network the broken copy is not shown either.
+        fs.write("/news/news.json".toPath()) { writeUtf8("""{"generatedAt""") }
+        offline = true
+        now += 60.minutes
+        assertFailsWith<NewsUnavailable> { repo.news() }
+    }
+
+    @Test
+    fun aClockSetBackMakesTheSavedCopyStale() = runTest {
+        repo.news()
+        now -= 10.minutes
+        repo.news()
+        assertEquals(2, requests)
     }
 }

@@ -5,13 +5,17 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
 import okio.FileSystem
 import okio.IOException
 import okio.Path
 import kotlin.time.Clock
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
@@ -31,12 +35,14 @@ class NewsRepository(
 
     /** The feed, newest first. Throws [NewsUnavailable] only when the download fails and nothing is saved. */
     suspend fun news(force: Boolean = false): Cached<NewsFeed> =
-        load("news", NEWS_MAX_AGE, force, { client.news() }) { text -> json.decodeFromString<NewsFeed>(text).clean() }
+        load("news", NEWS_MAX_AGE, force, { client.news() }) { text -> parseFeed(text).clean(clock()) }
 
     /** The recurring events, or none when they cannot be loaded (the calendar is a side feature). */
     suspend fun events(): List<BookEvent> = try {
         load("events", EVENTS_MAX_AGE, false, { client.events() }) { text ->
-            json.decodeFromString<EventsJson>(text).events.filter { it.month in 1..12 && isHttps(it.url) }
+            json.decodeFromString<RawEvents>(text).events.decodeEach<BookEvent>(json)
+                .filter { it.month in 1..12 && isHttps(it.url) }
+                .distinctBy { it.name }
         }.value
     } catch (e: NewsUnavailable) {
         emptyList()
@@ -54,7 +60,8 @@ class NewsRepository(
         val saved = withContext(io) {
             read(name)?.let { (text, at) -> parseOrNull { parse(text) }?.let { Cached(it, at, offline = false) } }
         }
-        if (saved != null && !force && now - saved.savedAt < maxAge) return saved
+        // A saved date in the future (the clock was set back) counts as stale.
+        if (saved != null && !force && (now - saved.savedAt) in Duration.ZERO..<maxAge) return saved
         val text = try {
             download()
         } catch (e: NewsUnavailable) {
@@ -66,6 +73,12 @@ class NewsRepository(
             ?: return saved?.copy(offline = true) ?: throw NewsUnavailable(notPublished = false)
         withContext(io) { write(name, text, now) }
         return Cached(value, now, offline = false)
+    }
+
+    /** The file must be a JSON object with lists; each story and source is then read on its own, bad ones dropped. */
+    private fun parseFeed(text: String): NewsFeed {
+        val raw = json.decodeFromString<RawFeed>(text)
+        return NewsFeed(raw.generatedAt, raw.sources.decodeEach(json), raw.items.decodeEach(json))
     }
 
     private fun <T> parseOrNull(block: () -> T): T? = try {
@@ -93,11 +106,19 @@ class NewsRepository(
     private fun write(name: String, text: String, at: Instant) {
         try {
             fs.createDirectories(dir)
-            fs.write(dir / "$name.json") { writeUtf8(text) }
-            fs.write(dir / "$name.at") { writeUtf8(at.toEpochMilliseconds().toString()) }
+            // Each file is written beside its final name, then moved over it; the date goes last, so a copy
+            // without its date (an interrupted save) is never used.
+            writeAtomically(dir / "$name.json", text)
+            writeAtomically(dir / "$name.at", at.toEpochMilliseconds().toString())
         } catch (e: IOException) {
             Unit
         }
+    }
+
+    private fun writeAtomically(path: Path, text: String) {
+        val temp = path.parent!! / (path.name + ".tmp")
+        fs.write(temp) { writeUtf8(text) }
+        fs.atomicMove(temp, path)
     }
 
     private companion object {
@@ -108,9 +129,53 @@ class NewsRepository(
 
 private fun isHttps(url: String) = url.startsWith("https://", ignoreCase = true)
 
-/** Only `https:` links are kept (a story without one is dropped, an image without one is cleared); newest first. */
-private fun NewsFeed.clean(): NewsFeed = copy(
-    items = items.filter { isHttps(it.url) }
-        .map { if (it.image != null && !isHttps(it.image)) it.copy(image = null) else it }
-        .sortedByDescending { it.published },
-)
+@Serializable
+private class RawFeed(val generatedAt: Long = 0, val sources: List<JsonElement> = emptyList(), val items: List<JsonElement> = emptyList())
+
+@Serializable
+private class RawEvents(val events: List<JsonElement> = emptyList())
+
+/** Decodes each element on its own; the ones that do not fit [T] are dropped. */
+private inline fun <reified T> List<JsonElement>.decodeEach(json: Json): List<T> = mapNotNull {
+    try {
+        json.decodeFromJsonElement<T>(it)
+    } catch (e: SerializationException) {
+        null
+    } catch (e: IllegalArgumentException) {
+        null
+    }
+}
+
+private const val MAX_ITEMS = 300
+private const val MAX_TITLE = 200
+private const val MAX_SUMMARY = 280
+
+/** [text] cut at a word boundary to at most [max] characters, ending with an ellipsis. */
+private fun cap(text: String, max: Int): String {
+    if (text.length <= max) return text
+    val cut = text.take(max - 1)
+    val space = cut.lastIndexOf(' ')
+    return (if (space > max / 2) cut.take(space) else cut).trimEnd() + "…"
+}
+
+/**
+ * Only `https:` links are kept (a story without one is dropped, an image without one is cleared); one story per id,
+ * newest first, at most [MAX_ITEMS]; texts are capped again and dates more than a day ahead of [now] are pulled back.
+ */
+private fun NewsFeed.clean(now: Instant): NewsFeed {
+    val latest = (now + 1.days).toEpochMilliseconds()
+    return copy(
+        items = items.filter { isHttps(it.url) }
+            .map {
+                it.copy(
+                    title = cap(it.title, MAX_TITLE),
+                    summary = cap(it.summary, MAX_SUMMARY),
+                    published = minOf(it.published, latest),
+                    image = it.image?.takeIf(::isHttps),
+                )
+            }
+            .sortedByDescending { it.published }
+            .distinctBy { it.id }
+            .take(MAX_ITEMS),
+    )
+}
