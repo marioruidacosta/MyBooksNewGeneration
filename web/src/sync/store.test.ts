@@ -138,6 +138,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  vi.useRealTimers()
   await Promise.all(stores.splice(0).map((s) => s.close()))
 })
 
@@ -471,6 +472,8 @@ describe('LibraryStore', () => {
   }, T)
 
   it('retriesAfterTheDelaysAndAtOnceWhenOnline', async () => {
+    // The retry waits are the store's own timers: advanced by hand, so no machine speed decides what has happened.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const server = new FakeServer()
     serverBook(server, 'b1')
     const store = open(server, OWNER, { retryDelays: [40, 60_000] })
@@ -482,20 +485,22 @@ describe('LibraryStore', () => {
     expect(server.pushes).toHaveLength(1)
     expect(store.status).toEqual({ offline: 1 })
 
-    // The first retry comes after 40 ms; the next would wait a minute.
-    await new Promise((r) => setTimeout(r, 120))
+    // The first retry comes after 40 ms, not before; the next would wait a minute.
+    await vi.advanceTimersByTimeAsync(39)
+    expect(server.pushes).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
     await store.idle()
     expect(server.pushes).toHaveLength(2)
 
     // Waiting out a failure, a new edit waits too; the status counts it.
     store.edit('books', 'b1', { title: 'Renamed' })
-    await new Promise((r) => setTimeout(r, 20))
+    await vi.advanceTimersByTimeAsync(59_000)
+    await store.idle()
     expect(server.pushes).toHaveLength(2)
 
     // The connection is back: it retries at once.
     server.pushError = null
     window.dispatchEvent(new Event('online'))
-    await new Promise((r) => setTimeout(r, 0))
     await store.idle()
     expect(server.pushes).toHaveLength(3)
     expect(server.rows.get('books:b1')?.fields.title).toBe('Renamed')
@@ -587,6 +592,7 @@ describe('LibraryStore', () => {
   }, T)
 
   it('aServerHiccupKeepsTheQueue', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const server = new FakeServer()
     serverBook(server, 'b1')
     serverBook(server, 'b2')
@@ -603,7 +609,11 @@ describe('LibraryStore', () => {
     await store.idle()
     expect(store.status).toEqual({ offline: 2 })
 
-    await new Promise((r) => setTimeout(r, 150))
+    // Each failure arms the next 20 ms wait only when its pass is over, so one wait is advanced at a time.
+    await vi.advanceTimersByTimeAsync(20)
+    await store.idle()
+    expect(store.status).toEqual({ offline: 2 })
+    await vi.advanceTimersByTimeAsync(20)
     await store.idle()
     expect(server.rows.get('books:b1')?.fields.rating).toBe(1)
     expect(server.rows.get('books:b2')?.fields.rating).toBe(2)

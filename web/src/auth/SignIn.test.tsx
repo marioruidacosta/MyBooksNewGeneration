@@ -19,7 +19,7 @@ describe('SignIn', () => {
 
   it('sendsTheCodeThenSignsIn', async () => {
     verifyOtp.mockResolvedValue({ data: {}, error: null })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<SignIn />)
 
     await user.type(screen.getByLabelText('Email'), 'reader@example.com')
@@ -39,7 +39,7 @@ describe('SignIn', () => {
 
   it('showsTheServerError', async () => {
     verifyOtp.mockResolvedValue({ data: {}, error: { message: 'Token has expired or is invalid' } })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<SignIn />)
 
     await user.type(screen.getByLabelText('Email'), 'reader@example.com')
@@ -52,7 +52,7 @@ describe('SignIn', () => {
 
   it("aNetworkFailureWhileSendingCanBeRetried", async () => {
     signInWithOtp.mockRejectedValue(new TypeError("Failed to fetch"))
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<SignIn />)
 
     await user.type(screen.getByLabelText("Email"), "reader@example.com")
@@ -66,7 +66,7 @@ describe('SignIn', () => {
 
   it("aNetworkFailureWhileVerifyingCanBeRetried", async () => {
     verifyOtp.mockRejectedValue(new TypeError("Failed to fetch"))
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<SignIn />)
 
     await user.type(screen.getByLabelText("Email"), "reader@example.com")

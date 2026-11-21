@@ -72,7 +72,7 @@ describe('BookPage', () => {
   it('aReviewOverTheLimitIsNotSaved', async () => {
     const store = await open(book({ review: 'fine' }))
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     const box = screen.getByLabelText('Review')
@@ -96,7 +96,7 @@ describe('BookPage', () => {
   it('everyFieldSavesOnBlur', async () => {
     const store = await open()
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     const cases: [label: string, typed: string, field: string, value: unknown][] = [
@@ -133,7 +133,7 @@ describe('BookPage', () => {
   it('tabbingThroughEveryFieldEditsNothing', async () => {
     const store = await open(book({ title: 'Blindness', tags: ['a'], dateStarted: Date.UTC(2026, 0, 2, 15) }))
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByLabelText('Title'))
@@ -147,7 +147,7 @@ describe('BookPage', () => {
     const started = new Date(2026, 2, 5, 0, 0).getTime()
     const store = await open(book({ dateRead: read, dateStarted: started, pageCount: 310, publishedYear: 1995, tags: ['a', 'b'] }))
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     const same: [string, string][] = [
@@ -168,7 +168,7 @@ describe('BookPage', () => {
   it('typingANewDateStoresLocalMidnight', async () => {
     const store = await open()
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.type(screen.getByLabelText('Started'), '06/03/2026')
@@ -181,7 +181,7 @@ describe('BookPage', () => {
   it('clearingAFieldSavesNullOrEmptyAsTheRowHasIt', async () => {
     const store = await open(book({ publisher: 'Caminho', pageCount: 310, notes: 'x' }))
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.clear(screen.getByLabelText('Publisher'))
@@ -195,7 +195,7 @@ describe('BookPage', () => {
 
   it('statusAndScoreLikeTheApp', async () => {
     const store = await open()
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     vi.spyOn(Date, 'now').mockReturnValue(5_000_000)
     show(store)
 
@@ -228,7 +228,7 @@ describe('BookPage', () => {
   it('aFinishedDateAlreadyThereIsKept', async () => {
     const store = await open(book({ status: 'READING', dateStarted: 100 }))
     vi.spyOn(Date, 'now').mockReturnValue(9_000_000)
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.selectOptions(screen.getByLabelText('Status'), 'Read')
     expect(store.book('1')).toMatchObject({ status: 'READ', dateStarted: 100, dateRead: 9_000_000 })
@@ -236,7 +236,7 @@ describe('BookPage', () => {
 
   it('aQuoteOverTheLimitIsNotSaved', async () => {
     const store = await open()
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     const quotes = () => store.quotes('1')
 
@@ -261,7 +261,7 @@ describe('BookPage', () => {
   }, T)
 
   it('aNegativeQuotePageSaysSo', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     show(store)
     await user.type(screen.getByLabelText('New quote'), 'Rain')
@@ -277,7 +277,7 @@ describe('BookPage', () => {
 
   it('quotesAddEditDelete', async () => {
     const store = await open()
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     const quotes = () => store.quotes('1')
 
@@ -331,7 +331,7 @@ describe('BookPage', () => {
       if (table === 'books' && before && after && before.coverUrl === after.coverUrl) changes.push('cover re-stamped')
     })
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const { upload } = show(store)
 
     await user.upload(screen.getByLabelText('Upload cover'), new File(['x'], 'b.png', { type: 'image/png' }))
@@ -348,7 +348,7 @@ describe('BookPage', () => {
     const store = await open()
     const { upload } = show(store, { shrink: async () => jpeg() })
     upload.mockResolvedValueOnce({ error: { message: 'bucket says no' } })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     await user.upload(screen.getByLabelText('Upload cover'), new File(['x'], 'b.png', { type: 'image/png' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('bucket says no')
     expect(store.book('1')!.coverUrl).toBeNull()
@@ -356,7 +356,7 @@ describe('BookPage', () => {
 
   it('aPastedLinkSetsTheCoverAndRemoveClearsIt', async () => {
     const store = await open()
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.type(screen.getByLabelText('Cover link'), 'https://example.com/c.jpg')
@@ -434,7 +434,7 @@ describe('BookPage', () => {
 
   it('addingAQuoteExplainsWhatsMissing', async () => {
     const store = await open()
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     const add = () => user.click(screen.getByRole('button', { name: 'Add quote' }))
 
@@ -459,7 +459,7 @@ describe('BookPage', () => {
   it('progressOver100IsRefused', async () => {
     const store = await open(book({ status: 'READING', progressPercent: 40 }))
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     const box = screen.getByLabelText('Progress (%)')
     await user.clear(box)
@@ -479,7 +479,7 @@ describe('BookPage', () => {
   it('addingATagChipSavesIt', async () => {
     const store = await open(book({ tags: ['a'] }))
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     const box = screen.getByLabelText('Tags')
@@ -505,7 +505,7 @@ describe('BookPage', () => {
   it('removingATagChipSavesIt', async () => {
     const store = await open(book({ tags: ['a', 'b', 'c'] }))
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('button', { name: 'Remove tag b' }))
@@ -553,7 +553,7 @@ describe('BookPage', () => {
   it('markAsReadSetsTheStatusAndDate', async () => {
     const store = await open(book({ status: 'READING', dateStarted: 100 }))
     vi.spyOn(Date, 'now').mockReturnValue(9_000_000)
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('button', { name: 'Mark as read' }))
@@ -566,7 +566,7 @@ describe('BookPage', () => {
   it('imOnPageSavesTheProgress', async () => {
     const store = await open(book({ status: 'READING', pageCount: 200 }))
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('button', { name: "I'm on page…" }))
@@ -580,7 +580,7 @@ describe('BookPage', () => {
 
   it('closingTheProgressEditorReturnsFocusToItsButton', async () => {
     const store = await open(book({ status: 'READING', pageCount: 200 }))
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('button', { name: "I'm on page…" }))
@@ -671,7 +671,7 @@ describe('BookPage', () => {
   it('aDateTypoSaysHowToTypeIt', async () => {
     const store = await open(book({ dateStarted: new Date(2026, 0, 2).getTime() }))
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     const box = screen.getByLabelText('Started')
@@ -706,7 +706,7 @@ describe('BookPage', () => {
   it('duplicateTagsShowOnceAndRemoveTogether', async () => {
     const store = await open(book({ tags: ['a', 'b', 'a'] }))
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     expect(screen.getAllByRole('button', { name: 'Remove tag a' })).toHaveLength(1)
@@ -716,7 +716,7 @@ describe('BookPage', () => {
 
   it('theTooLongAlertClearsWhenEditing', async () => {
     const store = await open(book({ tags: ['a'] }))
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     const box = screen.getByLabelText('Tags')
@@ -735,7 +735,7 @@ describe('BookPage', () => {
 
   it('markAsReadWorksWhileThePageEditorIsOpen', async () => {
     const store = await open(book({ status: 'READING', pageCount: 200 }))
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('button', { name: "I'm on page…" }))

@@ -11,6 +11,12 @@ on:
       - '.github/pages/**'
       - '.github/workflows/web-pages.yml'
   workflow_dispatch:
+  # Every 3 hours the book news feed is rebuilt and the whole site is published again with it: this is the same
+  # single build-and-deploy job as a push, so a scheduled run also publishes docs/ and the website unchanged. The busy
+  # general feeds only hold a few hours of items, and each run merges with the live file to keep what earlier runs caught.
+  # The concurrency group below queues overlapping runs; it never cancels one.
+  schedule:
+    - cron: '15 */3 * * *'
 
 permissions:
   pages: write
@@ -72,6 +78,16 @@ jobs:
           npm run build
           mkdir -p ../_site/app
           cp -a dist/. ../_site/app/
+
+      # news/news.json is rebuilt from public RSS/Atom feeds and merged with the file that is live now, so a bad night
+      # never empties it. Both news files are published at /news/, one base URL for the website and the app.
+      # When every feed is down and there is no previous file, news.json is published with no items and the step still succeeds.
+      - name: Build the book news feed into _site/news
+        working-directory: web
+        run: |
+          mkdir -p ../_site/news
+          npx vite-node scripts/news/build-news.ts --out ../_site/news --previous https://marioruidacosta.github.io/MyBooksNewGeneration/news/news.json
+          cp public/news-events.json ../_site/news/events.json
 
       - uses: actions/upload-pages-artifact@v3
         with:

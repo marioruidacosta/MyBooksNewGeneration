@@ -35,6 +35,9 @@ import com.mcosta.mybooks.social.model.SessionState
 import com.mcosta.mybooks.data.releases.NOT_STATED
 import com.mcosta.mybooks.data.releases.ReleaseFilter
 import com.mcosta.mybooks.data.releases.ReleaseGenre
+import com.mcosta.mybooks.ui.news.NewsScreen
+import com.mcosta.mybooks.ui.news.NewsViewModel
+import com.mcosta.mybooks.ui.news.rememberLinkOpener
 import com.mcosta.mybooks.ui.releases.ReleaseBookScreen
 import com.mcosta.mybooks.ui.releases.ReleaseBookViewModel
 import com.mcosta.mybooks.ui.releases.ReleaseGenreScreen
@@ -132,6 +135,7 @@ object Routes {
     const val FRIENDS = "friends?tab={tab}"
     const val ACTIVITY = "activity"
     const val RELEASES = "releases"
+    const val NEWS = "news"
     const val RELEASE_GENRE = "releases/{month}/{genre}"
     const val RELEASE_BOOK = "releases/{month}/book/{id}"
     const val RELEASE_AUTHOR = "releases/{month}/author/{name}"
@@ -267,8 +271,14 @@ fun MyBooksNavHost(
                 val suggestions by suggestionsVm.state.collectAsStateWithLifecycle()
                 // The account's library couldn't be opened: the phone's is shown, and Home says so (as Account does).
                 val openFailed by container.libraries.openFailed.collectAsStateWithLifecycle()
+                val newsVm = viewModel { NewsViewModel(container.news, container.preferences) }
+                val news by newsVm.state.collectAsStateWithLifecycle()
+                val openLink = rememberLinkOpener(snackbar)
                 HomeScreen(
                     viewModel = viewModel { HomeViewModel(container.repository, container.challenges, pinnedTags = container.pinnedTags) },
+                    news = news,
+                    onOpenNews = openLink,
+                    onSeeAllNews = { nav.navigate(Routes.NEWS) },
                     snackbarHostState = snackbar,
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     onOpenShelf = { nav.navigate(Routes.shelf(it)) },
@@ -483,6 +493,9 @@ fun MyBooksNavHost(
                         { container.hiddenSuggestions.hide(suggestionKey(book.isbn, book.title, book.authors)); nav.popBackStack() }
                     },
                 )
+            }
+            screen(Routes.NEWS) {
+                NewsScreen(viewModel = viewModel { NewsViewModel(container.news, container.preferences) }, onBack = { nav.popBackStack() })
             }
             screen(Routes.RELEASES) {
                 ReleasesScreen(

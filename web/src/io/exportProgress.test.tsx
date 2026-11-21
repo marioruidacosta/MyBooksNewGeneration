@@ -39,7 +39,7 @@ afterEach(async () => {
 
 describe('export progress', () => {
   it('exportReportsPhotosItCouldNotInclude', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open([
       book('a', { coverUrl: 'photo' }), book('b', { coverUrl: 'photo' }), book('c', { coverUrl: 'photo' }),
     ])
@@ -53,7 +53,7 @@ describe('export progress', () => {
   })
 
   it('exportButtonsAreDisabledWhileRunning', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open([book('a', { coverUrl: 'photo' })])
     let release: (v: Uint8Array) => void = () => {}
     const getPhoto = () => new Promise<Uint8Array | null>((r) => (release = r))

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <title>Sample books feed</title>
+  <id>https://example.org/feed</id>
+  <updated>2026-11-16T10:00:00Z</updated>
+  <link rel="self" href="https://example.org/feed.atom"/>
+  <entry>
+    <title>A new novel wins the prize</title>
+    <id>https://example.org/news/1</id>
+    <link rel="alternate" type="text/html" href="https://example.org/news/1"/>
+    <link rel="enclosure" type="image/jpeg" href="https://example.org/enclosure.jpg"/>
+    <published>2026-11-15T09:30:00Z</published>
+    <updated>2026-11-15T12:00:00Z</updated>
+    <summary type="html">&lt;p&gt;The jury chose it &amp;amp; praised the prose.&lt;/p&gt;</summary>
+    <media:thumbnail url="https://example.org/thumb1.jpg"/>
+  </entry>
+  <entry>
+    <title>Bookshops see a busy autumn</title>
+    <id>https://example.org/news/2</id>
+    <link href="https://example.org/news/2"/>
+    <updated>2026-11-14T08:00:00Z</updated>
+    <content type="html">&lt;p&gt;Sales are up.&lt;/p&gt;&lt;img src="https://example.org/inline.png"&gt;</content>
+  </entry>
+  <entry>
+    <title>An old-style link</title>
+    <id>https://example.org/news/3</id>
+    <link href="http://example.org/news/3"/>
+    <updated>2026-11-13T08:00:00Z</updated>
+    <summary>Plain text summary.</summary>
+  </entry>
+</feed>

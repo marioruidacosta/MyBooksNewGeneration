@@ -55,7 +55,7 @@ const file = (text: string, name = 'goodreads_library_export.csv') => new File([
 
 describe('ImportPage', () => {
   it('importMergesExistingBooks', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open([
       book('dune', { title: 'Dune', authors: 'Frank Herbert', isbn: '9780441013593', notes: 'my own' }),
       book('emma', { title: 'Emma', authors: 'Jane Austen', isbn: null }),
@@ -80,7 +80,7 @@ describe('ImportPage', () => {
   })
 
   it('showsWhatItSkips', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     render(<ImportPage store={store} />)
     await user.upload(
@@ -91,7 +91,7 @@ describe('ImportPage', () => {
   })
 
   it('previewsABackupWithItsQuotesAndGoals', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     render(<ImportPage store={store} />)
     await user.upload(
@@ -103,7 +103,7 @@ describe('ImportPage', () => {
   })
 
   it('saysWhenTheFileIsNotOne', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     render(<ImportPage store={store} />)
     await user.upload(screen.getByLabelText('Goodreads or MyBooks file'), file('name,age\nAna,3\n', 'x.csv'))
@@ -114,7 +114,7 @@ describe('ImportPage', () => {
   })
 
   it('exportsGoodreadsAndTheBackup', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open([
       book('a', { title: 'Dune', authors: 'Frank Herbert', coverUrl: 'photo' }),
       book('b', { title: 'Emma', authors: 'Jane Austen' }),
@@ -143,7 +143,7 @@ describe('ImportPage', () => {
   })
 
   it('importShowsPhotoUploadProgress', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     const gates: (() => void)[] = []
     const upload = vi.fn(() => new Promise<{ error: null }>((resolve) => gates.push(() => resolve({ error: null }))))
@@ -175,7 +175,7 @@ describe('ImportPage', () => {
   })
 
   it('aChangeOnlyInQuotesIsShownBeforeImport', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open([book('dune', { title: 'Dune', authors: 'Frank Herbert', isbn: '9780441013593' })])
     const backup = {
       version: 1, exportedAt: 1,
@@ -196,7 +196,7 @@ describe('ImportPage', () => {
   })
 
   it('aChangedLibraryIsPlannedAgainBeforeImport', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     render(<ImportPage store={store} now={() => Date.now() + 10_000} />)
     await user.upload(screen.getByLabelText('Goodreads or MyBooks file'), file(FIVE))

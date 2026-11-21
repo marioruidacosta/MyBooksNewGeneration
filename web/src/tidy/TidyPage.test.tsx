@@ -36,11 +36,14 @@ function book(over: Partial<Book> = {}): Book {
 }
 
 const stores: LibraryStore[] = []
+/** Books made together are made at the same instant, so a merge never finds one newer by a stray millisecond (newest field wins). */
 async function open(...books: Book[]) {
-  const store = new LibraryStore({ api, owner: 'u1', retryDelays: [60_000], pollMs: 0 })
+  let clock = () => 1_000
+  const store = new LibraryStore({ api, owner: 'u1', retryDelays: [60_000], pollMs: 0, now: () => clock() })
   stores.push(store)
   await store.load()
   books.forEach((b) => store.create(b))
+  clock = Date.now
   return store
 }
 
@@ -72,7 +75,7 @@ describe('TidyPage', () => {
   }, T)
 
   it('lookUpFillsOnlyTheEmptyFields', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open(book({ id: 'a', coverUrl: null, publisher: 'Mine' }))
     const lookup = fakeLookup({
       isbn: '9780156007757', title: 'Blindness', authors: ['José Saramago'], publisher: 'Theirs', year: 1995,
@@ -88,7 +91,7 @@ describe('TidyPage', () => {
   }, T)
 
   it('mergeAsksFirstAndShowsWhatWillHappen', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open(
       book({ id: 'a', title: 'Blindness' }),
       book({ id: 'b', title: 'Blindness: a novel', publisher: 'House' }),
@@ -121,7 +124,7 @@ describe('TidyPage', () => {
 
 describe('TidyPage merging, more', () => {
   it('mergePreviewWarnsAboutBookmarks', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     pulled = [{ table: 'bookmarks', id: 'm1', fields: { book_id: 'b', deleted: false }, times: { book_id: 1 }, seq: 1 }]
     const store = await open(book({ id: 'a' }), book({ id: 'b', title: 'Blindness: a novel' }))
     render(<TidyPage store={store} owner="u1" storage={storage} />)
@@ -133,7 +136,7 @@ describe('TidyPage merging, more', () => {
   }, T)
 
   it('mergingAGroupOfThreeKeepsTheChosenOne', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open(
       book({ id: 'a', title: 'Blindness' }),
       book({ id: 'b', title: 'Blindness: one' }),
@@ -151,7 +154,7 @@ describe('TidyPage merging, more', () => {
   }, T)
 
   it('aBookCanBeLeftOutOfAMerge', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open(
       book({ id: 'a', title: 'Blindness' }),
       book({ id: 'b', title: 'Blindness: one', publisher: 'House' }),
@@ -170,7 +173,7 @@ describe('TidyPage merging, more', () => {
   }, T)
 
   it('aGroupWithFewerThanTwoCheckedCannotMerge', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open(book({ id: 'a', title: 'Blindness' }), book({ id: 'b', title: 'Blindness: one' }))
     render(<TidyPage store={store} owner="u1" storage={storage} />)
     await user.click(screen.getByRole('tab', { name: 'Possible duplicates (1)' }))
@@ -181,7 +184,7 @@ describe('TidyPage merging, more', () => {
   }, T)
 
   it('undoingAMergeRestoresBothBooks', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const keepBefore = book({ id: 'a', title: 'Blindness', publisher: null, rating: null })
     const dropBefore = book({ id: 'b', title: 'Blindness: a novel', publisher: 'House', rating: 4, tags: ['x'] })
     const store = await open(keepBefore, dropBefore)
@@ -208,7 +211,7 @@ describe('TidyPage merging, more', () => {
   }, T)
 
   it('undoingAMergeKeepsAFieldChangedSince', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     // The first pull gives the cursor a start, so the next pull is a new one.
     pulled = [{ table: 'bookmarks', id: 'm0', fields: { book_id: 'zz', deleted: false }, times: { book_id: 1 }, seq: 1 }]
     const keepBefore = book({ id: 'a', title: 'Blindness', publisher: null, rating: null })

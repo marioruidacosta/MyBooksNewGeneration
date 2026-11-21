@@ -102,6 +102,9 @@ class AppContainer(
     /** New in Portugal: monthly lists of new books, downloaded from GitHub Pages and saved on the phone. */
     val releases = ReleasesRepository(ReleasesClient(http), releasesFileSystem, releasesDir)
 
+    /** Book news and the book calendar: downloaded from GitHub Pages and saved on the phone. */
+    val news = com.mcosta.mybooks.data.news.NewsRepository(com.mcosta.mybooks.data.news.NewsClient(http), releasesFileSystem, releasesDir.parent?.div("news") ?: (releasesDir / "news"))
+
     /** The community features, or null when Supabase isn't configured (then they're hidden). */
     val social: SocialServices? = socialServices ?: socialFor(socialConfig, httpEngine) { config, engine ->
         createSocialServices(config, engine, socialSettings)
