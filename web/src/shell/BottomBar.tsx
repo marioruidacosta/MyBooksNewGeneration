@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
 import { ThemeSwitch } from '../ThemeSwitch'
 
@@ -57,10 +57,63 @@ export function BottomBar({ onSignOut }: { onSignOut: () => void }) {
   const pathname = useLocation({ select: (l) => l.pathname })
   const sheetId = useId()
   const moreRef = useRef<HTMLButtonElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+  /** A page was chosen from the sheet: once it shows, its heading takes the focus (the link that had it is gone). */
+  const headingNext = useRef(false)
   const holdsCurrentPage = MORE_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))
 
   // A page was chosen (here or anywhere): the sheet is done.
-  useEffect(() => setOpen(false), [pathname])
+  useEffect(() => {
+    setOpen(false)
+    if (!headingNext.current) return
+    headingNext.current = false
+    // The page may still be loading: look for its heading for a moment.
+    let tries = 0
+    const timer = setInterval(() => {
+      const heading = document.querySelector<HTMLElement>('main h1, h1')
+      if (heading) {
+        if (!heading.hasAttribute('tabindex')) heading.tabIndex = -1
+        heading.focus()
+      }
+      if (heading || ++tries > 40) clearInterval(timer)
+    }, 50)
+    return () => clearInterval(timer)
+  }, [pathname])
+
+  // The sheet takes the focus when it opens.
+  useEffect(() => {
+    if (open) sheetRef.current?.querySelector<HTMLElement>('a, button, select')?.focus()
+  }, [open])
+
+  const closeToMore = () => {
+    setOpen(false)
+    moreRef.current?.focus()
+  }
+
+  /** A link in the sheet was chosen: another page puts focus on its heading; the same page gives it back to More. */
+  const choose = (to: string) => {
+    if (pathname === to) closeToMore()
+    else {
+      headingNext.current = true
+      setOpen(false)
+    }
+  }
+
+  /** Tab goes round inside the sheet, which is modal in effect: the page behind is dimmed. */
+  const keepTabInside = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'Tab') return
+    const items = [...e.currentTarget.querySelectorAll<HTMLElement>('a, button, select')]
+    if (items.length === 0) return
+    const first = items[0]
+    const last = items[items.length - 1]
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault()
+      last.focus()
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault()
+      first.focus()
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -76,12 +129,20 @@ export function BottomBar({ onSignOut }: { onSignOut: () => void }) {
   return (
     <>
       {open && (
-        <div className="more-backdrop" onClick={() => setOpen(false)}>
-          <div id={sheetId} className="more-sheet" role="dialog" aria-label="More" onClick={(e) => e.stopPropagation()}>
-            <Link to="/import" onClick={() => setOpen(false)}>
+        <div className="more-backdrop" onClick={closeToMore}>
+          <div
+            id={sheetId}
+            ref={sheetRef}
+            className="more-sheet"
+            role="dialog"
+            aria-label="More"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={keepTabInside}
+          >
+            <Link to="/import" onClick={() => choose('/import')}>
               Import
             </Link>
-            <Link to="/tidy" onClick={() => setOpen(false)}>
+            <Link to="/tidy" onClick={() => choose('/tidy')}>
               Tidy up
             </Link>
             <div className="more-sheet__row">

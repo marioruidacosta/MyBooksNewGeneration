@@ -27,6 +27,8 @@ export function JumpBox({ books, onOpen, onAddIsbn, compact = false }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const returnTo = useRef<HTMLElement | null>(null)
   const listId = useId()
+  /** Whether the press that began the current click was on the backdrop itself; null when no press was seen. */
+  const pressedOutside = useRef<boolean | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -118,7 +120,17 @@ export function JumpBox({ books, onOpen, onAddIsbn, compact = false }: Props) {
         )}
       </button>
       {open && (
-        <div className="jump-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+        <div
+          className="jump-backdrop"
+          // A tap is a click (an iPhone has no Escape key to leave by). A drag that began inside the box and ended on the
+          // backdrop, such as selecting text, is not a tap outside.
+          onPointerDown={(e) => (pressedOutside.current = e.target === e.currentTarget)}
+          onClick={(e) => {
+            const outside = pressedOutside.current !== false
+            pressedOutside.current = null
+            if (e.target === e.currentTarget && outside) close()
+          }}
+        >
           <div
             className="jump-box"
             role="dialog"
@@ -138,6 +150,11 @@ export function JumpBox({ books, onOpen, onAddIsbn, compact = false }: Props) {
               }
             }}
           >
+            {compact && (
+              <button type="button" className="jump-close quiet" aria-label="Close" onClick={close}>
+                <span aria-hidden="true">×</span>
+              </button>
+            )}
             <input
               ref={inputRef}
               type="text"

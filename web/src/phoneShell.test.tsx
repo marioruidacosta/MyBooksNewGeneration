@@ -81,6 +81,38 @@ describe('the phone layout', () => {
     expect(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('button', { name: 'More' })).toHaveAttribute('data-current', 'true')
   })
 
+  it('theMoreSheetTakesFocusKeepsTabInsideAndGivesFocusBack', async () => {
+    setPhone(true)
+    const user = userEvent.setup({ delay: null })
+    render(<App createApi={() => api} />)
+    const bar = await screen.findByRole('navigation', { name: 'Main' })
+    const more = within(bar).getByRole('button', { name: 'More' })
+
+    await user.click(more)
+    const menu = screen.getByRole('dialog', { name: 'More' })
+    expect(within(menu).getByRole('link', { name: 'Import' })).toHaveFocus()
+
+    // Tab never leaves the sheet: from the last item it wraps to the first, and back.
+    await user.tab({ shift: true })
+    expect(within(menu).getByRole('button', { name: 'Sign out' })).toHaveFocus()
+    await user.tab()
+    expect(within(menu).getByRole('link', { name: 'Import' })).toHaveFocus()
+
+    // Escape, and a tap outside, return focus to More.
+    await user.keyboard('{Escape}')
+    expect(more).toHaveFocus()
+    await user.click(more)
+    await user.click(document.querySelector('.more-backdrop') as HTMLElement)
+    expect(screen.queryByRole('dialog', { name: 'More' })).not.toBeInTheDocument()
+    expect(more).toHaveFocus()
+
+    // Choosing a page leaves focus somewhere that still exists: the new page's heading.
+    await user.click(more)
+    await user.click(within(screen.getByRole('dialog', { name: 'More' })).getByRole('link', { name: 'Tidy up' }))
+    await vi.waitFor(() => expect(screen.getByRole('heading', { level: 1 })).toHaveFocus())
+    expect(document.body).not.toHaveFocus()
+  })
+
   it('theJumpBoxStaysReachableWithASearchIconInsteadOfTheKeyHint', async () => {
     setPhone(true)
     render(<App createApi={() => api} />)

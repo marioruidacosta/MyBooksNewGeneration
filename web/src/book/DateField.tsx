@@ -30,11 +30,12 @@ export function DateField({ label, value, onCommit }: Props) {
   const openPicker = () => {
     const box = picker.current
     if (!box) return
+    // Focus first, always: a browser may define showPicker and do nothing (iOS Safari), and it opens its own picker on focus.
+    box.focus()
     try {
       if (typeof box.showPicker === 'function') box.showPicker()
-      else box.focus()
     } catch {
-      box.focus()
+      // The focus above is what is left to try.
     }
   }
 

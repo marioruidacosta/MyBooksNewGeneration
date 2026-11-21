@@ -32,6 +32,7 @@ import type { LibraryStore as Store } from './sync/store'
 import { useLibraryStore, useWarnBeforeClosing } from './sync/useLibraryStore'
 import { ToastProvider } from './ui/Toast'
 import { usePhone } from './ui/usePhone'
+import { useCommitOnHide } from './ui/useCommitOnHide'
 import { BottomBar } from './shell/BottomBar'
 import { InstallHint } from './pwa/InstallHint'
 
@@ -64,6 +65,7 @@ function Jump({ store, compact }: { store: Store; compact: boolean }) {
 function Shell() {
   const store = useOptionalStore()
   const phone = usePhone()
+  useCommitOnHide()
   const publisher = useContext(SharingContext)
   return (
     <ToastProvider>
