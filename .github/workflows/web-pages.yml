@@ -87,7 +87,7 @@ jobs:
         run: |
           mkdir -p ../_site/news
           npx vite-node scripts/news/build-news.ts --out ../_site/news --previous https://marioruidacosta.github.io/MyBooksNewGeneration/news/news.json
-          cp public/news/events.json ../_site/news/events.json
+          cp public/news-events.json ../_site/news/events.json
 
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -2,12 +2,13 @@ import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { FEEDS, type Feed } from './feeds'
-import { cleanTitle, httpsUrl, normalizeTitle, normalizeUrl, parseFeed, summarize, type NewsItem } from './parse'
+import { cleanImage, cleanTitle, httpsUrl, normalizeTitle, normalizeUrl, parseFeed, summarize, type NewsItem } from './parse'
 
 export const USER_AGENT = 'MyBooks-news/1.0 (+https://marioruidacosta.github.io/MyBooksNewGeneration/)'
 const DAY = 86_400_000
 const WINDOW_DAYS = 30
-const MAX_ITEMS = 200
+/** Per language, so a busy English feed cannot push the Portuguese stories out of the file. */
+const MAX_PER_LANG = 120
 const FEED_TIMEOUT_MS = 20_000
 const MAX_BODY_BYTES = 5 * 1024 * 1024
 const PREVIOUS_ATTEMPTS = 3
@@ -124,8 +125,14 @@ function rebuildPrevious(raw: unknown, now: number, feeds: Map<string, Feed>): N
     source: feed.id,
     lang: feed.lang,
     published: Math.min(x.published, now),
-    image: httpsUrl(x.image),
+    image: cleanImage(x.image),
   }
+}
+
+/** At most MAX_PER_LANG of each language, newest first within each, then merged newest first. */
+function capPerLanguage(sorted: NewsItem[]): NewsItem[] {
+  const taken = { pt: 0, en: 0 }
+  return sorted.filter((i) => taken[i.lang]++ < MAX_PER_LANG)
 }
 
 export async function buildNews(opts: BuildOptions): Promise<{ file: NewsFile; log: string[] }> {
@@ -186,7 +193,7 @@ export async function buildNews(opts: BuildOptions): Promise<{ file: NewsFile; l
   }
   // generatedAt moves only when something was actually fetched.
   const generatedAt = sources.some((s) => s.ok) ? now : opts.previous?.generatedAt || now
-  return { file: { generatedAt, sources, items: merged.slice(0, MAX_ITEMS) }, log }
+  return { file: { generatedAt, sources, items: capPerLanguage(merged) }, log }
 }
 
 function arg(name: string): string | undefined {

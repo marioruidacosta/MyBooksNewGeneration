@@ -18,7 +18,7 @@ export type NewsFeed = { generatedAt: number; sources: NewsSource[]; items: News
 export type BookEvent = { name: string; place: string; month: number; kind: string; lang: string; url: string }
 
 export type NewsData = {
-  /** Null when the news couldn't be loaded or held nothing to show. */
+  /** Null when the news couldn't be loaded; a loaded file with nothing in it has an empty items list. */
   news: NewsFeed | null
   /** The book calendar; empty when it couldn't be loaded. */
   events: BookEvent[]
@@ -47,8 +47,9 @@ export function newsUrls(baseUrl: string, origin: string) {
   return {
     news: `${base}news.json`,
     events: `${base}events.json`,
-    // Vite serves public/news/ inside the app's own folder, which is all there is in dev.
-    localEvents: `${baseUrl}news/events.json`,
+    // In dev only the app's own folder exists, and Vite serves public/news-events.json from it. It is not a news/ folder,
+    // which would collide with the website's /news route.
+    localEvents: `${baseUrl}news-events.json`,
   }
 }
 
@@ -64,6 +65,7 @@ function parseItem(raw: unknown): NewsItem | null {
   if (!isObject(raw)) return null
   const { id, title, summary, url, source, lang, published, image } = raw
   if (typeof title !== 'string' || title.trim() === '' || !isHttps(url)) return null
+  if (lang !== 'pt' && lang !== 'en') return null
   if (typeof published !== 'number' || !Number.isFinite(published)) return null
   return {
     id: typeof id === 'string' ? id : url,
@@ -71,17 +73,16 @@ function parseItem(raw: unknown): NewsItem | null {
     summary: typeof summary === 'string' ? summary : '',
     url,
     source: typeof source === 'string' ? source : '',
-    lang: lang === 'pt' ? 'pt' : 'en',
+    lang,
     published,
     image: isHttps(image) ? image : null,
   }
 }
 
-/** Reads news.json, keeping only stories that can be shown safely; null when nothing is left. */
+/** Reads news.json, keeping only stories that can be shown safely. Null only when it isn't a news file; an empty list is a valid, empty feed. */
 export function parseNews(raw: unknown): NewsFeed | null {
   if (!isObject(raw) || !Array.isArray(raw.items)) return null
   const items = raw.items.map(parseItem).filter((i): i is NewsItem => i !== null)
-  if (items.length === 0) return null
   const sources = Array.isArray(raw.sources)
     ? raw.sources.filter((s): s is NewsSource => isObject(s) && typeof s.id === 'string' && typeof s.name === 'string')
     : []
@@ -93,7 +94,7 @@ export function parseEvents(raw: unknown): BookEvent[] {
   if (!isObject(raw) || !Array.isArray(raw.events)) return []
   const events: BookEvent[] = []
   for (const e of raw.events) {
-    if (!isObject(e) || typeof e.name !== 'string' || typeof e.month !== 'number') continue
+    if (!isObject(e) || typeof e.name !== 'string' || e.name.trim() === '' || typeof e.month !== 'number' || !isHttps(e.url)) continue
     if (!Number.isInteger(e.month) || e.month < 1 || e.month > 12) continue
     events.push({
       name: e.name,
@@ -101,7 +102,7 @@ export function parseEvents(raw: unknown): BookEvent[] {
       month: e.month,
       kind: typeof e.kind === 'string' ? e.kind : '',
       lang: typeof e.lang === 'string' ? e.lang : '',
-      url: typeof e.url === 'string' ? e.url : '',
+      url: e.url,
     })
   }
   return events

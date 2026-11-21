@@ -55,19 +55,47 @@ describe('buildNews', () => {
     expect(dup.file.items.map((i) => i.url)).toEqual(['https://x.test/1', 'https://x.test/3', 'https://x.test/4'])
   })
 
-  it('keepsThirtyDaysNewestFirstAtMost200', async () => {
+  it('keepsThirtyDaysNewestFirstAtMost120PerLanguage', async () => {
     const many = Array.from({ length: 250 }, (_, i) => ({ title: `T${i}`, url: `https://m.test/${i}`, date: NOW - i * 1000 }))
     const stale = { title: 'Stale', url: 'https://m.test/stale', date: NOW - 31 * DAY }
     const edge = { title: 'Edge', url: 'https://m.test/edge', date: NOW - 29 * DAY }
     const run = (xml: string) => buildNews({ feeds: [feed('m')], fetch: (() => respond(xml)) as unknown as F, now: NOW, previous: null })
     const items = (await run(rss([stale, ...many, edge]))).file.items
-    expect(items).toHaveLength(200)
+    expect(items).toHaveLength(120)
     expect(items[0].title).toBe('T0')
     for (let i = 1; i < items.length; i++) expect(items[i - 1].published).toBeGreaterThanOrEqual(items[i].published)
     expect(items.some((i) => i.title === 'Stale')).toBe(false)
     expect((await run(rss([stale, edge]))).file.items.map((i) => i.title)).toEqual(['Edge'])
     // a missing date counts as fetch time
     expect((await run(rss([{ title: 'No date', url: 'https://m.test/n' }]))).file.items[0].published).toBe(NOW)
+  })
+
+  it('portugueseStoriesAreNotPushedOutByEnglishOnes', async () => {
+    const en = Array.from({ length: 150 }, (_, i) => ({ title: `E${i}`, url: `https://en.test/${i}`, date: NOW - 1000 - i * 1000 }))
+    const pt = Array.from({ length: 130 }, (_, i) => ({ title: `P${i}`, url: `https://pt.test/${i}`, date: NOW - 10 * DAY - i * 1000 }))
+    const fetchFn = f((url) => (url.includes('en.test') ? respond(rss(en)) : respond(rss(pt))))
+    const { file } = await buildNews({ feeds: [feed('en', 'en'), feed('pt', 'pt')], fetch: fetchFn, now: NOW, previous: null })
+    const count = (lang: string) => file.items.filter((i) => i.lang === lang).length
+    // 120 of each: the newer English stories do not squeeze the older Portuguese ones out
+    expect(count('en')).toBe(120)
+    expect(count('pt')).toBe(120)
+    expect(file.items.some((i) => i.title === 'P0')).toBe(true)
+    expect(file.items.some((i) => i.title === 'E120')).toBe(false)
+    expect(file.items.some((i) => i.title === 'P120')).toBe(false)
+    for (let i = 1; i < file.items.length; i++) expect(file.items[i - 1].published).toBeGreaterThanOrEqual(file.items[i].published)
+  })
+
+  it('oldPictureUrlsInThePreviousFileAreCleaned', async () => {
+    const pixel = 'https://media.npr.org/include/images/tracking/npr-rss-pixel.png?story=1'
+    const big = 'https://npr.brightspotcdn.com/dims3/default/strip/false/crop/4356x2904+0+0/resize/4356x2904!/quality/85/format/webp/?url=https%3A%2F%2Fx.test%2Fa.jpg'
+    const previous: NewsFile = {
+      generatedAt: NOW - DAY,
+      sources: [],
+      items: [old({ source: 'a', url: 'https://a.test/1', image: pixel }), old({ source: 'a', url: 'https://a.test/2', image: big })],
+    }
+    const { file } = await buildNews({ feeds: [feed('a')], fetch: f(() => respond('', 503)), now: NOW, previous })
+    expect(file.items.find((i) => i.url.endsWith('1'))?.image).toBeNull()
+    expect(file.items.find((i) => i.url.endsWith('2'))?.image).toContain('/resize/400/quality/85/')
   })
 
   it('aFailingFeedDoesNotFailTheBuild', async () => {

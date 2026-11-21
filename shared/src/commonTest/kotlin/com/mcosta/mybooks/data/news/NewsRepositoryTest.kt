@@ -6,6 +6,9 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.IOException
 import okio.Path.Companion.toPath
@@ -26,8 +29,10 @@ class NewsRepositoryTest {
     private var status = HttpStatusCode.OK
     private var newsBody = fixture("news.json")
     private var requests = 0
+    private var latency = 0L
     private val engine = MockEngine { request ->
         requests++
+        if (latency > 0) delay(latency)
         if (offline) throw IOException("no network")
         val body = when (request.url.encodedPath.substringAfterLast('/')) {
             "news.json" -> newsBody
@@ -204,5 +209,48 @@ class NewsRepositoryTest {
         now -= 10.minutes
         repo.news()
         assertEquals(2, requests)
+    }
+
+    @Test
+    fun twoRefreshesAtOnceDownloadOnce() = runTest {
+        latency = 500
+        // Home and Book news both ask at start-up: one download, and both get the same fresh copy.
+        val both = listOf(async { repo.news() }, async { repo.news() }).awaitAll()
+        assertEquals(1, requests)
+        assertEquals(both[0].value, both[1].value)
+        assertFalse(both.any { it.offline })
+        // Two pull-to-refreshes at once (forced) also share one download.
+        now += 5.minutes
+        val forced = listOf(async { repo.news(force = true) }, async { repo.news(force = true) }).awaitAll()
+        assertEquals(2, requests)
+        assertEquals(forced[0].value, forced[1].value)
+        // A later forced refresh is its own download again.
+        repo.news(force = true)
+        assertEquals(3, requests)
+        // The calendar is serialised too.
+        val events = listOf(async { repo.events() }, async { repo.events() }).awaitAll()
+        assertEquals(4, requests)
+        assertEquals(events[0], events[1])
+    }
+
+    @Test
+    fun theAppAndTheWebsiteDropTheSameStoriesAndEvents() = runTest {
+        newsBody = feedJson(
+            itemJson("ok", published = 5),
+            itemJson("fr").replace("\"lang\":\"en\"", "\"lang\":\"fr\""),
+            itemJson("blank", title = "   "),
+            itemJson("pt", published = 4).replace("\"lang\":\"en\"", "\"lang\":\"pt\""),
+        )
+        assertEquals(listOf("ok", "pt"), repo.news().value.items.map { it.id })
+        val events = """{"events":[
+            {"name":"Fair","place":"x","month":3,"kind":"fair","lang":"en","url":"https://e.test/1"},
+            {"name":"Plain","place":"x","month":3,"kind":"fair","lang":"en","url":"http://e.test/1"},
+            {"name":"Script","place":"x","month":3,"kind":"fair","lang":"en","url":"javascript:alert(1)"},
+            {"name":"  ","place":"x","month":3,"kind":"fair","lang":"en","url":"https://e.test/3"}]}"""
+        val only = NewsRepository(
+            NewsClient(HttpClient(MockEngine { respond(events, HttpStatusCode.OK) }) { expectSuccess = false }, "https://pages.test/news/"),
+            FakeFileSystem(), "/e2".toPath(), { now },
+        )
+        assertEquals(listOf("Fair"), only.events().map { it.name })
     }
 }

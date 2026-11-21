@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { httpsUrl, parseFeed, summarize, toPlainText } from './parse'
+import { MAX_RAW, httpsUrl, parseFeed, summarize, toPlainText } from './parse'
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')
 const NOW = Date.parse('2026-11-16T12:00:00Z')
@@ -91,13 +91,73 @@ describe('parseFeed', () => {
     expect(parseFeed(xml, ctx('a', 'pt'))[0].title).toBe('A bold & move')
   })
 
-  it('aHostileDescriptionIsQuick', () => {
-    const t0 = Date.now()
-    summarize('<'.repeat(200000))
-    const xml = `<rss version="2.0"><channel><item><title><![CDATA[${'<'.repeat(200000)}]]></title><link>https://a.test/1</link><description><![CDATA[${'<'.repeat(200000)}]]></description></item></channel></rss>`
-    parseFeed(xml, ctx('a', 'en'))
-    // about 20 ms on a quiet machine; the margin is for the full parallel suite (a bad regex takes tens of seconds)
-    expect(Date.now() - t0).toBeLessThan(1000)
+  it('rawTextIsCutBeforeStripping', () => {
+    // Deterministic stand-in for a timing check: whatever follows the cap is never even looked at.
+    expect(MAX_RAW).toBe(20_000)
+    const text = toPlainText(`${'a'.repeat(MAX_RAW)}TAIL-MARKER`)
+    expect(text).toBe('a'.repeat(MAX_RAW))
+    expect(summarize(`${'<'.repeat(MAX_RAW)}after`)).not.toContain('after')
+    const xml = `<rss version="2.0"><channel><item><title>Fine</title><link>https://a.test/2</link><description><![CDATA[${'x'.repeat(MAX_RAW)}END]]></description></item></channel></rss>`
+    const items = parseFeed(xml, ctx('a', 'en'))
+    expect(items.map((i) => i.title)).toEqual(['Fine'])
+    expect(items[0].summary).not.toContain('END')
+  })
+
+  it('trackingPixelsAreNeverThumbnails', () => {
+    const items = parseFeed(fixture('npr.rss.xml'), ctx('npr', 'en'))
+    expect(items).toHaveLength(4)
+    for (const i of items) expect(i.image ?? '').not.toMatch(/tracking|pixel/)
+    // the fourth story has no picture of its own: its only <img> is the tracking pixel
+    expect(items[3].image).toBeNull()
+    const xml = `<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel>
+      <item><title>One</title><link>https://a.test/1</link><description><![CDATA[<img src="https://a.test/x/spacer.gif"><img src="https://a.test/a/1x1.png"><img src="https://a.test/b.gif" width="1" height="1"><img src="https://a.test/c.gif" height="2"><img src="https://a.test/real.jpg" width="640"/>]]></description></item>
+      <item><title>Two</title><link>https://a.test/2</link><media:content url="https://a.test/beacon/t.gif" medium="image"/><description><![CDATA[<img src="https://a.test/tracking/p.png">]]></description></item>
+    </channel></rss>`
+    const [one, two] = parseFeed(xml, ctx('a', 'en'))
+    expect(one.image).toBe('https://a.test/real.jpg')
+    expect(two.image).toBeNull()
+  })
+
+  it('theSmallestUsableImageIsChosen', () => {
+    const xml = `<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel>
+      <item><title>Sizes</title><link>https://a.test/1</link>
+        <media:content url="https://a.test/1000.jpg" width="1000" medium="image"/>
+        <media:content url="https://a.test/60.jpg" width="60" medium="image"/>
+        <media:content url="https://a.test/460.jpg" width="460" medium="image"/>
+        <media:content url="https://a.test/140.jpg" width="140" medium="image"/>
+      </item>
+      <item><title>Thumbs</title><link>https://a.test/2</link>
+        <media:thumbnail url="https://a.test/t-big.jpg" width="700"/><media:thumbnail url="https://a.test/t-small.jpg" width="300"/>
+      </item>
+      <item><title>No widths</title><link>https://a.test/3</link>
+        <media:content url="https://a.test/first.jpg" medium="image"/><media:content url="https://a.test/second.jpg" medium="image"/>
+      </item>
+    </channel></rss>`
+    const items = parseFeed(xml, ctx('a', 'en'))
+    expect(items.map((i) => i.image)).toEqual(['https://a.test/460.jpg', 'https://a.test/t-small.jpg', 'https://a.test/first.jpg'])
+  })
+
+  it('oversizedImagesAreDropped', () => {
+    const xml = `<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel>
+      <item><title>Huge only</title><link>https://a.test/1</link><media:content url="https://a.test/huge.jpg" width="1800" medium="image"/></item>
+      <item><title>Huge and ok</title><link>https://a.test/2</link>
+        <media:content url="https://a.test/huge.jpg" width="1800" medium="image"/><media:content url="https://a.test/ok.jpg" width="470" medium="image"/></item>
+      <item><title>Edge</title><link>https://a.test/3</link><media:content url="https://a.test/edge.jpg" width="1200" medium="image"/></item>
+    </channel></rss>`
+    expect(parseFeed(xml, ctx('a', 'en')).map((i) => i.image)).toEqual([null, 'https://a.test/ok.jpg', 'https://a.test/edge.jpg'])
+    // the real NYT feed offers a single 1800 px square per story
+    const nyt = '<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><item><title>NYT</title><link>https://www.nytimes.com/x</link><media:content height="1800" medium="image" url="https://static01.nyt.com/images/2023/06/11/books/x-mediumSquareAt3X.jpg" width="1800"/></item></channel></rss>'
+    expect(parseFeed(nyt, ctx('nyt', 'en'))[0].image).toBeNull()
+  })
+
+  it('nprImagesAreResized', () => {
+    const [first, , third] = parseFeed(fixture('npr.rss.xml'), ctx('npr', 'en'))
+    expect(first.image).toBe(
+      'https://npr.brightspotcdn.com/dims3/default/strip/false/crop/4356x2904+0+0/resize/400/quality/85/format/webp/?url=https%3A%2F%2Fnpr-production-npr.s3.us-east-1.amazonaws.com%2Fbrightspot%2F3e%2F55%2F5987a64f424b84b128aba38ba342%2Fnpr-lr-stop-thinking-about-work-harlan-3.jpg',
+    )
+    expect(third.image).toContain('/resize/400/quality/85/')
+    expect(third.image).not.toMatch(/resize\/\d+x\d+/)
+    expect(new URL(third.image!).searchParams.get('url')).toMatch(/gettyimages-1959972404-594x594\.jpg$/)
   })
 
   it('controlAndBidiCharactersAreRemoved', () => {

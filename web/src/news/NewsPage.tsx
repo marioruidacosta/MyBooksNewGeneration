@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatDay } from '../text/dates'
-import { isHttps, loadNewsData, type BookEvent, type Fetcher, type NewsData, type NewsItem, type NewsLang } from './newsClient'
+import { loadNewsData, type BookEvent, type Fetcher, type NewsData, type NewsItem, type NewsLang } from './newsClient'
 
 type Props = {
   /** How the files are fetched; the browser's fetch unless a test brings its own. */
@@ -107,13 +107,9 @@ function Calendar({ events, now }: { events: BookEvent[]; now: number }) {
       <ul>
         {list.map((e) => (
           <li key={`${e.name}-${String(e.month)}`}>
-            {isHttps(e.url) ? (
-              <a href={e.url} target="_blank" rel="noopener noreferrer">
-                {e.name}
-              </a>
-            ) : (
-              <span>{e.name}</span>
-            )}
+            <a href={e.url} target="_blank" rel="noopener noreferrer">
+              {e.name}
+            </a>
             <span className="news-when">
               Usually in {MONTH_NAMES[e.month - 1]}
               {e.place !== '' && `, ${e.place}`}
@@ -190,7 +186,8 @@ export function NewsPage({ fetcher = browserFetch, now = Date.now }: Props = {})
                     </button>
                   ))}
                 </div>
-                {groups.length === 0 && <p className="empty">No stories in this language yet.</p>}
+                {news.items.length === 0 && <p className="empty">No news yet. Check back later.</p>}
+                {news.items.length > 0 && groups.length === 0 && <p className="empty">No stories in this language yet.</p>}
                 {groups.map((g) => (
                   <section key={g.key} className="news-day" aria-labelledby={`news-day-${String(g.key)}`}>
                     <h2 id={`news-day-${String(g.key)}`}>{g.label}</h2>

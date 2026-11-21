@@ -42,7 +42,7 @@ function decodeEntities(s: string): string {
 // Tags longer than this are not tags. The bound also keeps a hostile "<<<<<..." from costing quadratic time.
 const MAX_TAG = 500
 // Raw text is cut to this before any stripping, so no input can make the cleaning slow.
-const MAX_RAW = 20_000
+export const MAX_RAW = 20_000
 
 function stripTags(s: string): string {
   return s
@@ -145,24 +145,110 @@ function linkOf(entry: Node): string | null {
   return httpsUrl(candidates[0]) ?? null
 }
 
+/** Smallest width a story picture may declare and still be worth showing, and the widest we will download. */
+const MIN_IMAGE_WIDTH = 150
+const MAX_IMAGE_WIDTH = 1200
+const NPR_WIDTH = 400
+
+/** Tracking pixels, spacers and beacons are never pictures. Judged by the path, so a query string can't trigger it. */
+function isTrackingUrl(url: string): boolean {
+  try {
+    return /\/tracking\/|pixel|spacer|beacon|1x1/i.test(new URL(url).pathname)
+  } catch {
+    return true
+  }
+}
+
+/**
+ * NPR serves its pictures through brightspot, which resizes on request: ".../resize/4356x2904!/..." is the full
+ * original, ".../resize/400/..." a 400 px wide one. Returns the smaller URL, or null when it isn't such a URL.
+ */
+function resizedNprUrl(url: string): string | null {
+  try {
+    const u = new URL(url)
+    if (!u.hostname.endsWith('.brightspotcdn.com') || !/\/resize\/\d+x\d+!\//.test(u.pathname)) return null
+    u.pathname = u.pathname.replace(/\/resize\/\d+x\d+!\//, `/resize/${String(NPR_WIDTH)}/`)
+    return u.toString()
+  } catch {
+    return null
+  }
+}
+
+interface Candidate {
+  url: string
+  /** The width the feed declares, if any. */
+  width: number | null
+}
+
+const declaredWidth = (v: unknown): number | null => {
+  const n = parseInt(attr(v, 'width'), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+/** Of the pictures one feed element offers: the smallest that is wide enough; with no widths at all, the first. */
+function bestOf(list: Candidate[]): Candidate | null {
+  const known = list.filter((c) => c.width !== null)
+  if (known.length === 0) return list[0] ?? null
+  return known.filter((c) => (c.width ?? 0) >= MIN_IMAGE_WIDTH).sort((a, b) => (a.width ?? 0) - (b.width ?? 0))[0] ?? null
+}
+
+/** The picture URL when it is fit to show (https, not a tracker, not oversized), possibly resized; null otherwise. */
+function usable(c: Candidate): string | null {
+  const ok = httpsUrl(c.url)
+  if (!ok || isTrackingUrl(ok)) return null
+  const small = resizedNprUrl(ok)
+  if (small) return small
+  return c.width !== null && c.width > MAX_IMAGE_WIDTH ? null : ok
+}
+
+/** A picture URL (from a file we wrote earlier) made fit to show: https, not a tracker, resized when it is NPR's; else null. */
+export function cleanImage(value: unknown): string | null {
+  return typeof value === 'string' ? usable({ url: value, width: null }) : null
+}
+
+function bodyImages(bodyHtml: string): Candidate[] {
+  const found: Candidate[] = []
+  const re = /<img\b([^>]{0,2000})>/gi
+  const html = bodyHtml.slice(0, 100_000)
+  for (let m = re.exec(html); m && found.length < 20; m = re.exec(html)) {
+    const tag = m[1]
+    const src = /\bsrc\s*=\s*["']([^"']{1,2000})["']/i.exec(tag)
+    if (!src) continue
+    const size = (name: string) => {
+      const v = new RegExp(`\\b${name}\\s*=\\s*["']?(\\d+)`, 'i').exec(tag)
+      return v ? parseInt(v[1], 10) : null
+    }
+    const w = size('width')
+    const h = size('height')
+    // 1 or 2 pixels wide or high: a tracker, whatever its URL says.
+    if ((w !== null && w <= 2) || (h !== null && h <= 2)) continue
+    found.push({ url: decodeEntities(src[1]), width: w })
+  }
+  return found
+}
+
 function imageOf(entry: Node, bodyHtml: string): string | null {
-  const candidates: string[] = []
+  const media: Candidate[] = []
   for (const m of asArray(entry['media:content'])) {
     const type = attr(m, 'type')
     const medium = attr(m, 'medium')
-    if ((!type && !medium) || type.startsWith('image/') || medium === 'image') candidates.push(attr(m, 'url'))
+    if ((!type && !medium) || type.startsWith('image/') || medium === 'image') media.push({ url: attr(m, 'url'), width: declaredWidth(m) })
   }
-  for (const m of asArray(entry['media:thumbnail'])) candidates.push(attr(m, 'url'))
+  for (const m of asArray(entry['media:thumbnail'])) media.push({ url: attr(m, 'url'), width: declaredWidth(m) })
+  const pictures = media.filter((c) => httpsUrl(c.url) !== null && !isTrackingUrl(httpsUrl(c.url) ?? ''))
+  const chosen = bestOf(pictures)
+  const first = chosen ? usable(chosen) : null
+  if (first) return first
+  const rest: Candidate[] = []
   for (const e of asArray(entry.enclosure)) {
-    if (attr(e, 'type').startsWith('image/')) candidates.push(attr(e, 'url'))
+    if (attr(e, 'type').startsWith('image/')) rest.push({ url: attr(e, 'url'), width: null })
   }
   for (const l of asArray(entry.link)) {
-    if (attr(l, 'rel') === 'enclosure' && attr(l, 'type').startsWith('image/')) candidates.push(attr(l, 'href'))
+    if (attr(l, 'rel') === 'enclosure' && attr(l, 'type').startsWith('image/')) rest.push({ url: attr(l, 'href'), width: null })
   }
-  const img = /<img\b[^>]{0,2000}?\bsrc\s*=\s*["']([^"']{1,2000})["']/i.exec(bodyHtml.slice(0, 100_000))
-  if (img) candidates.push(decodeEntities(img[1]))
-  for (const c of candidates) {
-    const ok = httpsUrl(c)
+  rest.push(...bodyImages(bodyHtml))
+  for (const c of rest) {
+    const ok = usable(c)
     if (ok) return ok
   }
   return null

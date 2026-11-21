@@ -197,12 +197,15 @@ protect the data. The `service_role` key is never used by the website, the apps 
 variable or in the repository. Never write a real key in these docs.
 
 **Book news.** The same workflow runs every 3 hours (at :15 past) and builds `news/news.json` from public RSS and Atom
-feeds (`web/scripts/news/feeds.ts` lists them). It keeps 30 days of headlines, short summaries and links, and merges
+feeds (`web/scripts/news/feeds.ts` lists them). It keeps 30 days of headlines, short summaries and links (at most 120 Portuguese and 120 English stories, newest first, so a busy
+feed in one language cannot push out the other), and merges
 with the file that is live, so a bad run never empties it. Every 3 hours, because the busy general feeds (Expresso, Observador, SAPO Mag) only hold a few hours of items; each run keeps what the earlier ones caught. It publishes `news.json` and the hand-kept `events.json`
 at `https://marioruidacosta.github.io/MyBooksNewGeneration/news/`. It needs no key or setting. To run it by hand from
 `web/`: `npm run news -- --out <folder>`.
 
 GitHub pauses scheduled workflows after 60 days without repository activity, so the news stops refreshing on a quiet
 repository. To start it again, open **Actions**, then **Web Pages**, then press **Enable workflow**. If the live
-`news.json` cannot be read (anything but "not found"), the job stops and the old site stays, rather than overwriting
-30 days of news.
+`news.json` cannot be read (anything but "not found", after three tries), the job stops and the old site stays, rather than overwriting
+30 days of news. That failing news step also blocks a push deploy: a website or app change pushed at that moment is not
+published either, until the run is repeated. To repeat it, open **Actions**, then **Web Pages**, open the failed run and press
+**Re-run** (**Re-run failed jobs**, or **Re-run all jobs**).

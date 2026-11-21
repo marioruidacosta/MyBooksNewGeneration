@@ -82,16 +82,16 @@ describe('NewsPage', () => {
     renderPage()
     const calendar = await screen.findByRole('complementary', { name: 'Book calendar' })
     const names = within(calendar).getAllByRole('listitem').map((li) => li.textContent)
-    // November now: Booker (11), Odd link (12), then Correntes (2), then Frankfurt (10) after wrapping round the year.
+    // November now: Booker (11), then Correntes (2), then Frankfurt (10) after wrapping round the year.
     expect(names[0]).toBe('Booker PrizeUsually in November, London')
-    expect(names[1]).toBe('Odd linkUsually in December, Nowhere')
-    expect(names[2]).toContain('Correntes')
-    expect(names[3]).toContain('Frankfurter Buchmesse')
+    expect(names[1]).toContain('Correntes')
+    expect(names[2]).toContain('Frankfurter Buchmesse')
+    expect(names).toHaveLength(3)
     expect(within(calendar).getByRole('link', { name: 'Booker Prize' })).toHaveAttribute('href', 'https://thebookerprizes.com')
     expect(within(calendar).getByText('Usually in February, Póvoa de Varzim')).toBeInTheDocument()
     expect(calendar.textContent).not.toContain('·')
-    // A link that isn't https is never rendered as a link.
-    expect(within(calendar).queryByRole('link', { name: 'Odd link' })).not.toBeInTheDocument()
+    // An event whose link isn't https is dropped altogether, as in the app.
+    expect(within(calendar).queryByText(/Odd link/)).not.toBeInTheDocument()
   })
 
   it('aFailedLoadSaysSoAndRetries', async () => {
@@ -104,6 +104,19 @@ describe('NewsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByRole('heading', { name: 'Today' })).toBeInTheDocument()
     expect(screen.queryByText("Couldn't load the news. Try again later.")).not.toBeInTheDocument()
+  })
+
+  it('anEmptyFeedSaysNoNewsYet', async () => {
+    const empty = renderPage((url) => (url.endsWith('events.json') ? json(eventsJson) : json({ ...newsJson, items: [] })))
+    expect(await screen.findByText('No news yet. Check back later.')).toBeInTheDocument()
+    expect(screen.queryByText("Couldn't load the news. Try again later.")).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Booker Prize' })).toBeInTheDocument()
+    empty.unmount()
+    // a file with only unusable stories is just as empty
+    const junk = { ...newsJson, items: [{ ...stories[0], url: 'http://x.test/a' }] }
+    renderPage((url) => (url.endsWith('events.json') ? json(eventsJson) : json(junk)))
+    expect(await screen.findByText('No news yet. Check back later.')).toBeInTheDocument()
   })
 
   it('aFailedLoadKeepsTheCalendar', async () => {
