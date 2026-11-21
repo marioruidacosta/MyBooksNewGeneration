@@ -108,6 +108,23 @@ npm run dev        # http://localhost:5173/MyBooksNewGeneration/app/
 Test it with `npm run lint`, `npm test -- --run` and `npm run build`. The site uses only the public anon key; the
 `service_role` key is never used. To publish it, follow the production steps in [docs/social-setup.md](docs/social-setup.md).
 
+### On iPhone
+
+There is no App Store app and no sideloading: the website installs as an app. In Safari open
+https://marioruidacosta.github.io/MyBooksNewGeneration/app/, tap Share, then Add to Home Screen. MyBooks then opens full
+screen with its own icon, has a bottom bar for the main pages, and opens your library with no connection (it is kept on
+the device; changes made offline are sent when you are back online, and a short offline spell never signs you out).
+
+- **Sign in once more.** iOS gives the installed app its own storage, apart from Safari's, so the first time you open it
+  you sign in again with the email code. The site says so in a one-time hint in Safari.
+- **Updates.** A new version waits quietly and shows "New version available. Reload" (held back while changes are still
+  being saved); it also applies by itself the next time you open the app from cold. Nothing reloads under your hands.
+- **What is stored on the device:** the app itself (so it opens offline) and your library in the browser's database, as
+  before. Nothing from Supabase (rows, sign-in, covers) is cached by the service worker; the public book-news files are
+  kept for offline reading.
+- `npm run check:reproducible` (in `web/`) builds twice and checks that the service worker is byte for byte the same, so
+  the 3-hourly news deploys are not offered as updates.
+
 ## Google Play
 
 The signed release bundle (`./gradlew :androidApp:bundleRelease`), the privacy policy and the account-deletion page
