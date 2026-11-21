@@ -14,8 +14,10 @@ const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCas
 // "prémio" (a prize) only counts together with one of these, so it needs no entry of its own.
 const BOOK_WORDS = [
   'livro', 'livros', 'escritor', 'escritora', 'escritores', 'escritoras', 'poeta', 'poetas', 'poesia', 'literatura', 'literario', 'literaria',
-  'editora', 'editoras', 'editores', 'autores', 'autoras', 'leitores', 'leitura',
+  'editora', 'editoras', 'editores',
 ]
+// Left out: "autores", "autoras", "leitores", "leitura". They're too common in general news (a TV report's "autores",
+// a newspaper's "leitores") to mark a story as being about books.
 // "romance" is left out on purpose: it is also gossip ("romance between two actors"), so it never counts on its own.
 const wordPattern = (words: string[]) => new RegExp(`(?<![a-z])(?:${words.join('|')})(?![a-z])`)
 const BOOK_PATTERN = wordPattern(BOOK_WORDS)

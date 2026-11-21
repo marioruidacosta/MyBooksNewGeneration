@@ -68,10 +68,23 @@ describe('feeds', () => {
   })
 
   it('bookFilterKeepsPlurals', () => {
-    for (const w of ['escritores', 'escritoras', 'poetas', 'editoras', 'editores', 'autores', 'autoras', 'leitores', 'leitura']) {
+    for (const w of ['escritores', 'escritoras', 'poetas', 'editoras', 'editores']) {
       expect(keepsBookStory(`Encontro de ${w} em Lisboa`, '')).toBe(true)
     }
-    expect(keepsBookStory('Os romances do ano', 'Escolhidos pelos leitores')).toBe(true)
+    expect(keepsBookStory('Os romances do ano', 'Escolhidos pelos escritores')).toBe(true)
     expect(keepsBookStory('Os romances do ano', '')).toBe(false)
+  })
+
+  it('wordsCommonInGeneralNewsDoNotCount', () => {
+    // A TV award whose report names its "autores" is not book news (seen in RTP Cultura, 2026-11-17).
+    expect(
+      keepsBookStory(
+        'Equipa de reportagem da RTP recebe Prémio Gazeta de Televisão',
+        'Na cerimónia está presente a equipa da RTP, autores da reportagem',
+      ),
+    ).toBe(false)
+    for (const w of ['autores', 'autoras', 'leitores', 'leitura']) {
+      expect(keepsBookStory(`Encontro de ${w} em Lisboa`, '')).toBe(false)
+    }
   })
 })
