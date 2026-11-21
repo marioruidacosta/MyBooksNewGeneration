@@ -39,3 +39,25 @@ describe('theme', () => {
     }
   })
 })
+
+describe('phone layout rules', () => {
+  /** The declarations of the rule that starts with [selector] inside the media block that starts with [media]. */
+  function inMedia(media: string, selector: string): string {
+    const start = css.indexOf(media)
+    expect(start, media).toBeGreaterThanOrEqual(0)
+    // The block ends at the first line that is only a closing brace.
+    const block = css.slice(start, css.indexOf('\n}', start))
+    const rule = block.indexOf(selector)
+    expect(rule, selector).toBeGreaterThanOrEqual(0)
+    return block.slice(block.indexOf('{', rule) + 1, block.indexOf('}', rule))
+  }
+
+  it('inputsAreSixteenPixelsOnTouchDevices', () => {
+    // iOS zooms the page when a field under 16px gets the focus. Every field, whatever more specific rule sized it
+    // (the status select, the tag input, dates, the jump box): so the size is important.
+    const decl = inMedia('@media (pointer: coarse), (max-width: 52rem) {', 'input, select, textarea')
+    expect(decl).toMatch(/font-size:\s*16px\s*!important/)
+    // Pinch zoom stays available.
+    expect(readFileSync(resolve(process.cwd(), 'index.html'), 'utf8')).not.toMatch(/user-scalable\s*=\s*no|maximum-scale/)
+  })
+})

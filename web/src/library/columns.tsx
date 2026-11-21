@@ -89,30 +89,35 @@ export function makeColumns(onOpen: (id: string) => void, actions: CellActions):
         const rows = table.getRowModel().rows
         const all = rows.length > 0 && rows.every((r) => r.getIsSelected())
         return (
-          <input
-            type="checkbox"
-            aria-label="Select all shown"
-            checked={all}
-            onChange={() =>
-              table.setRowSelection((old) => {
-                const next = { ...old }
-                for (const r of rows) {
-                  if (all) delete next[r.id]
-                  else next[r.id] = true
-                }
-                return next
-              })
-            }
-          />
+          // The label is the 44 px tap target on a touch screen (see .check-hit); the box inside is still the control.
+          <label className="check-hit">
+            <input
+              type="checkbox"
+              aria-label="Select all shown"
+              checked={all}
+              onChange={() =>
+                table.setRowSelection((old) => {
+                  const next = { ...old }
+                  for (const r of rows) {
+                    if (all) delete next[r.id]
+                    else next[r.id] = true
+                  }
+                  return next
+                })
+              }
+            />
+          </label>
         )
       },
       cell: ({ row }) => (
-        <input
-          type="checkbox"
-          aria-label={`Select ${row.original.title}`}
-          checked={row.getIsSelected()}
-          onChange={row.getToggleSelectedHandler()}
-        />
+        <label className="check-hit">
+          <input
+            type="checkbox"
+            aria-label={`Select ${row.original.title}`}
+            checked={row.getIsSelected()}
+            onChange={row.getToggleSelectedHandler()}
+          />
+        </label>
       ),
     },
     {

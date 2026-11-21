@@ -1,3 +1,4 @@
+import { isPhone } from '../ui/usePhone'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
   flexRender, getCoreRowModel, getFilteredRowModel, getSortedRowModel, useReactTable,
@@ -49,11 +50,14 @@ const COVER_SORTS: Record<string, SortingState> = {
   read: [{ id: 'read', desc: true }],
 }
 
+/** The view chosen in this browser; with no choice yet, the covers on a phone (the table is too wide there) and the table elsewhere. */
 function loadView(): LibraryView {
+  const fallback: LibraryView = isPhone() ? 'covers' : 'table'
   try {
-    return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'covers' ? 'covers' : 'table'
+    const stored = window.localStorage.getItem(VIEW_STORAGE_KEY)
+    return stored === 'covers' || stored === 'table' ? stored : fallback
   } catch {
-    return 'table'
+    return fallback
   }
 }
 
