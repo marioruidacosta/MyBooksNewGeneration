@@ -10,6 +10,7 @@ import {
   useNavigate,
 } from '@tanstack/react-router'
 import { SignIn } from './auth/SignIn'
+import { signOut } from './auth/signOut'
 import { useSession } from './auth/useSession'
 import { AddPage } from './add/AddPage'
 import { BookPage } from './book/BookPage'
@@ -74,7 +75,7 @@ function Shell() {
           <Jump store={store} />
           <SaveBadge store={store} />
           <ThemeSwitch />
-          <button type="button" className="quiet" onClick={() => void supabase.auth.signOut()}>
+          <button type="button" className="quiet" onClick={() => void signOut()}>
             Sign out
           </button>
         </header>
@@ -283,7 +284,7 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
         <p className="error" role="alert">
           Your library could not be opened: {error}
         </p>
-        <button type="button" onClick={() => void supabase.auth.signOut()}>
+        <button type="button" onClick={() => void signOut()}>
           Sign out
         </button>
       </main>

@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import { isAuthRetryableFetchError, type SupabaseClient } from '@supabase/supabase-js'
 import { wireToRow, type SyncRow, type SyncTable } from './model'
 
 /**
@@ -94,8 +94,11 @@ type WireRow = Parameters<typeof wireToRow>[0]
  */
 export function createSupabaseSyncApi(client: SupabaseClient, owner: string): SyncApi {
   async function asOwner(): Promise<void> {
-    const { data } = await client.auth.getSession()
-    if (data.session?.user.id !== owner) throw new SyncError('auth', "not signed in as this library's account")
+    const { data, error } = await client.auth.getSession()
+    if (data.session?.user.id === owner) return
+    // No session because the token could not be renewed over the network is a wait, not a sign-out: nothing is sent with the stale token.
+    if (!data.session && isAuthRetryableFetchError(error)) throw new SyncError('offline', 'the session could not be renewed: no connection')
+    throw new SyncError('auth', "not signed in as this library's account")
   }
 
   async function rpc(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
