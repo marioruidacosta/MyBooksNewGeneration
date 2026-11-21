@@ -28,6 +28,17 @@ describe('appearance', () => {
     expect(document.documentElement.dataset.theme).toBe('paper')
   })
 
+  it('theBrowsersThemeColourFollowsTheTheme', () => {
+    const meta = document.createElement('meta')
+    meta.name = 'theme-color'
+    document.head.append(meta)
+    applyTheme('night')
+    expect(meta.content).toBe('#0f1c18')
+    applyTheme('paper')
+    expect(meta.content).toBe('#fbf7f0')
+    meta.remove()
+  })
+
   it('theSwitchChangesAndRemembersTheTheme', async () => {
     applyTheme(loadTheme())
     render(<ThemeSwitch />)

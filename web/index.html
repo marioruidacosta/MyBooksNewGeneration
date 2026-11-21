@@ -2,13 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#0f1c18" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="MyBooks" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>MyBooks</title>
     <script>
-      // The chosen look before the first paint, so a Night page never flashes light (src/appearance.ts keeps the rule).
+      // The chosen look before the first paint, so a Night page never flashes light (src/appearance.ts keeps the rule,
+      // and the colours of themeColor() there).
       try {
-        document.documentElement.dataset.theme = localStorage.getItem('mybooks.theme') === 'paper' ? 'paper' : 'night'
+        var paper = localStorage.getItem('mybooks.theme') === 'paper'
+        document.documentElement.dataset.theme = paper ? 'paper' : 'night'
+        var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', paper ? (dark ? '#16130f' : '#fbf7f0') : '#0f1c18')
       } catch (e) {
         document.documentElement.dataset.theme = 'night'
       }

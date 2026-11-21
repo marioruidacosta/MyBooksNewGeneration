@@ -18,6 +18,8 @@ import { CoverContext } from './covers/storage'
 import { JumpBox } from './jump/JumpBox'
 import { LibraryPage } from './library/LibraryPage'
 import { PageBoundary } from './PageBoundary'
+import { UpdateNotice } from './pwa/UpdateNotice'
+import { updates } from './pwa/updates'
 import { ThemeSwitch } from './ThemeSwitch'
 import { Publisher } from './share/publisher'
 import { SharingContext } from './share/SharingContext'
@@ -57,6 +59,7 @@ function Jump({ store }: { store: Store }) {
 
 function Shell() {
   const store = useOptionalStore()
+  const publisher = useContext(SharingContext)
   return (
     <ToastProvider>
       {store && (
@@ -81,6 +84,7 @@ function Shell() {
         </header>
       )}
       <Outlet />
+      <UpdateNotice watcher={updates} store={store} publisher={publisher} />
     </ToastProvider>
   )
 }

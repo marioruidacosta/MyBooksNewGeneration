@@ -1,14 +1,26 @@
 /// <reference types="vitest/config" />
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 import { requireBuildEnv } from './src/build-env'
+import { workboxOptions } from './src/pwa/workbox'
 
 export default defineConfig(({ command, mode }) => {
   // A production build without the Supabase settings would deploy a site that cannot sign in: fail it instead.
   if (command === 'build') requireBuildEnv(mode, { ...loadEnv(mode, process.cwd(), 'VITE_'), ...process.env })
   return {
     base: '/MyBooksNewGeneration/app/',
-    plugins: [react()],
+    plugins: [
+      react(),
+      // The installable, offline-capable app shell (src/pwa). The manifest is public/manifest.webmanifest and the page
+      // registers the worker itself (src/pwa/updates.ts), so a new version never reloads anyone by itself.
+      VitePWA({
+        registerType: 'prompt',
+        injectRegister: false,
+        manifest: false,
+        workbox: workboxOptions,
+      }),
+    ],
     build: {
       rollupOptions: {
         output: {
