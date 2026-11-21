@@ -174,6 +174,21 @@ function resizedNprUrl(url: string): string | null {
   }
 }
 
+/**
+ * The New York Times feed offers one 1800 px picture per story, but its image server keeps other renditions under the
+ * same name: "-mediumThreeByTwo440" is 440 px wide, about 30 KB instead of 500. Null when it isn't such a URL.
+ */
+function smallerNytUrl(url: string): string | null {
+  try {
+    const u = new URL(url)
+    if (u.hostname !== 'static01.nyt.com' || !u.pathname.includes('-mediumSquareAt3X.')) return null
+    u.pathname = u.pathname.replace('-mediumSquareAt3X.', '-mediumThreeByTwo440.')
+    return u.toString()
+  } catch {
+    return null
+  }
+}
+
 interface Candidate {
   url: string
   /** The width the feed declares, if any. */
@@ -196,7 +211,7 @@ function bestOf(list: Candidate[]): Candidate | null {
 function usable(c: Candidate): string | null {
   const ok = httpsUrl(c.url)
   if (!ok || isTrackingUrl(ok)) return null
-  const small = resizedNprUrl(ok)
+  const small = resizedNprUrl(ok) ?? smallerNytUrl(ok)
   if (small) return small
   return c.width !== null && c.width > MAX_IMAGE_WIDTH ? null : ok
 }

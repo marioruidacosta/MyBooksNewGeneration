@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { MAX_RAW, httpsUrl, parseFeed, summarize, toPlainText } from './parse'
+import { MAX_RAW, cleanImage, httpsUrl, parseFeed, summarize, toPlainText } from './parse'
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')
 const NOW = Date.parse('2026-11-16T12:00:00Z')
@@ -145,9 +145,6 @@ describe('parseFeed', () => {
       <item><title>Edge</title><link>https://a.test/3</link><media:content url="https://a.test/edge.jpg" width="1200" medium="image"/></item>
     </channel></rss>`
     expect(parseFeed(xml, ctx('a', 'en')).map((i) => i.image)).toEqual([null, 'https://a.test/ok.jpg', 'https://a.test/edge.jpg'])
-    // the real NYT feed offers a single 1800 px square per story
-    const nyt = '<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><item><title>NYT</title><link>https://www.nytimes.com/x</link><media:content height="1800" medium="image" url="https://static01.nyt.com/images/2023/06/11/books/x-mediumSquareAt3X.jpg" width="1800"/></item></channel></rss>'
-    expect(parseFeed(nyt, ctx('nyt', 'en'))[0].image).toBeNull()
   })
 
   it('nprImagesAreResized', () => {
@@ -158,6 +155,20 @@ describe('parseFeed', () => {
     expect(third.image).toContain('/resize/400/quality/85/')
     expect(third.image).not.toMatch(/resize\/\d+x\d+/)
     expect(new URL(third.image!).searchParams.get('url')).toMatch(/gettyimages-1959972404-594x594\.jpg$/)
+  })
+
+  it('nytImagesUseTheSmallerRendition', () => {
+    const big = 'https://static01.nyt.com/images/2026/11/17/multimedia/17TBR-Martin-review-pjgk/17TBR-Martin-review-pjgk-mediumSquareAt3X.jpg'
+    const small = big.replace('mediumSquareAt3X', 'mediumThreeByTwo440')
+    const rss = `<?xml version="1.0"?><rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"><channel><title>NYT</title>
+      <item><title>A review</title><link>https://www.nytimes.com/2026/11/17/books/review.html</link>
+      <pubDate>Mon, 16 Nov 2026 10:00:00 GMT</pubDate><description>Text</description>
+      <media:content url="${big}" medium="image" width="1800" height="1800"/></item></channel></rss>`
+    expect(parseFeed(rss, ctx('nyt', 'en'))[0].image).toBe(small)
+    // A copy already published with the big picture is fixed too; another site's similar name is left alone.
+    expect(cleanImage(big)).toBe(small)
+    const other = 'https://example.com/a-mediumSquareAt3X.jpg'
+    expect(cleanImage(other)).toBe(other)
   })
 
   it('controlAndBidiCharactersAreRemoved', () => {
