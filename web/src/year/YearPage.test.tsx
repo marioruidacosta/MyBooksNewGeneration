@@ -105,7 +105,7 @@ describe('YearPage', () => {
 
   it('anEmptyYearSaysSo', async () => {
     const store = await open([read('a', 2026, 0)])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('button', { name: 'Previous year' }))
     expect(screen.getByText('2025')).toBeInTheDocument()

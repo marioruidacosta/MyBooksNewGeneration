@@ -57,7 +57,7 @@ describe('NewsPage', () => {
   })
 
   it('filtersByLanguageAndRemembersIt', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const first = renderPage()
     await screen.findByRole('heading', { name: 'Today' })
     const pt = stories.filter((s) => s.lang === 'pt')
@@ -95,7 +95,7 @@ describe('NewsPage', () => {
   })
 
   it('aFailedLoadSaysSoAndRetries', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     let up = false
     const flaky: Fetcher = (url) => (up ? working(url) : Promise.reject(new Error('offline')))
     renderPage(vi.fn(flaky))
@@ -136,7 +136,7 @@ describe('NewsPage', () => {
   })
 
   it('showsFortyThenMore', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const many = Array.from({ length: 95 }, (_, i) => ({
       ...stories[0],
       id: `m${String(i)}`,

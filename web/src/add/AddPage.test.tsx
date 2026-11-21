@@ -56,7 +56,7 @@ afterEach(async () => {
 
 describe('AddPage', () => {
   it('addingAnExistingBookOpensIt', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const lookup = lookupOf({ lookupIsbn: () => Promise.resolve(found()) })
 
     // Same ISBN.
@@ -84,7 +84,7 @@ describe('AddPage', () => {
   })
 
   it('authorsTakeTheLibrarySpelling', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open([book('a', { title: 'Other', authors: 'Han Kang' })])
     const lookup = lookupOf({
       searchTitle: () => Promise.resolve([found({ isbn: null, title: 'The Vegetarian', authors: ['Kang Han'] })]),
@@ -99,7 +99,7 @@ describe('AddPage', () => {
   })
 
   it('pasteLooksUpAtMostFourAtOnce', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     const isbns = ['9789722015981', '9780140449136', '9783161484100', '9780306406157', '9780975229002']
     let inFlight = 0
@@ -130,7 +130,7 @@ describe('AddPage', () => {
   })
 
   it('pasteAddsOnlyFoundAndNew', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open([book('a', { isbn: '9780140449136', title: 'The Odyssey', authors: 'Homer' })])
     const lookup = lookupOf({
       lookupIsbn: (isbn) => {
@@ -156,7 +156,7 @@ describe('AddPage', () => {
   })
 
   it('showsADescriptionAsTextOnly', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     const lookup = lookupOf({
       searchTitle: () => Promise.resolve([found({ description: '<img src=x onerror=alert(1)> hello' })]),
@@ -168,7 +168,7 @@ describe('AddPage', () => {
     expect(document.querySelector('img')).toBeNull()
   })
   it('pasteTreatsTwoSpellingsOfOneIsbnAsOne', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     const lookup = lookupOf({
       lookupIsbn: (isbn) =>
@@ -187,7 +187,7 @@ describe('AddPage', () => {
   })
 
   it('aMissWithAFailedSourceSaysSoOnScreen', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     const lookup = lookupOf({ lookupIsbn: () => Promise.reject(new NotFoundWithErrors()) })
     render(<AddPage store={store} lookup={lookup} onOpen={vi.fn()} />)
@@ -200,7 +200,7 @@ describe('AddPage', () => {
   })
 
   it('aDoubleClickOnAddBooksAddsOnce', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     const lookup = lookupOf({
       lookupIsbn: (isbn) => Promise.resolve(found({ isbn, title: `T${isbn}`, authors: [`A${isbn}`] })),
@@ -220,7 +220,7 @@ describe('AddPage', () => {
   })
 
   it('addBooksWorksAgainAfterAnAdd', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     const lookup = lookupOf({
       lookupIsbn: (isbn) => Promise.resolve(found({ isbn, title: `T${isbn}`, authors: [`A${isbn}`] })),
@@ -243,7 +243,7 @@ describe('AddPage', () => {
   })
 
   it('theAddButtonIsDisabledWhileAdding', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     const lookup = lookupOf({
       lookupIsbn: (isbn) => Promise.resolve(found({ isbn, title: `T${isbn}`, authors: [`A${isbn}`] })),
@@ -264,7 +264,7 @@ describe('AddPage', () => {
   })
 
   it('longDescriptionsAreClampedWithMore', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     const long = 'A long story. '.repeat(60).trim()
     const lookup = lookupOf({
@@ -288,7 +288,7 @@ describe('AddPage', () => {
   })
 
   it('aSearchWithAFailedSourceSaysSoOnScreen', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const store = await open()
     const lookup = lookupOf({ searchTitle: () => Promise.reject(new NotFoundWithErrors()) })
     render(<AddPage store={store} lookup={lookup} onOpen={vi.fn()} />)

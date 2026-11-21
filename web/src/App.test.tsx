@@ -35,7 +35,7 @@ const api: SyncApi = {
 describe('App', () => {
   it('signingInOpensTheLibrary', async () => {
     window.history.pushState({}, '', '/MyBooksNewGeneration/app/sign-in')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<App createApi={() => api} />)
 
     await user.type(await screen.findByLabelText('Email'), 'reader@example.com')

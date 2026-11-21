@@ -21,7 +21,7 @@ const books = [
 
 describe('JumpBox', () => {
   it('ctrlKOpensTheJumpBox', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<JumpBox books={books} onOpen={vi.fn()} onAddIsbn={vi.fn()} />)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
 
@@ -38,7 +38,7 @@ describe('JumpBox', () => {
   })
 
   it('typingFindsBooksAndEnterOpensOne', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const onOpen = vi.fn()
     render(<JumpBox books={books} onOpen={onOpen} onAddIsbn={vi.fn()} />)
     await user.keyboard('{Control>}k{/Control}')
@@ -59,7 +59,7 @@ describe('JumpBox', () => {
   })
 
   it('showsAtMostEightBooks', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const many = Array.from({ length: 12 }, (_, i) => book(String(i), { title: `Volume ${String(i)}` }))
     render(<JumpBox books={many} onOpen={vi.fn()} onAddIsbn={vi.fn()} />)
     await user.keyboard('{Control>}k{/Control}')
@@ -68,7 +68,7 @@ describe('JumpBox', () => {
   })
 
   it('anUnknownIsbnOffersToAddIt', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const onAddIsbn = vi.fn()
     const onOpen = vi.fn()
     render(<JumpBox books={[books[1]]} onOpen={onOpen} onAddIsbn={onAddIsbn} />)
@@ -81,7 +81,7 @@ describe('JumpBox', () => {
   })
 
   it('aKnownIsbnOpensTheBookInstead', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<JumpBox books={books} onOpen={vi.fn()} onAddIsbn={vi.fn()} />)
     await user.keyboard('{Control>}k{/Control}')
     await user.type(screen.getByRole('combobox'), '9789722015981')
@@ -90,7 +90,7 @@ describe('JumpBox', () => {
   })
 
   it('aHyphenatedIsbnFindsTheBook', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<JumpBox books={books} onOpen={vi.fn()} onAddIsbn={vi.fn()} />)
     await user.keyboard('{Control>}k{/Control}')
     await user.type(screen.getByRole('combobox'), '978-972-20-1598-1')
@@ -99,7 +99,7 @@ describe('JumpBox', () => {
   })
 
   it('keepsFocusAndSaysHowManyMatch', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<JumpBox books={books} onOpen={vi.fn()} onAddIsbn={vi.fn()} />)
     await user.keyboard('{Control>}k{/Control}')
     await user.type(screen.getByRole('combobox'), 'jose')
@@ -113,7 +113,7 @@ describe('JumpBox', () => {
   })
 
   it('escapeClosesEvenWhenTheFocusIsElsewhere', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<><button>Elsewhere</button><JumpBox books={books} onOpen={vi.fn()} onAddIsbn={vi.fn()} /></>)
     await user.keyboard('{Control>}k{/Control}')
     screen.getByRole('button', { name: 'Elsewhere' }).focus()

@@ -412,8 +412,7 @@ describe('the publisher', () => {
     expect(publisher.isShared('b1')).toBeNull()
     rpc.idsError = false
     rpc.shared = ['b1']
-    await new Promise((r) => setTimeout(r, 50))
-    expect(publisher.isShared('b1')).toBe(true)
+    await vi.waitFor(() => expect(publisher.isShared('b1')).toBe(true))
     expect(publisher.isShared('zz')).toBe(false)
   }, T)
 
@@ -699,9 +698,10 @@ describe('the publisher', () => {
     a.store.create(book('b1'))
     b.store.create(book('b2'))
     while (rpc.of('publish_book').length < 2) await new Promise((r) => setTimeout(r, 1))
-    await new Promise((r) => setTimeout(r, 30))
-    const kept = await storedPublishes()
-    expect(kept.map((k) => k.id).sort()).toEqual(['b1', 'b2'])
+    // Each tab writes its kept publish after its own failed call, in its own time: wait for both rather than a fixed pause.
+    await vi.waitFor(async () => {
+      expect((await storedPublishes()).map((k) => k.id).sort()).toEqual(['b1', 'b2'])
+    })
   }, T)
 
   it('aClosedTabsPublishesAreAdoptedOnce', async () => {

@@ -78,9 +78,12 @@ describe('matching like the app importers', () => {
     )
     const rows = Array.from({ length: 3000 }, (_, i) =>
       book(`n${String(i)}`, { title: `Title ${String(i + 1500)}`, authors: `Author ${String(i + 1500)}` }))
-    const t = performance.now()
-    const plan = planImport(goodreadsItems(rows, NOW), store, NOW)
-    expect(performance.now() - t).toBeLessThan(1000)
+    // Counts the work, not the seconds (a wall-clock budget fails on a busy machine): every read of a library book. An
+    // index reads each book a few times; a plan that scanned the library for each row would read 3000 x 3000.
+    let reads = 0
+    const counted = store.books().map((b) => new Proxy(b, { get: (target, key, receiver) => { reads++; return Reflect.get(target, key, receiver) } }))
+    const plan = planImport(goodreadsItems(rows, NOW), { books: () => counted, bookTimes: (id) => store.bookTimes(id), quotes: (id) => store.quotes(id), goal: (y) => store.goal(y) }, NOW)
+    expect(reads).toBeLessThan(100 * 3000) // about 106 000 when linear
     expect(previewText(plan)).toBe('1500 new · 1500 already in your library (merged) · 0 skipped')
   }, 60_000)
 })

@@ -102,7 +102,7 @@ describe('LibraryPage', () => {
       book('1', { title: 'Ensaio sobre a Cegueira', authors: 'José Saramago', isbn: '9789722015981' }),
       book('2', { title: 'Another', authors: 'Someone Else' }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.type(screen.getByRole('searchbox', { name: 'Search' }), 'JOSE')
@@ -188,7 +188,7 @@ describe('LibraryPage', () => {
       book('b', { title: 'Bravo', status: 'READ', tags: ['sf', 'old'], lentTo: 'Ana', dateAdded: 2 }),
       book('c', { title: 'Charlie', status: 'READ', tags: ['old'], dateAdded: 1 }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.selectOptions(screen.getByLabelText('Filter by status'), 'READ')
@@ -218,7 +218,7 @@ describe('LibraryPage', () => {
     expect(within(shelf).getByRole('progressbar', { name: 'Alpha progress' })).toHaveAttribute('aria-valuenow', '53')
     // Without a percentage, the pages say how far along it is.
     expect(within(shelf).getByRole('progressbar', { name: 'Bravo progress' })).toHaveAttribute('aria-valuenow', '25')
-    await userEvent.setup().click(within(shelf).getByRole('link', { name: 'Alpha' }))
+    await userEvent.setup({ delay: null }).click(within(shelf).getByRole('link', { name: 'Alpha' }))
     expect(onOpen).toHaveBeenCalledWith('a')
   }, T)
 
@@ -248,7 +248,7 @@ describe('LibraryPage', () => {
     ])
     const edit = vi.spyOn(store, 'edit')
     vi.spyOn(Date, 'now').mockReturnValue(NOW)
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
@@ -277,7 +277,7 @@ describe('LibraryPage', () => {
       book('b', { title: 'Bravo', status: 'READING', dateStarted: 500, currentPage: 40, progressPercent: 20, dateAdded: 2 }),
     ])
     vi.spyOn(Date, 'now').mockReturnValue(NOW)
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
@@ -301,7 +301,7 @@ describe('LibraryPage', () => {
       book('c', { title: 'Charlie', dateAdded: 1 }),
     ])
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     for (const t of ['Alpha', 'Bravo', 'Charlie']) await user.click(screen.getByRole('checkbox', { name: `Select ${t}` }))
@@ -327,7 +327,7 @@ describe('LibraryPage', () => {
 
   it('aNumberWithoutASeriesIsIgnored', async () => {
     const store = await open([book('a', { title: 'Alpha', series: 'Saga', seriesNumber: '2' })])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
     await user.type(screen.getByLabelText('Series number'), '7')
@@ -342,7 +342,7 @@ describe('LibraryPage', () => {
       book('b', { title: 'Bravo', dateAdded: 2 }),
     ])
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
     await user.click(screen.getByRole('checkbox', { name: 'Select Bravo' }))
@@ -376,7 +376,7 @@ describe('LibraryPage', () => {
     ]
     const store = await open(original)
     const confirm = vi.spyOn(window, 'confirm')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
@@ -401,7 +401,7 @@ describe('LibraryPage', () => {
   it('theDeleteKeyDeletesToo', async () => {
     const store = await open([book('a', { title: 'Alpha', dateAdded: 3 }), book('b', { title: 'Bravo', dateAdded: 2 })])
     const confirm = vi.spyOn(window, 'confirm')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
     await user.keyboard('{Delete}')
@@ -415,7 +415,7 @@ describe('LibraryPage', () => {
     store.createQuote({ id: 'q1', bookId: 'a', text: 'One', page: 3, dateAdded: 1, position: 'p', deleted: false })
     store.createQuote({ id: 'q2', bookId: 'a', text: 'Two', page: null, dateAdded: 2, position: null, deleted: false })
     const before = store.quotes('a')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
     await user.click(screen.getByRole('button', { name: 'Delete' }))
@@ -440,7 +440,7 @@ describe('LibraryPage', () => {
     store.createQuote({ id: 'q1', bookId: 'a', text: 'One', page: null, dateAdded: 1, position: null, deleted: false })
     await store.idle()
 
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
     await user.click(screen.getByRole('button', { name: 'Delete' }))
@@ -457,7 +457,7 @@ describe('LibraryPage', () => {
 
   it('holdingDeleteDeletesOnce', async () => {
     const store = await open([book('a', { title: 'Alpha', dateAdded: 3 }), book('b', { title: 'Bravo', dateAdded: 2 })])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
 
@@ -475,7 +475,7 @@ describe('LibraryPage', () => {
       book('b', { status: 'READ', dateRead: new Date(2025, 2, 1).getTime() }),
     ])
     const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     const goal = screen.getByRole('spinbutton', { name: '2026 goal' })
@@ -500,7 +500,7 @@ describe('LibraryPage', () => {
 
   it('keysFocusSearchAddABookAndOpenOne', async () => {
     const store = await open([book('a', { title: 'Alpha' })])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const { onAdd, onOpen } = show(store)
 
     await user.keyboard('/')
@@ -521,7 +521,7 @@ describe('LibraryPage', () => {
 
   it('remembersTheVisibleColumns', async () => {
     const store = await open([book('a', { title: 'Alpha', publisher: 'Pub House' })])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     expect(screen.queryByText('Pub House')).not.toBeInTheDocument()
@@ -579,7 +579,7 @@ describe('LibraryPage', () => {
       book('a', { title: 'Alpha', dateAdded: 3, series: 'Saga', seriesNumber: '2' }),
       book('b', { title: 'Bravo', dateAdded: 2, series: 'Saga', seriesNumber: '10' }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
     await user.click(screen.getByRole('checkbox', { name: 'Select Bravo' }))
@@ -595,7 +595,7 @@ describe('LibraryPage', () => {
       book('a', { title: 'Alpha', status: 'READING', dateStarted: 1, pageCount: 200, currentPage: 50, progressPercent: 25 }),
     ])
     const onOpen = vi.fn()
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store, { onOpen })
     const shelf = screen.getByRole('region', { name: 'Reading now' })
 
@@ -628,7 +628,7 @@ describe('LibraryPage', () => {
     const store = await open([
       book('a', { title: 'Alpha', status: 'READING', dateStarted: 1, pageCount: null, currentPage: 7, progressPercent: null }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     const shelf = screen.getByRole('region', { name: 'Reading now' })
 
@@ -651,7 +651,7 @@ describe('LibraryPage', () => {
     const store = await open([
       book('a', { title: 'Alpha', status: 'READING', dateStarted: 1, pageCount: 200, currentPage: 50, progressPercent: 25 }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     const shelf = screen.getByRole('region', { name: 'Reading now' })
     await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
@@ -666,7 +666,7 @@ describe('LibraryPage', () => {
     const store = await open([
       book('a', { title: 'Alpha', status: 'READING', dateStarted: 1, pageCount: 200, currentPage: 50, progressPercent: 25 }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     const shelf = screen.getByRole('region', { name: 'Reading now' })
 
@@ -690,7 +690,7 @@ describe('LibraryPage', () => {
       book('a', { title: 'Alpha', status: 'TO_READ', currentPage: null }),
       book('b', { title: 'Bravo', status: 'READING', dateStarted: 5, currentPage: 3, progressPercent: 10, dateAdded: 6 }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     const before = Date.now()
@@ -713,7 +713,7 @@ describe('LibraryPage', () => {
     const store = await open([
       book('a', { title: 'Alpha', status: 'READING', dateStarted: 5, currentPage: 3, progressPercent: 10 }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     const select = screen.getByRole('combobox', { name: 'Status of Alpha by Author' })
 
@@ -739,7 +739,7 @@ describe('LibraryPage', () => {
     const store = await open([
       book('a', { title: 'Alpha', status: 'READING', dateStarted: 5, currentPage: 3, progressPercent: 10, rating: 2 }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Status of Alpha by Author' }), 'READ')
@@ -762,7 +762,7 @@ describe('LibraryPage', () => {
 
   it('afterDeletingFocusIsOnUndo', async () => {
     const store = await open([book('a', { title: 'Alpha', dateAdded: 2 }), book('b', { title: 'Bravo', dateAdded: 1 })])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
@@ -778,7 +778,7 @@ describe('LibraryPage', () => {
 
   it('clickingAStarInTheTableSetsTheScore', async () => {
     const store = await open([book('a', { title: 'Stoner', authors: 'John Williams', rating: null })])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('button', { name: '3 stars for Stoner by John Williams' }))
@@ -800,7 +800,7 @@ describe('LibraryPage', () => {
       book('b', { title: 'Bravo', authors: 'Ben', status: 'READING', dateAdded: 2 }),
       book('c', { title: 'Charlie', authors: 'Cy', status: 'READ', dateAdded: 1 }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const { onOpen } = show(store)
     const view = screen.getByRole('group', { name: 'View' })
 
@@ -828,7 +828,7 @@ describe('LibraryPage', () => {
 
   it('theViewChoiceIsRemembered', async () => {
     const store = await open([book('a', { title: 'Alpha' })])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     const page = show(store)
     expect(screen.getByRole('button', { name: 'Table' })).toHaveAttribute('aria-pressed', 'true')
     await user.click(screen.getByRole('button', { name: 'Covers' }))
@@ -846,7 +846,7 @@ describe('LibraryPage', () => {
       book('b', { title: 'Bravo', tags: ['history'], dateAdded: 2 }),
       book('c', { title: 'Charlie', tags: ['fantasy'], dateAdded: 1 }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     const table = screen.getByRole('table')
 
@@ -859,7 +859,7 @@ describe('LibraryPage', () => {
 
   it('undoingADeleteKeepsANewerPhoneEdit', async () => {
     const store = await openWithPhone([book('a', { title: 'Alpha', rating: 2 })])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
     await user.click(screen.getByRole('button', { name: 'Delete' }))
@@ -879,7 +879,7 @@ describe('LibraryPage', () => {
   it('undoStillBringsBackABookTheServerForgot', async () => {
     const store = await openWithPhone([book('a', { title: 'Alpha' })])
     store.createQuote({ id: 'q1', bookId: 'a', text: 'One', page: null, dateAdded: 1, position: null, deleted: false })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
     await user.click(screen.getByRole('button', { name: 'Delete' }))
@@ -908,7 +908,7 @@ describe('LibraryPage', () => {
     await store.load()
     store.create(book('a', { title: 'Alpha', rating: 2 }))
     const original = store.bookTimes('a')
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
     await user.click(screen.getByRole('button', { name: 'Delete' }))
@@ -946,7 +946,7 @@ describe('LibraryPage', () => {
       book('c', { title: 'Charlie', dateAdded: 1 }),
     ])
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
@@ -974,7 +974,7 @@ describe('LibraryPage', () => {
     const store = await open([
       book('a', { title: 'Alpha', status: 'READING', dateStarted: 1, pageCount: 200, currentPage: 50, progressPercent: 25 }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     const shelf = screen.getByRole('region', { name: 'Reading now' })
     await user.click(within(shelf).getByRole('button', { name: 'Update progress for Alpha' }))
@@ -993,7 +993,7 @@ describe('LibraryPage', () => {
       book('b', { title: 'Alpha', authors: 'Mia', dateAdded: 2, dateRead: 300 }),
       book('c', { title: 'Charlie', authors: 'Ann', dateAdded: 1, dateRead: null }),
     ])
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     show(store)
     await user.click(screen.getByRole('button', { name: 'Covers' }))
     const order = () => [...document.querySelectorAll('.cover-card__title')].map((t) => t.textContent)
