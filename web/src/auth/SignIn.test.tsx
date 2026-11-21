@@ -10,9 +10,11 @@ vi.mock('../supabase', () => ({
 }))
 
 import { SignIn } from './SignIn'
+const SIGNIN_KEY = 'mybooks.signin.pending'
 
 describe('SignIn', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     signInWithOtp.mockReset().mockResolvedValue({ data: {}, error: null })
     verifyOtp.mockReset()
   })
@@ -78,5 +80,54 @@ describe('SignIn', () => {
       "That code didn't work. Check it, or send a new one.",
     )
     expect(screen.getByRole("button", { name: "Sign in" })).toBeEnabled()
+  })
+
+  describe('keepingItsPlaceWhenThePageIsDiscarded', () => {
+    beforeEach(() => window.localStorage.clear())
+
+    it('returningFromMailLandsOnTheCodeStepWithoutStoringTheCode', async () => {
+      const user = userEvent.setup({ delay: null })
+      const first = render(<SignIn />)
+      await user.type(screen.getByLabelText('Email'), 'reader@example.com')
+      await user.click(screen.getByRole('button', { name: 'Send code' }))
+      await user.type(await screen.findByLabelText('Code'), '123456')
+      const stored = window.localStorage.getItem(SIGNIN_KEY) ?? ''
+      expect(stored).toContain('reader@example.com')
+      expect(stored).not.toContain('123456')
+
+      // iOS discarded the page while Mail was in front: a new page opens on the code step, with the code empty.
+      first.unmount()
+      render(<SignIn />)
+      expect(screen.getByText('We sent a code to reader@example.com.')).toBeInTheDocument()
+      expect(screen.getByLabelText('Code')).toHaveValue('')
+    })
+
+    it('theStoredStepExpiresAfterTenMinutes', () => {
+      window.localStorage.setItem(SIGNIN_KEY, JSON.stringify({ email: 'reader@example.com', at: Date.now() - 11 * 60_000 }))
+      render(<SignIn />)
+      expect(screen.getByLabelText('Email')).toHaveValue('')
+      expect(window.localStorage.getItem(SIGNIN_KEY)).toBeNull()
+    })
+
+    it('useAnotherEmailAndASuccessfulSignInClearIt', async () => {
+      const user = userEvent.setup({ delay: null })
+      verifyOtp.mockResolvedValue({ data: {}, error: null })
+      const first = render(<SignIn />)
+      await user.type(screen.getByLabelText('Email'), 'reader@example.com')
+      await user.click(screen.getByRole('button', { name: 'Send code' }))
+      await user.click(await screen.findByRole('button', { name: 'Use another email' }))
+      expect(window.localStorage.getItem(SIGNIN_KEY)).toBeNull()
+
+      await user.click(screen.getByRole('button', { name: 'Send code' }))
+      await user.type(await screen.findByLabelText('Code'), '123456')
+      await user.click(screen.getByRole('button', { name: 'Sign in' }))
+      await waitFor(() => expect(window.localStorage.getItem(SIGNIN_KEY)).toBeNull())
+      first.unmount()
+    })
+  })
+
+  it('theWordingFitsAPhoneAsWellAsADesk', () => {
+    render(<SignIn />)
+    expect(screen.queryByText(/desk/i)).not.toBeInTheDocument()
   })
 })

@@ -45,9 +45,8 @@ describe('a new version of the site', () => {
 
     const worker = install()
     expect(await screen.findByText('New version available.')).toBeInTheDocument()
-    // It waits: not told to take over, and the page is not reloaded, however long it is left (or if the worker changes).
+    // It waits: not told to take over, and the page is not reloaded, however long it is left.
     await act(() => vi.advanceTimersByTimeAsync(10 * 60_000))
-    act(() => void container.dispatchEvent(new Event('controllerchange')))
     expect(worker.postMessage).not.toHaveBeenCalled()
     expect(reload).not.toHaveBeenCalled()
 
@@ -96,6 +95,31 @@ describe('a new version of the site', () => {
     unsent = false
     await user.click(screen.getByRole('button', { name: 'Reload' }))
     await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' }))
+  })
+
+  it('aNoticeForAVersionAnotherTabAppliedIsDroppedAndNeverReloadsThisTab', () => {
+    const { container, reload, watcher, install } = setup()
+    const worker = install()
+    expect(watcher.available).toBe(true)
+    // Another tab pressed Reload: the worker took over and claimed this tab too. This tab was not applying.
+    worker.state = 'activated'
+    container.dispatchEvent(new Event('controllerchange'))
+    expect(reload).not.toHaveBeenCalled()
+    expect(watcher.available).toBe(false)
+    // A later version applied elsewhere does not reload it either.
+    container.dispatchEvent(new Event('controllerchange'))
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('aWorkerThatIsAlreadyActiveIsNotApplied', () => {
+    const { container, reload, watcher, install } = setup()
+    const worker = install()
+    worker.state = 'activated' // the notice is stale: nothing will fire controllerchange for it
+    watcher.apply()
+    expect(watcher.available).toBe(false)
+    expect(worker.postMessage).not.toHaveBeenCalled()
+    container.dispatchEvent(new Event('controllerchange'))
+    expect(reload).not.toHaveBeenCalled()
   })
 
   it('leavingTheFieldSavesWhatWasTypedBeforeTheReloadIsChecked', async () => {

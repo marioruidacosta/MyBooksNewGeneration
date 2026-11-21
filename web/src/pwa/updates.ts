@@ -15,9 +15,15 @@ export class UpdateWatcher {
   ) {
     // The new worker took over because the person asked for it: only then does the page reload (once).
     container.addEventListener('controllerchange', () => {
-      if (!this.applying) return
-      this.applying = false
-      this.reloadPage()
+      if (this.applying) {
+        this.applying = false
+        this.setWaiting(null)
+        this.reloadPage()
+        return
+      }
+      // A version took over that this tab did not ask for (another tab pressed Reload): the notice is stale, and this
+      // tab is left as it is, never reloaded under the person's hands.
+      if (this.waiting) this.setWaiting(null)
     })
   }
 
@@ -46,7 +52,7 @@ export class UpdateWatcher {
     })
   }
 
-  private setWaiting(worker: ServiceWorker) {
+  private setWaiting(worker: ServiceWorker | null) {
     this.waiting = worker
     this.listeners.forEach((l) => l())
   }
@@ -66,6 +72,11 @@ export class UpdateWatcher {
   /** Lets the waiting version take over; the page reloads when it has. Only ever called on the person's say-so. */
   apply(): void {
     if (!this.waiting) return
+    // Already active (another tab applied it): no controllerchange will come, so there is nothing to wait for.
+    if (this.waiting.state !== 'installed') {
+      this.setWaiting(null)
+      return
+    }
     this.applying = true
     this.waiting.postMessage({ type: 'SKIP_WAITING' })
   }
