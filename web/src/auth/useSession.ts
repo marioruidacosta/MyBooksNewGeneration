@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js'
 import { supabase } from '../supabase'
+import { guardBlocks } from './guardedStorage'
 import { SIGNED_OUT_EVENT } from './signOut'
 import { storedSession } from './storedSession'
 
@@ -25,7 +26,7 @@ export function useSession(): { session: Session | null; loading: boolean } {
     /** Keeps the stored account (until supabase-js says otherwise); false when there is none. */
     const keepStored = (): boolean => {
       const stored = storedSession()
-      if (!stored || !active) return false
+      if (!stored || !active || guardBlocks(stored.user.id)) return false
       setSession((current) => current ?? stored)
       setLoading(false)
       return true
@@ -38,7 +39,7 @@ export function useSession(): { session: Session | null; loading: boolean } {
     supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return
       clearTimeout(timer)
-      if (data.session) {
+      if (data.session && !guardBlocks(data.session.user.id)) {
         setSession(data.session)
       } else if (!(error && isAuthRetryableFetchError(error) && keepStored())) {
         setSession(null)
@@ -48,6 +49,8 @@ export function useSession(): { session: Session | null; loading: boolean } {
     const { data } = supabase.auth.onAuthStateChange((event, next) => {
       // At start-up this reports what getSession found: no session may only mean "could not refresh", which is decided above.
       if (event === 'INITIAL_SESSION' && next === null) return
+      // A late refresh or sign-in for the account that signed out does not reopen its library.
+      if (next && guardBlocks(next.user.id)) return
       setSession(next)
       setLoading(false)
     })

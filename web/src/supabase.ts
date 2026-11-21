@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { authStorage } from './auth/guardedStorage'
 import { SUPABASE_URL } from './supabase-config'
 
 // A production build fails without these (see build-env.ts); the placeholders
@@ -20,4 +21,4 @@ if (import.meta.env.DEV && import.meta.env.MODE !== 'test') {
   }
 }
 
-export const supabase: SupabaseClient = createClient(url, anonKey)
+export const supabase: SupabaseClient = createClient(url, anonKey, { auth: { storage: authStorage } })

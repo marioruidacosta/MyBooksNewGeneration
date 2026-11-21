@@ -161,8 +161,59 @@ describe('LibraryStore', () => {
     server.pulls = []
     const again = open(server)
     await again.load()
+    // (The books on this device show at once; the pass for what is new runs behind them.)
+    await again.idle()
     expect(server.pulls).toEqual([[1_200, 500]])
     expect(again.books()).toHaveLength(1_201)
+  }, T)
+
+  it('aLibraryWithALocalCopyOpensWithoutWaitingForTheFirstSync', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    const first = open(server)
+    await first.load()
+    await first.close()
+
+    // The next visit, with a server that does not answer (offline with an expired token: the refresh is still retrying).
+    const never = deferred()
+    server.holdPull = never.promise
+    const again = open(server)
+    const opened = await Promise.race([again.load().then(() => 'opened'), new Promise((r) => setTimeout(() => r('waited'), 300))])
+    expect(opened).toBe('opened')
+    expect(again.books().map((b) => b.id)).toEqual(['b1'])
+
+    // The pass runs in the background: when the server answers, what is new arrives.
+    serverBook(server, 'b2')
+    never.resolve()
+    await again.idle()
+    expect(again.books()).toHaveLength(2)
+  }, T)
+
+  it('aFirstVisitStillWaitsForTheFirstPullSoNothingShowsEmpty', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    const gate = deferred()
+    server.holdPull = gate.promise
+    const store = open(server)
+    const opened = await Promise.race([store.load().then(() => 'opened'), new Promise((r) => setTimeout(() => r('waited'), 300))])
+    expect(opened).toBe('waited')
+    gate.resolve()
+    await store.load()
+    expect(store.books()).toHaveLength(1)
+  }, T)
+
+  it('aFailingBackgroundPassFollowsTheRetryPathWithoutAnUnhandledRejection', async () => {
+    const server = new FakeServer()
+    serverBook(server, 'b1')
+    const first = open(server)
+    await first.load()
+    await first.close()
+    server.pullError = new SyncError('offline', 'no connection')
+    const again = open(server)
+    await again.load()
+    await again.idle()
+    expect(again.status).toEqual({ offline: 0 })
+    expect(again.books()).toHaveLength(1)
   }, T)
 
   it('editAppliesAtOnceAndPushesStampedFields', async () => {

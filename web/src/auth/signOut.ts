@@ -1,5 +1,7 @@
 import { supabase } from '../supabase'
 import { authStorageKey } from '../supabase-config'
+import { raiseGuard } from './guardedStorage'
+import { storedSession } from './storedSession'
 
 /** Told to [useSession] when the stored session is dropped here, since supabase-js may be too busy to say so for a while. */
 export const SIGNED_OUT_EVENT = 'mybooks:signed-out'
@@ -14,6 +16,8 @@ const WAIT_MS = 4000
  * here and the page told. (The server is not told, so that refresh token stays valid there until it expires.)
  */
 export async function signOut(): Promise<void> {
+  // First of all, before anything can finish meanwhile: a refresh already retrying must not write the session back.
+  raiseGuard(storedSession()?.user.id ?? null)
   if (typeof navigator === 'undefined' || navigator.onLine !== false) {
     let timer: ReturnType<typeof setTimeout> | undefined
     const outcome = await Promise.race([

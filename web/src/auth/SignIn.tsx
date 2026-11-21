@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { QuoteOfTheDay } from '../quotes/QuoteOfTheDay'
 import { supabase } from '../supabase'
+import { verifyCode } from './verifyCode'
 
 const CODE_ERROR = "That code didn't work. Check it, or send a new one."
 const SEND_ERROR = "We couldn't send a code to that address. Check it and try again."
@@ -35,7 +36,7 @@ export function SignIn() {
     setBusy(true)
     setError(null)
     try {
-      const { error: err } = await supabase.auth.verifyOtp({ email, token, type: 'email' })
+      const { error: err } = await verifyCode(email, token)
       if (err) setError(CODE_ERROR)
     } catch {
       setError(CODE_ERROR)
