@@ -877,7 +877,7 @@ html, body { overscroll-behavior-y: none; }
   .app-bar nav a { display: inline-flex; align-items: center; min-height: 2.75rem; }
   button.star, button.star-btn { min-width: 2.75rem; min-height: 2.75rem; padding: 0; }
   .stars, .stars-edit { gap: 0; }
-  .tag-chip button::after { inset: -0.8rem -0.6rem; }
+  .tag-chip button::after { inset: -0.8rem -0.4rem -0.8rem -1.2rem; }
   button, select { min-height: 2.75rem; }
   .tag-chip button, button.sort { min-height: 0; }
   button.chip { display: inline-flex; align-items: center; min-height: 2.75rem; }

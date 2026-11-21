@@ -52,6 +52,14 @@ describe('phone layout rules', () => {
     return block.slice(block.indexOf('{', rule) + 1, block.indexOf('}', rule))
   }
 
+  it('theTagRemoveHitAreaIsAFullTapWideAndReachesOverItsOwnLabel', () => {
+    const decl = inMedia('@media (pointer: coarse) {', '.tag-chip button::after')
+    const [top, right, bottom, left] = /inset:\s*(-[\d.]+)rem\s+(-[\d.]+)rem\s+(-[\d.]+)rem\s+(-[\d.]+)rem/.exec(decl)!.slice(1).map((v) => -Number(v) * 16)
+    expect(top + bottom + 21).toBeGreaterThanOrEqual(44) // the × is about 21 px tall and 19 px wide
+    expect(left + right + 19).toBeGreaterThanOrEqual(44)
+    expect(left).toBeGreaterThan(right) // towards its own label, away from the next chip
+  })
+
   it('inputsAreSixteenPixelsOnTouchDevices', () => {
     // iOS zooms the page when a field under 16px gets the focus. Every field, whatever more specific rule sized it
     // (the status select, the tag input, dates, the jump box): so the size is important.
