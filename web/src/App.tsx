@@ -68,7 +68,7 @@ function Shell() {
   useCommitOnHide()
   const publisher = useContext(SharingContext)
   return (
-    <ToastProvider>
+    <ToastProvider pinned={<UpdateNotice watcher={updates} store={store} publisher={publisher} />}>
       {store && (
         <header className="app-bar">
           <span className="wordmark">MyBooks</span>
@@ -97,7 +97,6 @@ function Shell() {
       {store && <InstallHint />}
       <Outlet />
       {store && phone && <BottomBar onSignOut={() => void signOut()} />}
-      <UpdateNotice watcher={updates} store={store} publisher={publisher} />
     </ToastProvider>
   )
 }

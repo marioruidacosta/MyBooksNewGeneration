@@ -71,8 +71,6 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { background: var(--paper); -webkit-text-size-adjust: 100%; }
-
 body {
   margin: 0;
   background: var(--paper);
@@ -782,7 +780,7 @@ button.chip[aria-pressed='true'], [data-theme='night'] button.chip[aria-pressed=
   .app-bar { padding: calc(0.625rem + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.625rem max(1rem, env(safe-area-inset-left)); gap: 1rem; flex-wrap: wrap; }
   .app-bar nav { order: 3; flex-basis: 100%; gap: 1.25rem; overflow-x: auto; }
   .library-title h1 { font-size: 2.25rem; }
-  .book-hero__inner { grid-template-columns: 8rem 1fr; column-gap: 1.25rem; padding: 1rem max(1rem, env(safe-area-inset-right)) 2rem max(1rem, env(safe-area-inset-left)); }
+  .book-hero__inner { align-items: start; grid-template-columns: 8rem 1fr; column-gap: 1.25rem; padding: 1rem max(1rem, env(safe-area-inset-right)) 2rem max(1rem, env(safe-area-inset-left)); }
   .cover-large { width: 8rem; height: 12rem; }
   .book-hero .cover-large { margin-bottom: 0; }
   .book-body { padding: 1.5rem max(1rem, env(safe-area-inset-right)) 3rem max(1rem, env(safe-area-inset-left)); grid-template-columns: minmax(0, 1fr); row-gap: 2.75rem; }
@@ -801,7 +799,7 @@ button.chip[aria-pressed='true'], [data-theme='night'] button.chip[aria-pressed=
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
 }
-.app-bar, .bottom-bar, .more-sheet, .toast, button, nav a { -webkit-user-select: none; user-select: none; }
+.app-bar, .bottom-bar, .more-sheet, button, nav a { -webkit-user-select: none; user-select: none; }
 /* A pull at the top or bottom of the page does not bounce the fixed bars along with it. */
 html, body { overscroll-behavior-y: none; }
 
@@ -813,10 +811,12 @@ html, body { overscroll-behavior-y: none; }
 .install-hint p { margin: 0; }
 .install-hint button { flex: none; color: inherit; border-color: currentColor; }
 
-.update-notice {
-  position: fixed; z-index: 20; left: 0; right: 0; bottom: calc(1.25rem + env(safe-area-inset-bottom)); pointer-events: none;
-  padding: 0 max(1rem, env(safe-area-inset-right)) 0 max(1rem, env(safe-area-inset-left)); display: flex; justify-content: center;
-}
+/* In the toast stack (the region stacks it above the messages), so the two never overlap. */
+.update-notice { pointer-events: auto; display: flex; justify-content: center; width: 100%; }
+.update-notice .toast { max-width: 36rem; }
+.jump-close { position: absolute; top: 0.25rem; right: 0.25rem; min-width: 2.75rem; min-height: 2.75rem; font-size: 1.5rem; line-height: 1; padding: 0; }
+.jump-box { position: relative; }
+.jump-close + input { margin-top: 0.25rem; padding-right: 3rem; }
 
 .bottom-bar { display: none; }
 .more-backdrop { display: none; }
@@ -829,15 +829,17 @@ html, body { overscroll-behavior-y: none; }
   .app-bar { gap: 0.75rem; flex-wrap: nowrap; justify-content: space-between; }
   .app-bar .wordmark { flex: 1; }
   .jump-hint--icon { padding: 0.5rem; display: inline-flex; align-items: center; justify-content: center; min-width: 2.75rem; min-height: 2.75rem; color: var(--ink-soft); }
-  .toast-region, .update-notice { bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 0.75rem); }
+  html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+  .toast, .update-notice { -webkit-user-select: none; user-select: none; }
+  .toast-region { bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 0.75rem); }
 
   .bottom-bar {
     position: fixed; z-index: 10; left: 0; right: 0; bottom: 0; display: flex;
     padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-    background: color-mix(in srgb, var(--paper) 94%, transparent); backdrop-filter: blur(8px);
+    background: var(--paper);
     border-top: 1px solid var(--rule);
   }
-  [data-theme='night'] .bottom-bar { background: color-mix(in srgb, var(--paper) 88%, transparent); border-top-color: rgb(217 165 74 / 0.18); }
+  [data-theme='night'] .bottom-bar { background: var(--paper); border-top-color: rgb(217 165 74 / 0.18); }
   .bottom-bar a, .bottom-bar button {
     flex: 1; min-width: 0; min-height: var(--tabbar-h); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.125rem;
     padding: 0.25rem 0; border: 0; border-radius: 0; background: none; color: var(--ink-soft);
@@ -876,9 +878,11 @@ html, body { overscroll-behavior-y: none; }
   button.star, button.star-btn { min-width: 2.75rem; min-height: 2.75rem; padding: 0; }
   .stars, .stars-edit { gap: 0; }
   .tag-chip button::after { inset: -0.8rem -0.6rem; }
-  button.shelf-meta { min-height: 2.75rem; padding: 0.5rem 0.25rem; }
-  .shelf-progress--edit { position: relative; }
-  .shelf-progress--edit::after { content: ''; position: absolute; inset: -1rem 0; }
+  button, select { min-height: 2.75rem; }
+  .tag-chip button, button.sort { min-height: 0; }
+  button.chip { display: inline-flex; align-items: center; min-height: 2.75rem; }
+  button.date-pick { min-width: 2.75rem; min-height: 2.75rem; justify-content: center; }
+  button.shelf-meta { min-width: 2.75rem; min-height: 2.75rem; padding: 0.5rem 0.25rem; }
   .book-hero .back, .news-more, .view-switch button, .toolbar button, .bulk-bar button { min-height: 2.75rem; }
   .book-hero .back { padding-inline: 1rem; }
   .check-hit { min-width: 2.75rem; min-height: 2.75rem; }
@@ -887,6 +891,15 @@ html, body { overscroll-behavior-y: none; }
   .toast button.toast__dismiss { min-width: 2.75rem; }
 }
 .check-hit { display: inline-flex; flex-direction: row; align-items: center; justify-content: center; }
+
+/* The installed app draws under the status bar (black-translucent), whose text is white. On light Paper that would be
+ * white on cream: a dark strip, as tall as the status bar, sits behind it. Night and dark Paper are dark already. */
+@media (display-mode: standalone) and (prefers-color-scheme: light) {
+  :root[data-theme='paper'] body::before {
+    content: ''; position: fixed; z-index: 30; top: 0; left: 0; right: 0; height: env(safe-area-inset-top);
+    background: #1e1b16; pointer-events: none;
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

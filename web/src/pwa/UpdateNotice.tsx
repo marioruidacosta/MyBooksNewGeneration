@@ -28,7 +28,8 @@ export function UpdateNotice({ watcher, store, publisher }: { watcher: UpdateWat
   }
 
   return (
-    <div className="update-notice" role="status">
+    // No live-region role of its own: it sits in the toast stack, which is one.
+    <div className="update-notice">
       <div className="toast">
         <span>{held ? 'Still saving your changes. Try again in a moment.' : 'New version available.'}</span>
         <button type="button" onClick={() => void reload()}>

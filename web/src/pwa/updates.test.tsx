@@ -1,6 +1,8 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { ToastProvider } from '../ui/Toast'
+import { useToast } from '../ui/toastContext'
 import { UpdateNotice } from './UpdateNotice'
 import { UpdateWatcher } from './updates'
 
@@ -120,6 +122,26 @@ describe('a new version of the site', () => {
     expect(worker.postMessage).not.toHaveBeenCalled()
     container.dispatchEvent(new Event('controllerchange'))
     expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('theUpdateNoticeAndToastsShareOneStackSoNeitherCoversTheOther', async () => {
+    const { watcher, install } = setup()
+    install()
+    function Shows() {
+      const toast = useToast()
+      return <button onClick={() => toast.show('Book removed', { label: 'Undo', run: () => {} })}>show</button>
+    }
+    render(
+      <ToastProvider pinned={<UpdateNotice watcher={watcher} />}>
+        <Shows />
+      </ToastProvider>,
+    )
+    await userEvent.setup().click(screen.getByRole('button', { name: 'show' }))
+    const region = document.querySelector('.toast-region') as HTMLElement
+    // Both are items of the same column (the region stacks them), not two fixed boxes at the same place.
+    expect(region).toContainElement(screen.getByText('New version available.'))
+    expect(region).toContainElement(screen.getByText('Book removed'))
+    expect(document.querySelectorAll('.update-notice')).toHaveLength(1)
   })
 
   it('leavingTheFieldSavesWhatWasTypedBeforeTheReloadIsChecked', async () => {

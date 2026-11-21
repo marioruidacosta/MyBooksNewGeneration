@@ -60,4 +60,48 @@ describe('phone layout rules', () => {
     // Pinch zoom stays available.
     expect(readFileSync(resolve(process.cwd(), 'index.html'), 'utf8')).not.toMatch(/user-scalable\s*=\s*no|maximum-scale/)
   })
+
+  const PHONE = '@media (max-width: 52rem), (pointer: coarse) and (max-height: 30rem) {'
+  const COARSE = '@media (pointer: coarse) {'
+
+  it('theBottomBarIsOpaqueInBothThemes', () => {
+    // Page text showed through the labels of a translucent bar.
+    const base = inMedia(PHONE, '.bottom-bar {')
+    expect(base).toMatch(/background:\s*var\(--paper\)/)
+    expect(base).not.toMatch(/color-mix|backdrop-filter/)
+    const night = inMedia(PHONE, "[data-theme='night'] .bottom-bar {")
+    expect(night).toMatch(/background:\s*var\(--paper\)/)
+    expect(night).not.toMatch(/color-mix/)
+  })
+
+  it('touchTargetsReach44Pixels', () => {
+    expect(inMedia(COARSE, 'button, select {')).toMatch(/min-height:\s*2\.75rem/)
+    expect(inMedia(COARSE, 'button.chip')).toMatch(/min-height:\s*2\.75rem/)
+    const pick = inMedia(COARSE, 'button.date-pick')
+    expect(pick).toMatch(/min-width:\s*2\.75rem/)
+    expect(pick).toMatch(/min-height:\s*2\.75rem/)
+    expect(inMedia(COARSE, 'button.shelf-meta')).toMatch(/min-width:\s*2\.75rem/)
+  })
+
+  it('onAPhoneTheBookCoverAlignsWithTheTopOfTheText', () => {
+    const block = css.slice(css.lastIndexOf('@media (max-width: 52rem) {'))
+    const rule = block.slice(block.indexOf('.book-hero__inner'), block.indexOf('}', block.indexOf('.book-hero__inner')))
+    expect(rule).toMatch(/align-items: start/)
+  })
+
+  it('aLightPaperStatusBarGetsADarkStripInTheInstalledApp', () => {
+    // black-translucent draws white status text; on light Paper that is white on cream. Night and dark Paper stay.
+    const strip = inMedia('@media (display-mode: standalone) and (prefers-color-scheme: light) {', "[data-theme='paper'] body::before")
+    expect(strip).toMatch(/height:\s*env\(safe-area-inset-top\)/)
+    expect(strip).toMatch(/position:\s*fixed/)
+    expect(strip).toMatch(/pointer-events:\s*none/)
+  })
+
+  it('theNewGlobalRulesDoNotChangeTheDesktop', () => {
+    // The html background and the no-select on toasts are for phones only: they sit inside a media query.
+    const outside = css.replace(/@media[^{]*\{[\s\S]*?\n\}\n/g, '')
+    expect(outside).not.toMatch(/^html \{/m)
+    expect(outside).not.toMatch(/\.toast[^{]*\{[^}]*user-select/)
+    expect(css).not.toMatch(/\.shelf-progress--edit::after/)
+  })
 })
