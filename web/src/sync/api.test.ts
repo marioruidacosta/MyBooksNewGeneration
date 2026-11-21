@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
+import { AuthRetryableFetchError } from '@supabase/supabase-js'
 import { createSupabaseSyncApi, SyncError } from './api'
 
 type Rpc = { data: unknown; error: { message: string; code?: string } | null; status: number }
@@ -68,6 +69,19 @@ describe('createSupabaseSyncApi', () => {
       changes: [{ table: 'books', id: 'b1', fields: { title: 'AB' }, times: { title: 9 } }],
     }])
     expect(result).toEqual({ applied: ['books:b1'], rejected: [{ id: 'quotes:q1', reason: 'value too long' }] })
+  })
+
+  it('aTokenThatCouldNotBeRefreshedForTheNetworkSendsNothingAndCountsAsOffline', async () => {
+    const { client, calls } = fakeClient('me', () => ({ data: {}, error: null, status: 200 }))
+    // What supabase-js answers with an expired token and no connection: no session, and the network error.
+    ;(client.auth as unknown as { getSession: unknown }).getSession = async () => ({
+      data: { session: null },
+      error: new AuthRetryableFetchError('Failed to fetch', 0),
+    })
+    const api = createSupabaseSyncApi(client, 'me')
+    await expect(api.push([])).rejects.toMatchObject({ kind: 'offline' })
+    await expect(api.pull(0, 500)).rejects.toMatchObject({ kind: 'offline' })
+    expect(calls).toEqual([])
   })
 
   it('neverCallsTheServerForAnotherAccount', async () => {

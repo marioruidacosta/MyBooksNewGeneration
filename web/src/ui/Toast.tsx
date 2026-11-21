@@ -113,7 +113,7 @@ function ToastItem({
  * at the bottom, each with its own Undo and its own [TOAST_MS]. The region is always on the page, so a message put
  * into it is read out.
  */
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({ children, pinned }: { children: ReactNode; pinned?: ReactNode }) {
   const [shown, setShown] = useState<Shown[]>([])
   const next = useRef(0)
 
@@ -159,6 +159,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <div className="toast-region" role="status">
+        {/* Pinned: something that stays above the messages in the same stack (the update notice), so they never overlap. */}
+        {pinned}
         {shown.map((t) => (
           <ToastItem key={t.id} toast={t} onDismiss={dismiss} onRun={run} />
         ))}

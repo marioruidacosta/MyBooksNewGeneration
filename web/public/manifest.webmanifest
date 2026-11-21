@@ -1,0 +1,15 @@
+{
+  "name": "MyBooks",
+  "short_name": "MyBooks",
+  "description": "Your library, on any device.",
+  "start_url": "/MyBooksNewGeneration/app/",
+  "scope": "/MyBooksNewGeneration/app/",
+  "display": "standalone",
+  "background_color": "#0f1c18",
+  "theme_color": "#0f1c18",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

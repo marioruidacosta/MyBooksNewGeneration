@@ -19,9 +19,21 @@ export function loadTheme(): Theme {
   }
 }
 
-/** Shows [theme] on the page (theme.css reads `data-theme` on the root element). */
+/**
+ * The colour the browser paints its own bars with (the status bar of the installed app, the address bar): the page's
+ * paper. Paper follows the system, so it is the dark paper too when the system is dark. index.html's first-paint script
+ * repeats these three values.
+ */
+export function themeColor(theme: Theme): string {
+  if (theme === 'night') return '#0f1c18'
+  const dark = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
+  return dark ? '#16130f' : '#fbf7f0'
+}
+
+/** Shows [theme] on the page (theme.css reads data-theme on the root element) and in the browser's own bars. */
 export function applyTheme(theme: Theme): void {
   document.documentElement.dataset.theme = theme
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor(theme))
 }
 
 /** Shows [theme] and keeps it for this browser's next visits. */

@@ -10,6 +10,7 @@ import {
   useNavigate,
 } from '@tanstack/react-router'
 import { SignIn } from './auth/SignIn'
+import { signOut } from './auth/signOut'
 import { useSession } from './auth/useSession'
 import { AddPage } from './add/AddPage'
 import { BookPage } from './book/BookPage'
@@ -17,6 +18,8 @@ import { CoverContext } from './covers/storage'
 import { JumpBox } from './jump/JumpBox'
 import { LibraryPage } from './library/LibraryPage'
 import { PageBoundary } from './PageBoundary'
+import { UpdateNotice } from './pwa/UpdateNotice'
+import { updates } from './pwa/updates'
 import { ThemeSwitch } from './ThemeSwitch'
 import { Publisher } from './share/publisher'
 import { SharingContext } from './share/SharingContext'
@@ -28,6 +31,10 @@ import { StoreContext, useOptionalStore, useStore } from './sync/StoreContext'
 import type { LibraryStore as Store } from './sync/store'
 import { useLibraryStore, useWarnBeforeClosing } from './sync/useLibraryStore'
 import { ToastProvider } from './ui/Toast'
+import { usePhone } from './ui/usePhone'
+import { useCommitOnHide } from './ui/useCommitOnHide'
+import { BottomBar } from './shell/BottomBar'
+import { InstallHint } from './pwa/InstallHint'
 
 // The import and tidy pages (with the ZIP reader and the import code) load when first opened.
 const ImportPage = lazy(() => import('./io/ImportPage').then((m) => ({ default: m.ImportPage })))
@@ -42,12 +49,13 @@ interface RouterContext {
 }
 
 /** Ctrl K from any signed-in page: a book to open, or an ISBN to add. */
-function Jump({ store }: { store: Store }) {
+function Jump({ store, compact }: { store: Store; compact: boolean }) {
   const books = useSyncExternalStore(store.subscribe, () => store.books())
   const navigate = useNavigate()
   return (
     <JumpBox
       books={books}
+      compact={compact}
       onOpen={(id) => void navigate({ to: '/book/$id', params: { id } })}
       onAddIsbn={(isbn) => void navigate({ to: '/add', search: { isbn } })}
     />
@@ -56,30 +64,39 @@ function Jump({ store }: { store: Store }) {
 
 function Shell() {
   const store = useOptionalStore()
+  const phone = usePhone()
+  useCommitOnHide()
+  const publisher = useContext(SharingContext)
   return (
-    <ToastProvider>
+    <ToastProvider pinned={<UpdateNotice watcher={updates} store={store} publisher={publisher} />}>
       {store && (
         <header className="app-bar">
           <span className="wordmark">MyBooks</span>
-          <nav aria-label="Pages">
-            <Link to="/" activeOptions={{ exact: true }}>
-              Library
-            </Link>
-            <Link to="/add">Add a book</Link>
-            <Link to="/import">Import</Link>
-            <Link to="/tidy">Tidy up</Link>
-            <Link to="/year">Year in books</Link>
-            <Link to="/news">Book news</Link>
-          </nav>
-          <Jump store={store} />
+          {!phone && (
+            <nav aria-label="Pages">
+              <Link to="/" activeOptions={{ exact: true }}>
+                Library
+              </Link>
+              <Link to="/add">Add a book</Link>
+              <Link to="/import">Import</Link>
+              <Link to="/tidy">Tidy up</Link>
+              <Link to="/year">Year in books</Link>
+              <Link to="/news">Book news</Link>
+            </nav>
+          )}
+          <Jump store={store} compact={phone} />
           <SaveBadge store={store} />
-          <ThemeSwitch />
-          <button type="button" className="quiet" onClick={() => void supabase.auth.signOut()}>
-            Sign out
-          </button>
+          {!phone && <ThemeSwitch />}
+          {!phone && (
+            <button type="button" className="quiet" onClick={() => void signOut()}>
+              Sign out
+            </button>
+          )}
         </header>
       )}
+      {store && <InstallHint />}
       <Outlet />
+      {store && phone && <BottomBar onSignOut={() => void signOut()} />}
     </ToastProvider>
   )
 }
@@ -283,7 +300,7 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
         <p className="error" role="alert">
           Your library could not be opened: {error}
         </p>
-        <button type="button" onClick={() => void supabase.auth.signOut()}>
+        <button type="button" onClick={() => void signOut()}>
           Sign out
         </button>
       </main>

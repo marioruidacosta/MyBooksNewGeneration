@@ -11,6 +11,7 @@ import { CoverContext } from '../covers/storage'
 import { ToastProvider } from '../ui/Toast'
 import { COLUMN_STORAGE_KEY, VIEW_STORAGE_KEY } from './columns'
 import { quoteOfTheDay } from '../quotes/daily'
+import { clearMedia, setPhone } from '../test-media'
 import { LibraryPage } from './LibraryPage'
 
 const T = 10_000
@@ -92,6 +93,7 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  clearMedia()
   vi.restoreAllMocks()
   await Promise.all(stores.splice(0).map((s) => s.close()))
 })
@@ -824,6 +826,30 @@ describe('LibraryPage', () => {
 
     await user.click(within(view).getByRole('button', { name: 'Table' }))
     expect(titles()).toEqual(['Alpha', 'Charlie'])
+  }, T)
+
+  it('phonesDefaultToCoversUnlessChosen', async () => {
+    const store = await open([book('a', { title: 'Alpha' })])
+    const user = userEvent.setup({ delay: null })
+    setPhone(true)
+    const first = show(store)
+    // A phone with no choice made yet: the table is too wide there, so the covers.
+    expect(screen.getByRole('button', { name: 'Covers' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+
+    // A choice made on the phone is kept, and wins over the default.
+    await user.click(screen.getByRole('button', { name: 'Table' }))
+    first.unmount()
+    show(store)
+    expect(screen.getByRole('button', { name: 'Table' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('table')).toBeInTheDocument()
+  }, T)
+
+  it('aWideScreenStillDefaultsToTheTable', async () => {
+    const store = await open([book('a', { title: 'Alpha' })])
+    setPhone(false)
+    show(store)
+    expect(screen.getByRole('button', { name: 'Table' })).toHaveAttribute('aria-pressed', 'true')
   }, T)
 
   it('theViewChoiceIsRemembered', async () => {

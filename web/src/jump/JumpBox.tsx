@@ -13,18 +13,22 @@ type Props = {
   onOpen: (id: string) => void
   /** A valid ISBN no book has: go to the Add page and look it up. */
   onAddIsbn: (isbn: string) => void
+  /** On a phone: a search icon in place of the "Ctrl K" hint (there is no such key there). */
+  compact?: boolean
 }
 
 const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
 /** The "Ctrl K" hint in the app bar and the box it opens: type a title, an author or an ISBN, Enter goes there. */
-export function JumpBox({ books, onOpen, onAddIsbn }: Props) {
+export function JumpBox({ books, onOpen, onAddIsbn, compact = false }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
   const returnTo = useRef<HTMLElement | null>(null)
   const listId = useId()
+  /** Whether the press that began the current click was on the backdrop itself; null when no press was seen. */
+  const pressedOutside = useRef<boolean | null>(null)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -105,11 +109,28 @@ export function JumpBox({ books, onOpen, onAddIsbn }: Props) {
 
   return (
     <>
-      <button type="button" className="jump-hint quiet" aria-label="Jump to a book" onClick={() => setOpen(true)}>
-        <kbd>{hint}</kbd>
+      <button type="button" className={compact ? 'jump-hint jump-hint--icon quiet' : 'jump-hint quiet'} aria-label="Jump to a book" onClick={() => setOpen(true)}>
+        {compact ? (
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true" focusable="false">
+            <circle cx="10.5" cy="10.5" r="6" />
+            <path d="m15 15 5 5" />
+          </svg>
+        ) : (
+          <kbd>{hint}</kbd>
+        )}
       </button>
       {open && (
-        <div className="jump-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+        <div
+          className="jump-backdrop"
+          // A tap is a click (an iPhone has no Escape key to leave by). A drag that began inside the box and ended on the
+          // backdrop, such as selecting text, is not a tap outside.
+          onPointerDown={(e) => (pressedOutside.current = e.target === e.currentTarget)}
+          onClick={(e) => {
+            const outside = pressedOutside.current !== false
+            pressedOutside.current = null
+            if (e.target === e.currentTarget && outside) close()
+          }}
+        >
           <div
             className="jump-box"
             role="dialog"
@@ -129,6 +150,11 @@ export function JumpBox({ books, onOpen, onAddIsbn }: Props) {
               }
             }}
           >
+            {compact && (
+              <button type="button" className="jump-close quiet" aria-label="Close" onClick={close}>
+                <span aria-hidden="true">×</span>
+              </button>
+            )}
             <input
               ref={inputRef}
               type="text"

@@ -159,7 +159,7 @@ export class LibraryStore {
 
   // ---- lifecycle ----
 
-  /** Opens the cache, then pushes what was waiting and pulls from the stored cursor; resolves after that first pass. */
+  /** Opens the cache, then pushes what was waiting and pulls from the stored cursor. Resolves after that first pass, unless this device already holds a library: then as soon as it is read (the pass goes on behind it; see `idle`). */
   load(): Promise<void> {
     this.loading ??= this.open()
     return this.loading
@@ -185,7 +185,12 @@ export class LibraryStore {
     this.loaded = true
     this.dataChanged()
     this.listen()
-    await this.refresh()
+    // With books (or waiting changes) already on this device the library opens now and the first pass runs behind it:
+    // offline with an expired token that pass waits out the auth client's refresh retries (about a minute). A device
+    // with nothing yet waits for the first pull, so a new device never shows an empty library.
+    const haveLocalData = this.seq > 0 || this.rows.size > 0 || this.queue.size > 0
+    const first = this.refresh()
+    if (!haveLocalData) await first
   }
 
   /** Opens and reads the browser's copy of the library; once more after a short wait when that fails; null when it can't. */

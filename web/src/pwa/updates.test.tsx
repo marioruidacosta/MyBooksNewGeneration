@@ -1,0 +1,163 @@
+import { act, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
+import { ToastProvider } from '../ui/Toast'
+import { useToast } from '../ui/toastContext'
+import { UpdateNotice } from './UpdateNotice'
+import { UpdateWatcher } from './updates'
+
+class FakeWorker extends EventTarget {
+  state = 'installing'
+  postMessage = vi.fn()
+}
+class FakeRegistration extends EventTarget {
+  waiting: FakeWorker | null = null
+  installing: FakeWorker | null = null
+  update = vi.fn(() => Promise.resolve())
+}
+class FakeContainer extends EventTarget {
+  controller: object | null = {}
+  registration = new FakeRegistration()
+  register = vi.fn(() => Promise.resolve(this.registration))
+}
+
+/** A page that already runs one version, and a second one that finishes installing. */
+function setup() {
+  const container = new FakeContainer()
+  const reload = vi.fn()
+  const watcher = new UpdateWatcher(container as unknown as ServiceWorkerContainer, reload)
+  watcher.watch(container.registration as unknown as ServiceWorkerRegistration)
+  const install = () => {
+    const worker = new FakeWorker()
+    container.registration.installing = worker
+    container.registration.dispatchEvent(new Event('updatefound'))
+    worker.state = 'installed'
+    act(() => void worker.dispatchEvent(new Event('statechange')))
+    return worker
+  }
+  return { container, reload, watcher, install }
+}
+
+describe('a new version of the site', () => {
+  it('aNewVersionOffersReloadAndNeverReloadsAlone', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { container, reload, watcher, install } = setup()
+    render(<UpdateNotice watcher={watcher} />)
+    expect(screen.queryByText(/New version available/)).not.toBeInTheDocument()
+
+    const worker = install()
+    expect(await screen.findByText('New version available.')).toBeInTheDocument()
+    // It waits: not told to take over, and the page is not reloaded, however long it is left.
+    await act(() => vi.advanceTimersByTimeAsync(10 * 60_000))
+    expect(worker.postMessage).not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+
+    // Only the person's Reload applies it, and the page reloads once the new version has taken over.
+    await userEvent.setup({ advanceTimers: vi.advanceTimersByTime }).click(screen.getByRole('button', { name: 'Reload' }))
+    await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' }))
+    expect(reload).not.toHaveBeenCalled()
+    container.dispatchEvent(new Event('controllerchange'))
+    expect(reload).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
+  })
+
+  it('theFirstInstallIsNotAnUpdate', () => {
+    const { container, watcher, install } = setup()
+    container.controller = null
+    install()
+    expect(watcher.available).toBe(false)
+  })
+
+  it('aWaitingVersionFoundAtStartIsOfferedToo', () => {
+    const container = new FakeContainer()
+    container.registration.waiting = new FakeWorker()
+    const watcher = new UpdateWatcher(container as unknown as ServiceWorkerContainer, vi.fn())
+    watcher.watch(container.registration as unknown as ServiceWorkerRegistration)
+    expect(watcher.available).toBe(true)
+  })
+
+  it('reloadWaitsForUnsentChanges', async () => {
+    const { watcher, install } = setup()
+    const worker = install()
+    let saving = true
+    let unsent = false
+    const user = userEvent.setup()
+    render(<UpdateNotice watcher={watcher} store={{ hasPendingWrites: () => saving }} publisher={{ hasPending: () => unsent }} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Reload' }))
+    expect(await screen.findByText('Still saving your changes. Try again in a moment.')).toBeInTheDocument()
+    expect(worker.postMessage).not.toHaveBeenCalled()
+
+    // The community publisher's unsent changes hold it back too.
+    saving = false
+    unsent = true
+    await user.click(screen.getByRole('button', { name: 'Reload' }))
+    expect(worker.postMessage).not.toHaveBeenCalled()
+
+    unsent = false
+    await user.click(screen.getByRole('button', { name: 'Reload' }))
+    await vi.waitFor(() => expect(worker.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' }))
+  })
+
+  it('aNoticeForAVersionAnotherTabAppliedIsDroppedAndNeverReloadsThisTab', () => {
+    const { container, reload, watcher, install } = setup()
+    const worker = install()
+    expect(watcher.available).toBe(true)
+    // Another tab pressed Reload: the worker took over and claimed this tab too. This tab was not applying.
+    worker.state = 'activated'
+    container.dispatchEvent(new Event('controllerchange'))
+    expect(reload).not.toHaveBeenCalled()
+    expect(watcher.available).toBe(false)
+    // A later version applied elsewhere does not reload it either.
+    container.dispatchEvent(new Event('controllerchange'))
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('aWorkerThatIsAlreadyActiveIsNotApplied', () => {
+    const { container, reload, watcher, install } = setup()
+    const worker = install()
+    worker.state = 'activated' // the notice is stale: nothing will fire controllerchange for it
+    watcher.apply()
+    expect(watcher.available).toBe(false)
+    expect(worker.postMessage).not.toHaveBeenCalled()
+    container.dispatchEvent(new Event('controllerchange'))
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('theUpdateNoticeAndToastsShareOneStackSoNeitherCoversTheOther', async () => {
+    const { watcher, install } = setup()
+    install()
+    function Shows() {
+      const toast = useToast()
+      return <button onClick={() => toast.show('Book removed', { label: 'Undo', run: () => {} })}>show</button>
+    }
+    render(
+      <ToastProvider pinned={<UpdateNotice watcher={watcher} />}>
+        <Shows />
+      </ToastProvider>,
+    )
+    await userEvent.setup().click(screen.getByRole('button', { name: 'show' }))
+    const region = document.querySelector('.toast-region') as HTMLElement
+    // Both are items of the same column (the region stacks them), not two fixed boxes at the same place.
+    expect(region).toContainElement(screen.getByText('New version available.'))
+    expect(region).toContainElement(screen.getByText('Book removed'))
+    expect(document.querySelectorAll('.update-notice')).toHaveLength(1)
+  })
+
+  it('leavingTheFieldSavesWhatWasTypedBeforeTheReloadIsChecked', async () => {
+    const { watcher, install } = setup()
+    const worker = install()
+    const user = userEvent.setup()
+    let saving = false
+    const field = document.createElement('input')
+    document.body.append(field)
+    // The field saves on blur, as the book page's fields do: that makes a write pending.
+    field.addEventListener('blur', () => (saving = true))
+    field.focus()
+    render(<UpdateNotice watcher={watcher} store={{ hasPendingWrites: () => saving }} />)
+    await user.click(await screen.findByRole('button', { name: 'Reload' }))
+    expect(saving).toBe(true)
+    expect(worker.postMessage).not.toHaveBeenCalled()
+    field.remove()
+  })
+})

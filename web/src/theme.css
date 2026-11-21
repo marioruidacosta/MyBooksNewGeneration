@@ -87,11 +87,15 @@ a { color: var(--teal); }
 
 :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 
-main { max-width: 64rem; margin: 0 auto; padding: 2rem 2rem 4rem; }
+/* The insets are 0 in a browser tab; in the installed app they keep content out from under the notch, the home bar and, on its side, the sensor housing. */
+main {
+  max-width: 64rem; margin: 0 auto;
+  padding: 2rem max(2rem, env(safe-area-inset-right)) calc(4rem + env(safe-area-inset-bottom)) max(2rem, env(safe-area-inset-left));
+}
 
 .hint { color: var(--ink-soft); font-size: 0.875rem; margin: 0; }
 .error { color: var(--error); }
-.loading { padding: 2rem; color: var(--ink-soft); }
+.loading { padding: calc(2rem + env(safe-area-inset-top)) 2rem 2rem; color: var(--ink-soft); }
 .empty { padding: 2.5rem 0; color: var(--ink-soft); font-family: var(--serif); font-size: 1.125rem; }
 
 /* ---------- Controls ---------- */
@@ -140,7 +144,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .app-bar {
   position: sticky; top: 0; z-index: 5;
   display: flex; align-items: center; gap: 2rem;
-  padding: 0.75rem 2rem;
+  /* The installed app draws under the status bar (black-translucent): the bar pads for it and its own paper shows through. */
+  padding: calc(0.75rem + env(safe-area-inset-top)) max(2rem, env(safe-area-inset-right)) 0.75rem max(2rem, env(safe-area-inset-left));
   background: color-mix(in srgb, var(--paper) 92%, transparent);
   backdrop-filter: blur(6px);
   border-bottom: 1px solid var(--rule);
@@ -159,7 +164,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 /* ---------- Sign in ---------- */
 
-main.sign-in { max-width: 26rem; padding-top: 6rem; }
+main.sign-in { max-width: 26rem; padding-top: calc(6rem + env(safe-area-inset-top)); }
 .spines {
   height: 4.5rem; margin-bottom: 2rem; border-radius: 2px;
   background:
@@ -346,7 +351,8 @@ main.book-page { max-width: none; padding: 0; --cloth: #3e4a5c; }
   background-image: var(--weave), linear-gradient(180deg, rgb(0 0 0 / 0) 40%, rgb(0 0 0 / 0.25));
 }
 .book-hero__inner {
-  max-width: 64rem; margin: 0 auto; padding: 1.5rem 2rem 2.5rem;
+  max-width: 64rem; margin: 0 auto;
+  padding: 1.5rem max(2rem, env(safe-area-inset-right)) 2.5rem max(2rem, env(safe-area-inset-left));
   display: grid; grid-template-columns: 13rem 1fr; column-gap: 2.5rem; align-items: end;
 }
 .book-hero .back {
@@ -391,7 +397,7 @@ button.star.star--on { color: #f0d27a; }
 .glance {
   position: sticky; top: 4.5rem; margin-top: 2.5rem; display: grid; gap: 0.875rem;
   font-size: 0.875rem; color: var(--ink-soft);
-  max-height: calc(100vh - 4.5rem); overflow: auto;
+  max-height: calc(100vh - 4.5rem); max-height: calc(100dvh - 4.5rem); overflow: auto;
 }
 .glance h2 { margin: 0; font-size: 1.125rem; }
 .glance p { margin: 0; }
@@ -478,7 +484,8 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
 /* ---------- Toast: a short message with an Undo ---------- */
 
 .toast-region {
-  position: fixed; z-index: 20; left: 0; right: 0; bottom: 1.25rem; padding: 0 1rem; pointer-events: none;
+  position: fixed; z-index: 20; left: 0; right: 0; bottom: calc(1.25rem + env(safe-area-inset-bottom));
+  padding: 0 max(1rem, env(safe-area-inset-right)) 0 max(1rem, env(safe-area-inset-left)); pointer-events: none;
   display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
 }
 .toast {
@@ -668,10 +675,11 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
 .jump-hint kbd { font: 500 0.75rem/1 var(--sans); color: var(--ink-soft); white-space: nowrap; }
 .jump-backdrop {
   position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-start; justify-content: center;
-  padding: 12vh 1rem 1rem; background: rgb(15 12 8 / 0.55);
+  padding: calc(12vh + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 1rem max(1rem, env(safe-area-inset-left));
+  background: rgb(15 12 8 / 0.55);
 }
 .jump-box {
-  width: 100%; max-width: 34rem; max-height: 76vh; overflow: auto; padding: 0.75rem;
+  width: 100%; max-width: 34rem; max-height: 76vh; max-height: 76dvh; overflow: auto; padding: 0.75rem;
   background: var(--paper-low); border: 1px solid var(--rule-strong); border-radius: calc(var(--radius) * 2);
   box-shadow: 0 24px 60px -12px rgb(0 0 0 / 0.55);
 }
@@ -768,19 +776,129 @@ button.chip[aria-pressed='true'], [data-theme='night'] button.chip[aria-pressed=
 /* ---------- Small screens and reduced motion ---------- */
 
 @media (max-width: 52rem) {
-  main { padding: 1.5rem 1rem 3rem; }
-  .app-bar { padding: 0.625rem 1rem; gap: 1rem; flex-wrap: wrap; }
+  main { padding: 1.5rem max(1rem, env(safe-area-inset-right)) 3rem max(1rem, env(safe-area-inset-left)); }
+  .app-bar { padding: calc(0.625rem + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.625rem max(1rem, env(safe-area-inset-left)); gap: 1rem; flex-wrap: wrap; }
   .app-bar nav { order: 3; flex-basis: 100%; gap: 1.25rem; overflow-x: auto; }
   .library-title h1 { font-size: 2.25rem; }
-  .book-hero__inner { grid-template-columns: 8rem 1fr; column-gap: 1.25rem; padding: 1rem 1rem 2rem; }
+  .book-hero__inner { align-items: start; grid-template-columns: 8rem 1fr; column-gap: 1.25rem; padding: 1rem max(1rem, env(safe-area-inset-right)) 2rem max(1rem, env(safe-area-inset-left)); }
   .cover-large { width: 8rem; height: 12rem; }
   .book-hero .cover-large { margin-bottom: 0; }
-  .book-body { padding: 1.5rem 1rem 3rem; grid-template-columns: minmax(0, 1fr); row-gap: 2.75rem; }
+  .book-body { padding: 1.5rem max(1rem, env(safe-area-inset-right)) 3rem max(1rem, env(safe-area-inset-left)); grid-template-columns: minmax(0, 1fr); row-gap: 2.75rem; }
   .glance { position: static; margin-top: 0; max-height: none; overflow: visible; }
   .quote { grid-template-columns: 1fr; }
   .cover-grid { grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 1.5rem 1rem; }
-  .toast-region { bottom: 0.75rem; }
+  .toast-region { bottom: calc(0.75rem + env(safe-area-inset-bottom)); }
   .toast { width: 100%; justify-content: space-between; }
+}
+
+
+/* ---------- On a phone, and in the installed app ---------- */
+
+/* The chrome (bars, buttons, links) is not text to select or to flash on tap; the content stays selectable. */
+.app-bar, .bottom-bar, .more-sheet, .toast, .install-hint, button, nav a {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+.app-bar, .bottom-bar, .more-sheet, button, nav a { -webkit-user-select: none; user-select: none; }
+/* A pull at the top or bottom of the page does not bounce the fixed bars along with it. */
+html, body { overscroll-behavior-y: none; }
+
+.install-hint {
+  display: flex; align-items: center; gap: 0.75rem; justify-content: space-between;
+  margin: 0; padding: 0.625rem max(1rem, env(safe-area-inset-right)) 0.625rem max(1rem, env(safe-area-inset-left));
+  background: var(--teal-soft); color: var(--on-teal-soft); font-size: 0.9375rem; border-bottom: 1px solid var(--rule);
+}
+.install-hint p { margin: 0; }
+.install-hint button { flex: none; color: inherit; border-color: currentColor; }
+
+/* In the toast stack (the region stacks it above the messages), so the two never overlap. */
+.update-notice { pointer-events: auto; display: flex; justify-content: center; width: 100%; }
+.update-notice .toast { max-width: 36rem; }
+.jump-close { position: absolute; top: 0.25rem; right: 0.25rem; min-width: 2.75rem; min-height: 2.75rem; font-size: 1.5rem; line-height: 1; padding: 0; }
+.jump-box { position: relative; }
+.jump-close + input { margin-top: 0.25rem; padding-right: 3rem; }
+
+.bottom-bar { display: none; }
+.more-backdrop { display: none; }
+
+/* The wide table is poor on a phone; the page is made for thumbs: a fixed bar at the bottom for the main pages. */
+@media (max-width: 52rem), (pointer: coarse) and (max-height: 30rem) {
+  :root { --tabbar-h: 3.5rem; }
+  body { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
+  main { padding-bottom: 2rem; }
+  .app-bar { gap: 0.75rem; flex-wrap: nowrap; justify-content: space-between; }
+  .app-bar .wordmark { flex: 1; }
+  .jump-hint--icon { padding: 0.5rem; display: inline-flex; align-items: center; justify-content: center; min-width: 2.75rem; min-height: 2.75rem; color: var(--ink-soft); }
+  html { background: var(--paper); -webkit-text-size-adjust: 100%; }
+  .toast, .update-notice { -webkit-user-select: none; user-select: none; }
+  .toast-region { bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 0.75rem); }
+
+  .bottom-bar {
+    position: fixed; z-index: 10; left: 0; right: 0; bottom: 0; display: flex;
+    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: var(--paper);
+    border-top: 1px solid var(--rule);
+  }
+  [data-theme='night'] .bottom-bar { background: var(--paper); border-top-color: rgb(217 165 74 / 0.18); }
+  .bottom-bar a, .bottom-bar button {
+    flex: 1; min-width: 0; min-height: var(--tabbar-h); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.125rem;
+    padding: 0.25rem 0; border: 0; border-radius: 0; background: none; color: var(--ink-soft);
+    font-size: 0.6875rem; font-weight: 500; text-decoration: none;
+  }
+  .bottom-bar a:hover, .bottom-bar button:hover:not(:disabled) { background: none; color: var(--ink); }
+  .bottom-bar a[aria-current='page'], .bottom-bar a[data-status='active'], .bottom-bar button[data-current='true'], .bottom-bar button[aria-expanded='true'] { color: var(--teal); }
+  [data-theme='night'] .bottom-bar a[aria-current='page'], [data-theme='night'] .bottom-bar a[data-status='active'],
+  [data-theme='night'] .bottom-bar button[data-current='true'], [data-theme='night'] .bottom-bar button[aria-expanded='true'] { color: #f3dca6; }
+
+  .more-backdrop { display: block; position: fixed; inset: 0; z-index: 9; background: rgb(15 12 8 / 0.4); }
+  .more-sheet {
+    position: absolute; left: 0; right: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+    display: grid; gap: 0.25rem; padding: 0.75rem max(1rem, env(safe-area-inset-right)) 0.75rem max(1rem, env(safe-area-inset-left));
+    background: var(--paper-low); border-top: 1px solid var(--rule-strong); border-radius: calc(var(--radius) * 2) calc(var(--radius) * 2) 0 0;
+    box-shadow: 0 -12px 40px -12px rgb(0 0 0 / 0.5);
+  }
+  .more-sheet a, .more-sheet button.quiet {
+    display: flex; align-items: center; min-height: 2.75rem; padding: 0 0.5rem; color: var(--ink); text-decoration: none;
+    font-size: 1.0625rem; font-weight: 500; text-align: left; justify-content: flex-start;
+  }
+  .more-sheet__row { display: flex; align-items: center; justify-content: space-between; min-height: 2.75rem; padding: 0 0.5rem; font-size: 1.0625rem; font-weight: 500; }
+  .more-sheet .theme-switch { min-height: 2.5rem; }
+}
+
+/* iOS zooms the page when a field under 16px gets the focus, and never zooms back. All fields, on touch devices and on
+ * narrow screens: the size is important because a few fields have a smaller size of their own (the table's status
+ * select, the tag input, dates, the jump box). Pinch zoom stays on. */
+@media (pointer: coarse), (max-width: 52rem) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Touch targets of 44 px (2.75rem) for what is used most. */
+@media (pointer: coarse) {
+  .app-bar nav a { display: inline-flex; align-items: center; min-height: 2.75rem; }
+  button.star, button.star-btn { min-width: 2.75rem; min-height: 2.75rem; padding: 0; }
+  .stars, .stars-edit { gap: 0; }
+  .tag-chip button::after { inset: -0.8rem -0.4rem -0.8rem -1.2rem; }
+  button, select { min-height: 2.75rem; }
+  .tag-chip button, button.sort { min-height: 0; }
+  button.chip { display: inline-flex; align-items: center; min-height: 2.75rem; }
+  button.date-pick { min-width: 2.75rem; min-height: 2.75rem; justify-content: center; }
+  button.shelf-meta { min-width: 2.75rem; min-height: 2.75rem; padding: 0.5rem 0.25rem; }
+  .book-hero .back, .news-more, .view-switch button, .toolbar button, .bulk-bar button { min-height: 2.75rem; }
+  .book-hero .back { padding-inline: 1rem; }
+  .check-hit { min-width: 2.75rem; min-height: 2.75rem; }
+  input[type='checkbox'] { width: 1.375rem; height: 1.375rem; }
+  .toast button { min-height: 2.75rem; }
+  .toast button.toast__dismiss { min-width: 2.75rem; }
+}
+.check-hit { display: inline-flex; flex-direction: row; align-items: center; justify-content: center; }
+
+/* The installed app draws under the status bar (black-translucent), whose text is white. On light Paper that would be
+ * white on cream: a dark strip, as tall as the status bar, sits behind it. Night and dark Paper are dark already. */
+@media (display-mode: standalone) and (prefers-color-scheme: light) {
+  :root[data-theme='paper'] body::before {
+    content: ''; position: fixed; z-index: 30; top: 0; left: 0; right: 0; height: env(safe-area-inset-top);
+    background: #1e1b16; pointer-events: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

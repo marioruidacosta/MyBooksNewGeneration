@@ -1,4 +1,6 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Component, useContext, type ErrorInfo, type ReactNode } from 'react'
+import { SharingContext } from './share/SharingContext'
+import { useOptionalStore } from './sync/StoreContext'
 
 const RELOADED = 'pageBoundary.reloaded'
 
@@ -16,9 +18,10 @@ function reloadedBefore(): boolean {
 }
 
 type State = { failed: boolean }
+type Props = { children: ReactNode; hasUnsavedChanges: () => boolean }
 
 /** Around the lazy pages: when one fails to load, says so and offers Reload (once by itself for a chunk error). */
-export class PageBoundary extends Component<{ children: ReactNode }, State> {
+class Boundary extends Component<Props, State> {
   state: State = { failed: false }
 
   static getDerivedStateFromError(): State {
@@ -27,7 +30,8 @@ export class PageBoundary extends Component<{ children: ReactNode }, State> {
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
     console.error(error, info.componentStack)
-    if (isChunkError(error) && !reloadedBefore()) {
+    // Never by itself over changes still being saved or sent: the Reload button below leaves that to the person.
+    if (isChunkError(error) && !reloadedBefore() && !this.props.hasUnsavedChanges()) {
       try {
         sessionStorage.setItem(RELOADED, '1')
       } catch {
@@ -50,4 +54,11 @@ export class PageBoundary extends Component<{ children: ReactNode }, State> {
       </main>
     )
   }
+}
+
+/** Around the lazy pages: when one fails to load, says so and offers Reload (once by itself for a chunk error, unless changes are unsaved). */
+export function PageBoundary({ children }: { children: ReactNode }) {
+  const store = useOptionalStore()
+  const publisher = useContext(SharingContext)
+  return <Boundary hasUnsavedChanges={() => Boolean(store?.hasPendingWrites() || publisher?.hasPending())}>{children}</Boundary>
 }

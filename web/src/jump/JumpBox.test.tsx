@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { Book } from '../sync/model'
@@ -119,5 +119,30 @@ describe('JumpBox', () => {
     screen.getByRole('button', { name: 'Elsewhere' }).focus()
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('aTapOutsideClosesItAndPhonesGetACloseButton', async () => {
+    const user = userEvent.setup({ delay: null })
+    render(<JumpBox books={books} onOpen={vi.fn()} onAddIsbn={vi.fn()} compact />)
+
+    // A touch screen sends a click for a tap (it may send no mouse-down first); there is no Escape key to fall back on.
+    await user.click(screen.getByRole('button', { name: 'Jump to a book' }))
+    fireEvent.click(document.querySelector('.jump-backdrop') as HTMLElement)
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Jump to a book' }))
+    await user.type(screen.getByRole('combobox', { name: 'Jump to a book' }), 'Emma')
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // The label it had stays for the next time.
+    await user.click(screen.getByRole('button', { name: 'Jump to a book' }))
+    expect(screen.getByRole('combobox', { name: 'Jump to a book' })).toHaveValue('')
+  })
+
+  it('theDesktopBoxHasNoCloseButton', async () => {
+    const user = userEvent.setup({ delay: null })
+    render(<JumpBox books={books} onOpen={vi.fn()} onAddIsbn={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: 'Jump to a book' }))
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument()
   })
 })

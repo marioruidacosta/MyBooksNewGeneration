@@ -1,8 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { authStorage } from './auth/guardedStorage'
+import { SUPABASE_URL } from './supabase-config'
 
 // A production build fails without these (see build-env.ts); the placeholders
 // only keep the client constructible in development and tests.
-const url = import.meta.env.VITE_SUPABASE_URL || 'http://localhost:54321'
+const url = SUPABASE_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'missing-anon-key'
 
 // In development, say so (signing in would otherwise fail with a puzzling network error). Tests use placeholders on purpose.
@@ -19,4 +21,4 @@ if (import.meta.env.DEV && import.meta.env.MODE !== 'test') {
   }
 }
 
-export const supabase: SupabaseClient = createClient(url, anonKey)
+export const supabase: SupabaseClient = createClient(url, anonKey, { auth: { storage: authStorage } })
