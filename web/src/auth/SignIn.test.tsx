@@ -29,7 +29,7 @@ describe('SignIn', () => {
 
     expect(signInWithOtp).toHaveBeenCalledWith({
       email: 'reader@example.com',
-      options: { shouldCreateUser: false },
+      options: { shouldCreateUser: true },
     })
     await user.type(await screen.findByLabelText('Code'), '123456')
     await user.click(screen.getByRole('button', { name: 'Sign in' }))
@@ -124,6 +124,13 @@ describe('SignIn', () => {
       await waitFor(() => expect(window.localStorage.getItem(SIGNIN_KEY)).toBeNull())
       first.unmount()
     })
+  })
+
+  it('saysThatANewEmailCreatesAnAccount', () => {
+    render(<SignIn />)
+    expect(screen.getByText(/this creates your free account/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Privacy policy' }).getAttribute('href')).toMatch(/privacy\.html$/)
+    expect(screen.queryByText(/email you use in the app/i)).not.toBeInTheDocument()
   })
 
   it('theWordingFitsAPhoneAsWellAsADesk', () => {

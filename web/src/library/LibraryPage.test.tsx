@@ -552,6 +552,8 @@ describe('LibraryPage', () => {
     const store = await open([])
     show(store)
     expect(screen.getByText(/No books yet/)).toBeInTheDocument()
+    expect(screen.getByText(/Choose Add/)).toBeInTheDocument()
+    expect(screen.queryByText(/Press n/)).not.toBeInTheDocument()
     expect(screen.queryByText(/You're offline/)).not.toBeInTheDocument()
   }, T)
   it('photoCoversAreSignedInOneCall', async () => {

@@ -65,7 +65,7 @@ export function SignIn() {
     try {
       const { error: err } = await supabase.auth.signInWithOtp({
         email,
-        options: { shouldCreateUser: false },
+        options: { shouldCreateUser: true },
       })
       if (err) setError(SEND_ERROR)
       else {
@@ -99,7 +99,7 @@ export function SignIn() {
       <QuoteOfTheDay place="sign-in" />
       <div className="spines" aria-hidden="true" />
       <h1>MyBooks</h1>
-      <p className="sign-in__lede">Your library, wherever you read. Sign in with the email you use in the app.</p>
+      <p className="sign-in__lede">Your library, wherever you read. Enter your email to sign in.</p>
       {step === 'email' ? (
         <form onSubmit={sendCode}>
           <label>
@@ -107,6 +107,10 @@ export function SignIn() {
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
           </label>
           <button type="submit" disabled={busy}>Send code</button>
+          <p className="sign-in__new">
+            New here? This creates your free account.{' '}
+            <a href={`${import.meta.env.BASE_URL}../privacy.html`}>Privacy policy</a>
+          </p>
         </form>
       ) : (
         <form onSubmit={signIn}>

@@ -9,6 +9,7 @@ import type { Book, SyncRow } from '../sync/model'
 import { LibraryStore } from '../sync/store'
 import { Publisher } from '../share/publisher'
 import { SharingContext } from '../share/SharingContext'
+import { AtAGlance } from './AtAGlance'
 import { BookPage } from './BookPage'
 
 const T = 15_000
@@ -548,6 +549,27 @@ describe('BookPage', () => {
     expect(glance).toHaveTextContent('Lent to Carla on 3 Mar 2026')
     expect(within(glance).getByRole('button', { name: "I'm on page…" })).toBeInTheDocument()
     expect(within(glance).getByRole('button', { name: 'Mark as read' })).toBeInTheDocument()
+  }, T)
+
+  it('atAGlanceGoesDatesThenSuggestThenPageThenTags', () => {
+    render(
+      <AtAGlance
+        book={book({ status: 'READING', dateStarted: new Date(2026, 9, 27).getTime(), tags: ['nobel'] })}
+        suggest={<button type="button">Suggest to a friend</button>}
+        ebook={null}
+        onMarkRead={() => {}}
+        onProgress={() => {}}
+      />,
+    )
+    const inOrder = [
+      screen.getByText('Started'),
+      screen.getByRole('button', { name: 'Suggest to a friend' }),
+      screen.getByRole('button', { name: "I'm on page…" }),
+      screen.getByRole('list', { name: 'Book tags' }),
+    ]
+    for (let i = 1; i < inOrder.length; i++) {
+      expect(inOrder[i - 1].compareDocumentPosition(inOrder[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
   }, T)
 
   it('markAsReadSetsTheStatusAndDate', async () => {
