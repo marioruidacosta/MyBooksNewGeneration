@@ -21,9 +21,16 @@ export const BLURB_MAX = 600
 
 const SPACES = /\s+/g
 
+/** The start of [text], never ending in half an emoji (which the server would refuse). */
+function cut(text: string, max: number): string {
+  const start = text.slice(0, max)
+  return /[\uD800-\uDBFF]$/.test(start) ? start.slice(0, -1) : start
+}
+
 /** The start of a book's description for its feed card: whitespace collapsed, at most [BLURB_MAX]; null if blank. */
 export function blurbOf(description: string | null): string | null {
-  const text = description?.replace(SPACES, ' ').trim().slice(0, BLURB_MAX).trim()
+  const collapsed = description?.replace(SPACES, ' ').trim()
+  const text = collapsed === undefined ? '' : cut(collapsed, BLURB_MAX).trim()
   return text ? text : null
 }
 
@@ -55,8 +62,8 @@ export function publicState(book: Book): PublicState {
   return {
     id: book.id,
     isbn: book.isbn,
-    title: book.title.slice(0, MAX_SHARED_TEXT),
-    authors: book.authors.slice(0, MAX_SHARED_TEXT),
+    title: cut(book.title, MAX_SHARED_TEXT),
+    authors: cut(book.authors, MAX_SHARED_TEXT),
     cover_url: book.coverUrl !== null && book.coverUrl.startsWith('https://') ? book.coverUrl : null,
     status: DB_STATUS[book.status],
     rating: book.rating,

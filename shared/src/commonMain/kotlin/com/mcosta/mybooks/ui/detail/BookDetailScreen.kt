@@ -34,6 +34,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -82,6 +83,7 @@ import com.mcosta.mybooks.ui.components.RatingStars
 import com.mcosta.mybooks.ui.components.StatusSelector
 import com.mcosta.mybooks.ui.ebooks.EbookCard
 import com.mcosta.mybooks.ui.ebooks.ReadButton
+import com.mcosta.mybooks.ui.social.toSuggestedBook
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,7 +110,10 @@ fun BookDetailScreen(
     onAddEbookFile: (() -> Unit)? = null,
     /** The library syncs: an ebook whose file isn't here shows as "Ebook on another device". */
     ebookElsewhere: Boolean = false,
+    /** Where "Suggest to a friend" sends from; null hides it (it also needs a community profile). */
+    suggestServices: com.mcosta.mybooks.social.SocialServices? = null,
 ) {
+    var suggesting by remember { mutableStateOf(false) }
     val community by (extras?.community ?: remember { MutableStateFlow<CommunityState>(CommunityState.Hidden) }).collectAsStateWithLifecycle()
     val moreBy by (extras?.moreBy ?: remember { MutableStateFlow<MoreByState?>(null) }).collectAsStateWithLifecycle()
     val friends by (extras?.friends ?: remember { MutableStateFlow(emptyList<com.mcosta.mybooks.social.model.FriendWithBook>()) })
@@ -173,6 +178,9 @@ fun BookDetailScreen(
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatusSelector(b.status, viewModel::setStatus, Modifier.fillMaxWidth())
                 if (ebook?.fileOnPhone == true && onRead != null) ReadButton(onRead)
+                if (suggestServices != null && sharing.hasProfile) {
+                    OutlinedButton(onClick = { suggesting = true }, modifier = Modifier.fillMaxWidth()) { Text("Suggest to a friend") }
+                }
                 SectionCard("Your score") { RatingStars(b.rating, onRate = viewModel::rate, size = 32.dp) }
                 if (b.status == ReadingStatus.READ) SectionCard("Reading dates") {
                     val read = b.dateRead
@@ -268,6 +276,15 @@ fun BookDetailScreen(
         }
     }
 
+    val suggestedBook = book
+    if (suggesting && suggestServices != null && suggestedBook != null) {
+        com.mcosta.mybooks.ui.social.SuggestBookSheet(
+            suggestedBook.toSuggestedBook(),
+            suggestServices,
+            onDone = { message -> suggesting = false; scope.launch { snackbar.showSnackbar(message) } },
+            onDismiss = { suggesting = false },
+        )
+    }
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },

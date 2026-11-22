@@ -35,7 +35,7 @@ class RoundFourAndroidTest {
 
     @Test
     fun onlyTheNotificationsAndWidgetsScreensCanBeOpenedFromOutside() {
-        for (route in listOf(Routes.RELEASES, Routes.READING_ACTIVITY, Routes.book(42), Routes.shelf(ReadingStatus.TO_READ))) {
+        for (route in listOf(Routes.RELEASES, Routes.ACTIVITY, Routes.READING_ACTIVITY, Routes.book(42), Routes.shelf(ReadingStatus.TO_READ))) {
             assertTrue(route, MainActivity.OPENABLE.matches(route))
         }
         for (route in listOf("edit/42", Routes.SETTINGS, "book/42/x", "book/", Routes.shelf(ReadingStatus.TO_READ, search = true), "account")) {
@@ -89,6 +89,23 @@ class RoundFourAndroidTest {
         assertEquals("1 by Ursula K. Le Guin", shadowOf(posted).contentText.toString())
         val opens = shadowOf(posted.contentIntent).savedIntent
         assertEquals(Routes.RELEASES, opens.getStringExtra(MainActivity.OPEN_ROUTE))
+    }
+
+    @Test
+    fun theNotificationKeepsItsRouteWhenTheWidgetUpdates() {
+        shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        ReleaseAlertWorker.notify(context, alert)
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val tap = shadowOf(manager).allNotifications.single().contentIntent
+        // Another link on the same request code would replace its route (the widget uses 0 to 2).
+        android.app.PendingIntent.getActivity(
+            context, 0,
+            android.content.Intent(context, MainActivity::class.java)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                .putExtra(MainActivity.OPEN_ROUTE, Routes.READING_ACTIVITY),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        assertEquals(Routes.RELEASES, shadowOf(tap).savedIntent.getStringExtra(MainActivity.OPEN_ROUTE))
     }
 
     @Test

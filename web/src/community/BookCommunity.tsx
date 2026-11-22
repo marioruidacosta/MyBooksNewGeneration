@@ -1,8 +1,10 @@
-import { useContext, useState, useSyncExternalStore } from 'react'
+import { Fragment, useContext, useState, useSyncExternalStore } from 'react'
 import { SharingContext } from '../share/SharingContext'
 import type { Book } from '../sync/model'
 import { useOptionalCommunity, type Community } from './useCommunity'
 import { BOOK_REVIEWS_PAGE, NO_SCORE, type BookReview, type BookScore } from './model'
+import { suggestedBook } from './suggestedBook'
+import { SuggestDialog } from './SuggestDialog'
 import { friendWithBookText, relativeTime, starsLabel, starsText } from './text'
 import { Avatar, PersonLink, PersonRow } from './ui'
 import { useLoaded } from './useLoaded'
@@ -118,14 +120,29 @@ function Reviews({ community, isbn }: { community: Community; isbn: string }) {
   )
 }
 
+function SuggestToFriend({ book }: { book: Book }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="book-community__suggest">
+      <button type="button" onClick={() => setOpen(true)}>Suggest to a friend</button>
+      {open && <SuggestDialog book={suggestedBook(book)} onClose={() => setOpen(false)} />}
+    </div>
+  )
+}
+
 /** What the community says about a book. Quiet by design: nothing shows when there's nothing, or it can't be loaded. */
 export function BookCommunity({ book }: { book: Book }) {
   const community = useOptionalCommunity()
-  if (!community?.profile || !book.isbn) return null
+  if (!community?.profile) return null
   return (
-    <div className="book-community" key={book.isbn}>
-      <FriendsWithBook community={community} isbn={book.isbn} />
-      <Reviews community={community} isbn={book.isbn} />
+    <div className="book-community">
+      <SuggestToFriend key={book.id} book={book} />
+      {book.isbn && (
+        <Fragment key={book.isbn}>
+          <FriendsWithBook community={community} isbn={book.isbn} />
+          <Reviews community={community} isbn={book.isbn} />
+        </Fragment>
+      )}
     </div>
   )
 }

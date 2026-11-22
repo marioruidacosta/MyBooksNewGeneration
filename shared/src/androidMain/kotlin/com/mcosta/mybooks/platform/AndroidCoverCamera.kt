@@ -130,6 +130,7 @@ class AndroidDocumentPicker(private val activity: ComponentActivity, private val
 fun androidPlatformServices(
     activity: ComponentActivity,
     monthlyAlerts: MonthlyAlerts? = null,
+    suggestionAlerts: MonthlyAlerts? = null,
     /** The ebook reader, made with the same [ActivityResults] as the other pickers. */
     ebooks: ((ActivityResults) -> EbookPlatform)? = null,
 ): PlatformServices {
@@ -146,6 +147,7 @@ fun androidPlatformServices(
             activity.startActivity(android.content.Intent.createChooser(send, null))
         },
         monthlyAlerts = monthlyAlerts,
+        suggestionAlerts = suggestionAlerts,
         ebooks = ebooks?.invoke(results),
         photoPicker = AndroidCoverPhotoPicker(activity, results),
     )

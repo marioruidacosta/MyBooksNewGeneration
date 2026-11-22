@@ -76,17 +76,19 @@ fun FeedEntryCard(
     onWantToRead: (() -> Unit)? = null,
     onWantToBuy: (() -> Unit)? = null,
     onOpenMine: () -> Unit = {},
+    onSuggest: (() -> Unit)? = null,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var reviewExpanded by rememberSaveable(entry.id) { mutableStateOf(false) }
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             PersonLine(entry.actor, actionText(entry), relativeTime(entry.createdAt), onPerson, Modifier.weight(1f))
-            if (onReport != null) {
+            if (onReport != null || onSuggest != null) {
                 Box {
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "More") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(text = { Text("Report") }, onClick = { menuOpen = false; onReport() })
+                        if (onSuggest != null) DropdownMenuItem(text = { Text("Suggest to a friend") }, onClick = { menuOpen = false; onSuggest() })
+                        if (onReport != null) DropdownMenuItem(text = { Text("Report") }, onClick = { menuOpen = false; onReport() })
                     }
                 }
             }

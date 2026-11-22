@@ -17,6 +17,7 @@ import kotlinx.serialization.json.put
 import kotlin.time.Instant
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
+import com.mcosta.mybooks.social.model.BookSuggestion
 import com.mcosta.mybooks.social.model.CommunitySuggestion
 import com.mcosta.mybooks.social.model.FriendReading
 import com.mcosta.mybooks.social.model.FriendWithBook
@@ -255,4 +256,32 @@ internal fun SuggestedReaderRow.toReader(avatarUrl: (String?) -> String?) = com.
     mutualFriends = mutualFriends,
     mutualNames = mutualNames,
     topTitle = topTitle,
+)
+
+/** A row of my_book_suggestions. */
+@Serializable
+internal data class BookSuggestionRow(
+    val id: Long,
+    @SerialName("sender_id") val senderId: String,
+    val username: String,
+    @SerialName("display_name") val displayName: String,
+    @SerialName("avatar_path") val avatarPath: String? = null,
+    val isbn: String? = null,
+    val title: String,
+    val authors: String = "",
+    @SerialName("cover_url") val coverUrl: String? = null,
+    val pages: Int? = null,
+    val blurb: String? = null,
+    val note: String = "",
+    @SerialName("created_at") val createdAt: String,
+    val seen: Boolean = false,
+)
+
+internal fun BookSuggestionRow.toSuggestion(avatarUrl: (String?) -> String?) = BookSuggestion(
+    id = id,
+    sender = Person(senderId, username, displayName, avatarUrl(avatarPath)),
+    book = FeedBook("suggestion:$id", isbn, title, authors, coverUrl, blurb, pages),
+    note = note,
+    createdAt = Instant.parse(createdAt),
+    seen = seen,
 )

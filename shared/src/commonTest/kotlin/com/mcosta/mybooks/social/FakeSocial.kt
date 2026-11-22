@@ -69,6 +69,18 @@ class FakeSocial {
     var suggestedCalls = 0
     /** When set, suggestedReaders() waits for it before answering. */
     var suggestedGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    /** Book suggestions waiting for each person; [failSuggestions] makes the calls fail. */
+    val suggestionsFor = mutableMapOf<String, MutableList<com.mcosta.mybooks.social.model.BookSuggestion>>()
+    var failSuggestions = false
+    /** When set, bookSuggestions() reads the list, then waits for it before answering. */
+    var suggestionsGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    /** When set, closeSuggestion() waits for it before doing anything. */
+    var closeGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+    var suggestionsSeenCalls = 0
+    val closedSuggestions = mutableListOf<Long>()
+    val sentSuggestions = mutableListOf<Triple<FeedBook, List<String>, String>>()
+    /** How many suggestBook() says it made; all of them when null. */
+    var suggestionsMade: Int? = null
     /** Runs inside publish, before it succeeds (e.g. to change the book mid-upload). */
     var onPublish: suspend () -> Unit = {}
     /** Runs inside like and unlike before they take effect (e.g. to hold the call in flight). */
@@ -286,6 +298,34 @@ class FakeSocial {
     }
 
     val activityService = object : ActivityService {
+        private fun checkSuggestions() {
+            check()
+            if (failSuggestions) throw SocialException(SocialException.Kind.OFFLINE, "offline")
+        }
+        override suspend fun suggestBook(book: FeedBook, recipients: List<String>, note: String): Int {
+            checkSuggestions()
+            sentSuggestions += Triple(book, recipients, note)
+            return suggestionsMade ?: recipients.size
+        }
+        override suspend fun bookSuggestions(): List<com.mcosta.mybooks.social.model.BookSuggestion> {
+            checkSuggestions()
+            val found = suggestionsFor[me()].orEmpty().toList()
+            suggestionsGate?.await()
+            return found
+        }
+        override suspend fun markSuggestionsSeen(ids: List<Long>) {
+            checkSuggestions()
+            suggestionsSeenCalls++
+            suggestionsFor[me()]?.let { list ->
+                for (i in list.indices) if (list[i].id in ids) list[i] = list[i].copy(seen = true)
+            }
+        }
+        override suspend fun closeSuggestion(id: Long) {
+            closeGate?.await()
+            checkSuggestions()
+            closedSuggestions += id
+            suggestionsFor[me()]?.removeAll { it.id == id }
+        }
         override suspend fun bookScore(isbn: String): BookScore {
             check()
             val all = bookReviewsByIsbn[isbn].orEmpty()

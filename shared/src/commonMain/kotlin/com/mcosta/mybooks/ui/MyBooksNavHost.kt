@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -16,7 +17,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -36,8 +36,8 @@ import com.mcosta.mybooks.data.releases.NOT_STATED
 import com.mcosta.mybooks.data.releases.ReleaseFilter
 import com.mcosta.mybooks.data.releases.ReleaseGenre
 import com.mcosta.mybooks.ui.news.NewsScreen
+import com.mcosta.mybooks.ui.settings.MoreScreen
 import com.mcosta.mybooks.ui.news.NewsViewModel
-import com.mcosta.mybooks.ui.news.rememberLinkOpener
 import com.mcosta.mybooks.ui.releases.ReleaseBookScreen
 import com.mcosta.mybooks.ui.releases.ReleaseBookViewModel
 import com.mcosta.mybooks.ui.releases.ReleaseGenreScreen
@@ -101,6 +101,14 @@ import com.mcosta.mybooks.ui.components.LocalReduceMotion
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.mcosta.mybooks.social.SuggestionInbox
+import kotlinx.coroutines.flow.MutableStateFlow
 
 object Routes {
     /** The home screen: Reading, your reading activity and the shelves. */
@@ -131,6 +139,7 @@ object Routes {
     const val ADD = "add?isbn={isbn}"
     const val EDIT = "edit/{id}"
     const val BOOK = "book/{id}"
+    const val MORE = "more"
     const val SETTINGS = "settings"
     const val FRIENDS = "friends?tab={tab}"
     const val ACTIVITY = "activity"
@@ -185,7 +194,7 @@ fun MyBooksNavHost(
     LaunchedEffect(openRoute) {
         if (openRoute != null) {
             nav.currentBackStackEntryFlow.first()
-            nav.navigate(openRoute) { launchSingleTop = true }
+            if (canOpenRoute(openRoute, community = social != null)) nav.navigate(openRoute) { launchSingleTop = true }
             onOpened()
         }
     }
@@ -225,6 +234,23 @@ fun MyBooksNavHost(
         if (release != null) nav.navigate(Routes.releaseBook(release.month, release.id))
         else if (catalog != null) nav.navigate("catalog/${container.catalogBooks.put(catalog)}")
     }
+    // Books friends suggested: the badge on Community, and the list inside it.
+    val suggestionInbox = remember(social) { social?.let { SuggestionInbox(it, scope) } }
+    val noUnseen = remember { MutableStateFlow(0) }
+    val unseenSuggestions by (suggestionInbox?.unseen ?: noUnseen).collectAsStateWithLifecycle()
+    LifecycleResumeEffect(suggestionInbox) {
+        val refreshing = scope.launch { suggestionInbox?.refresh() }
+        onPauseOrDispose { refreshing.cancel() }
+    }
+    // The first suggestion to arrive is when asking to notify makes sense.
+    LaunchedEffect(unseenSuggestions > 0) {
+        val alerts = container.suggestionAlerts
+        val platform = services.suggestionAlerts
+        if (unseenSuggestions > 0 && alerts != null && platform != null && alerts.enabled && !alerts.askedToNotify) {
+            alerts.markAskedToNotify()
+            platform.enable()
+        }
+    }
     val current by nav.currentBackStackEntryAsState()
     val route = current?.destination?.route
     LaunchedEffect(route) { onRouteShown(route) }
@@ -243,7 +269,15 @@ fun MyBooksNavHost(
                                     restoreState = true
                                 }
                             },
-                            icon = { Icon(tab.icon, null) },
+                            icon = {
+                                val badge = unseenSuggestions.takeIf { tab.route == Routes.ACTIVITY && it > 0 }
+                                BadgedBox(badge = {
+                                    if (badge != null) {
+                                        val described = if (badge == 1) "1 new book suggestion" else "$badge new book suggestions"
+                                        Badge(Modifier.semantics { contentDescription = described }) { Text(if (badge > 9) "9+" else "$badge") }
+                                    }
+                                }) { Icon(tab.icon, null) }
+                            },
                             label = { Text(tab.label) },
                         )
                     }
@@ -271,14 +305,8 @@ fun MyBooksNavHost(
                 val suggestions by suggestionsVm.state.collectAsStateWithLifecycle()
                 // The account's library couldn't be opened: the phone's is shown, and Home says so (as Account does).
                 val openFailed by container.libraries.openFailed.collectAsStateWithLifecycle()
-                val newsVm = viewModel { NewsViewModel(container.news, container.preferences) }
-                val news by newsVm.state.collectAsStateWithLifecycle()
-                val openLink = rememberLinkOpener(snackbar)
                 HomeScreen(
                     viewModel = viewModel { HomeViewModel(container.repository, container.challenges, pinnedTags = container.pinnedTags) },
-                    news = news,
-                    onOpenNews = openLink,
-                    onSeeAllNews = { nav.navigate(Routes.NEWS) },
                     snackbarHostState = snackbar,
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                     onOpenShelf = { nav.navigate(Routes.shelf(it)) },
@@ -481,6 +509,7 @@ fun MyBooksNavHost(
                     onOpenTag = { nav.navigate(Routes.tag(it)) },
                     onOpenSeries = { nav.navigate(Routes.series(it)) },
                     onOpenCatalogBook = { nav.navigate("catalog/${container.catalogBooks.put(it)}") },
+                    suggestServices = social,
                 )
             }
             screen(Routes.CATALOG_BOOK, arguments = listOf(navArgument("key") { type = NavType.StringType })) { entry ->
@@ -565,11 +594,17 @@ fun MyBooksNavHost(
                     onOpenBook = { nav.navigate(Routes.book(it)) },
                 )
             }
+            screen(Routes.MORE) {
+                MoreScreen(
+                    onOpenNews = { nav.navigate(Routes.NEWS) },
+                    onOpenSettings = { nav.navigate(Routes.SETTINGS) },
+                )
+            }
             screen(Routes.SETTINGS) {
                 val session = social?.auth?.session?.collectAsStateWithLifecycle()?.value
                 SettingsScreen(
-                    viewModel = viewModel { SettingsViewModel(container.repository, services.documents, covers = container.coverFinder, appearance = container.appearance, releaseAlerts = container.releaseAlerts, monthlyAlerts = services.monthlyAlerts) },
-                    onBack = null,
+                    viewModel = viewModel { SettingsViewModel(container.repository, services.documents, covers = container.coverFinder, appearance = container.appearance, releaseAlerts = container.releaseAlerts, monthlyAlerts = services.monthlyAlerts, suggestionAlerts = container.suggestionAlerts, suggestionPlatform = services.suggestionAlerts) },
+                    onBack = { nav.popBackStack() },
                     accountLabel = social?.let {
                         if (session is SessionState.SignedIn) "Your community account" else "Join the MyBooks community"
                     },
@@ -588,7 +623,9 @@ fun MyBooksNavHost(
                 }
                 screen(Routes.ACTIVITY) {
                     ActivityScreen(
-                        viewModel = viewModel { ActivityViewModel(social, container.repository) },
+                        viewModel = viewModel { ActivityViewModel(social, container.repository, inbox = suggestionInbox) },
+                        inbox = suggestionInbox,
+                        suggestServices = social,
                         onBack = null,
                         onOpenFriends = { nav.navigate(Routes.friends()) },
                         onJoin = { nav.navigate(Routes.ACCOUNT) },
@@ -635,13 +672,16 @@ fun MyBooksNavHost(
 }
 
 /** A main screen in the bottom bar. */
-private data class BottomTab(val route: String, val label: String, val icon: ImageVector)
+internal data class BottomTab(val route: String, val label: String, val icon: ImageVector)
 
-/** Home, Search, New in Portugal, Community (when the community is set up) and Settings. */
-private fun bottomTabs(community: Boolean) = listOfNotNull(
+/** Home, Search, New in Portugal, Community (when the community is set up) and More (Book news, Settings). */
+internal fun bottomTabs(community: Boolean) = listOfNotNull(
     BottomTab(Routes.LIBRARY, "Home", Icons.Filled.Home),
     BottomTab(Routes.SEARCH, "Search", Icons.Filled.Search),
     BottomTab(Routes.RELEASES, "New books", Icons.Filled.NewReleases),
     BottomTab(Routes.ACTIVITY, "Community", Icons.Filled.Groups).takeIf { community },
-    BottomTab(Routes.SETTINGS, "Settings", Icons.Filled.Settings),
+    BottomTab(Routes.MORE, "More", Icons.Filled.MoreHoriz),
 )
+
+/** The community's screens exist only where it's configured; an intent for one must not crash the others. */
+internal fun canOpenRoute(route: String, community: Boolean): Boolean = community || route != Routes.ACTIVITY

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect } from 'react'
 import type { CommunityApi } from './api'
+import type { SuggestionInbox } from './inbox'
 import type { Profile } from './model'
 
 /** Where the community pages go; the app's router in real life. */
@@ -15,6 +16,8 @@ export type CommunityNav = {
 export type Community = {
   api: CommunityApi
   nav: CommunityNav
+  /** Books friends suggested, shared by the badge and the Community page. */
+  inbox: SuggestionInbox
   status: 'loading' | 'ready' | 'error'
   /** Null until the person chooses a username. */
   profile: Profile | null

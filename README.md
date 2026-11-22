@@ -30,6 +30,9 @@ All data stays on the phone; you can export/import it as a .zip backup from Sett
   automatically (switch off in Account, or per book with *Don't share this book*). The Activity
   screen shows your friends' and public readers' entries; like them, see who liked, report, or add
   the book to your own library. Reviews are a separate field from your private notes.
+- **Book suggestions** (community): suggest a book to friends, with an optional note, from its page or
+  the feed. It arrives under *Suggested to you* in Community, with a badge; add it to To read or To buy,
+  or dismiss it. On Android a background check notifies you about once an hour (can be turned off in Settings).
 - **New in Portugal**: each month's new books published in Portugal (from the National Library's legal
   deposit records), by genre, for the current month and the six before it. Add a book to your library, or
   open it at Bertrand, Almedina, Wook or Fnac. Built nightly by a GitHub Actions job; see

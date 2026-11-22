@@ -3,7 +3,6 @@ package com.mcosta.mybooks
 import android.content.Context
 import android.os.Looper
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
@@ -20,9 +19,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import com.mcosta.mybooks.data.news.NewsClient
 import com.mcosta.mybooks.data.news.NewsRepository
-import com.mcosta.mybooks.ui.news.HomeNewsCard
 import com.mcosta.mybooks.ui.news.NewsScreen
-import com.mcosta.mybooks.ui.news.NewsState
 import com.mcosta.mybooks.ui.news.NewsViewModel
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
 import io.ktor.client.HttpClient
@@ -203,31 +200,5 @@ class NewsUiTest {
         compose.onNodeWithText("Book calendar").performClick()
         compose.onNodeWithText("Booker Prize").assertIsDisplayed()
         compose.onNodeWithText("Usually in November, London").assertIsDisplayed()
-    }
-
-    @Test
-    fun theHomeCardIsHiddenWhenThereAreNoStories() {
-        show { HomeNewsCard(NewsState(), onOpenStory = {}, onSeeAll = {}) }
-        compose.onAllNodesWithText("Book news").assertCountEquals(0)
-    }
-
-    @Test
-    fun theHomeCardShowsThreeRowsAndSeeAll() {
-        val harness = NewsHarness(context)
-        val vm = harness.viewModel()
-        val shown = mutableStateOf(NewsState())
-        val opened = mutableListOf<String>()
-        var seeAll = 0
-        show { HomeNewsCard(shown.value, onOpenStory = { opened += it }, onSeeAll = { seeAll++ }) }
-        waitFor { vm.state.value.items.isNotEmpty() }
-        val state = vm.state.value
-        compose.runOnIdle { shown.value = state }
-        compose.onNodeWithText("Book news").assertIsDisplayed()
-        state.latest.forEach { compose.onNodeWithText(it.title).assertIsDisplayed() }
-        compose.onAllNodesWithText(state.items[3].title).assertCountEquals(0)
-        compose.onNodeWithText(state.latest[1].title).performClick()
-        assertEquals(listOf(state.latest[1].url), opened)
-        compose.onNodeWithText("See all").performClick()
-        assertEquals(1, seeAll)
     }
 }

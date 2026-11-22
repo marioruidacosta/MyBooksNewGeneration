@@ -1,12 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Status } from '../sync/model'
 import {
-  FEED_PAGE_SIZE, NO_SCORE, type ActivityKind, type BookReview, type BookScore, type FeedBook, type FeedCursor,
+  FEED_PAGE_SIZE, NO_SCORE, type ActivityKind, type BookReview, type BookScore, type BookSuggestion, type FeedBook, type FeedCursor,
   type FeedEntry, type FeedPage, type FeedScope, type FriendReading, type FriendWithBook, type Person, type Profile,
   type Relationship, type ReportReason, type SearchResult, type SuggestedReader, type Visibility,
 } from './model'
 
-export type CommunityErrorKind = 'offline' | 'username_taken' | 'not_available' | 'rejected' | 'other'
+export type CommunityErrorKind = 'offline' | 'username_taken' | 'not_available' | 'rejected' | 'too_many' | 'other'
 
 /** A failure the community pages can explain. Every call of [CommunityApi] throws only this. */
 export class CommunityError extends Error {
@@ -25,6 +25,8 @@ export function communityMessage(e: unknown): string {
       return 'That username is taken.'
     case 'not_available':
       return "This profile isn't available."
+    case 'too_many':
+      return "You've suggested a lot of books today. Try again tomorrow."
     default:
       return 'Something went wrong. Please try again.'
   }
@@ -39,12 +41,18 @@ function toError(e: unknown): CommunityError {
   if (code === '23505') return new CommunityError('username_taken', 'username taken')
   if (code === 'P0002') return new CommunityError('not_available', 'not available')
   if (code === '22023') return new CommunityError('rejected', 'rejected')
+  if (code === 'P0429') return new CommunityError('too_many', 'too many')
   const message = error?.message ?? ''
   // How fetch fails with no connection (Chrome, Safari, Firefox), directly or as supabase-js passes it on.
   if (e instanceof TypeError || /failed to fetch|load failed|networkerror/i.test(message)) {
     return new CommunityError('offline', 'offline')
   }
   return new CommunityError('other', message || 'error')
+}
+
+/** [text] without half an emoji (from a cut at a length limit), which the server would refuse. */
+function wellFormed(text: string): string {
+  return text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g, (m) => (m.length === 2 ? m : ''))
 }
 
 async function run<T>(call: () => PromiseLike<{ data: T; error: DbError | null }>): Promise<T> {
@@ -338,7 +346,7 @@ export function createCommunityApi(client: SupabaseClient, me: string) {
     /** [activity]: the feed entry being reported, if any. */
     async report(id: string, reason: ReportReason, details: string | null, activity: number | null = null): Promise<void> {
       await run(() =>
-        client.from('reports').insert({ reporter: me, reported: id, reason, details: details?.trim() || null, activity }),
+        client.from('reports').insert({ reporter: me, reported: id, reason, details: wellFormed(details?.trim() ?? '') || null, activity }),
       )
     },
 
@@ -443,6 +451,55 @@ export function createCommunityApi(client: SupabaseClient, me: string) {
         review: r.review ?? '',
         updatedAt: Date.parse(r.updated_at),
       }))
+    },
+
+    // ---- suggesting books to friends ----
+
+    /** How many of [recipients] got it: those who already had this book from you don't. */
+    async suggestBook(book: FeedBook, recipients: string[], note: string): Promise<number> {
+      const p_book = {
+        isbn: book.isbn, title: wellFormed(book.title), authors: wellFormed(book.authors), cover_url: book.coverUrl,
+        pages: book.pages, blurb: book.blurb === null ? null : wellFormed(book.blurb),
+      }
+      return (await run(() => client.rpc('suggest_book', { p_book, p_recipients: recipients, p_note: wellFormed(note).trim() }))) as number
+    },
+
+    /** What friends suggested to the signed-in person and is still open, newest first. */
+    async bookSuggestions(): Promise<BookSuggestion[]> {
+      const rows = ((await run(() => client.rpc('my_book_suggestions'))) ?? []) as (PersonFields & {
+        id: number
+        sender_id: string
+        isbn: string | null
+        title: string
+        authors: string
+        cover_url: string | null
+        pages: number | null
+        blurb: string | null
+        note: string | null
+        created_at: string
+        seen: boolean
+      })[]
+      return rows.map((r) => ({
+        id: r.id,
+        sender: person(r.sender_id, r),
+        book: {
+          shareId: `suggestion:${r.id}`, isbn: r.isbn ?? null, title: r.title, authors: r.authors, coverUrl: r.cover_url ?? null,
+          blurb: r.blurb ?? null, pages: r.pages ?? null, currentPage: null,
+        },
+        note: r.note ?? '',
+        createdAt: Date.parse(r.created_at),
+        seen: r.seen,
+      }))
+    },
+
+    /** The person has looked at these: only the ones on their screen. */
+    async markSuggestionsSeen(ids: number[]): Promise<void> {
+      await run(() => client.rpc('mark_book_suggestions_seen', { ids }))
+    },
+
+    /** The book was added or dismissed. */
+    async closeSuggestion(id: number): Promise<void> {
+      await run(() => client.rpc('close_book_suggestion', { suggestion: id }))
     },
   }
 }

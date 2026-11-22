@@ -11,7 +11,9 @@ import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.social.model.FEED_PAGE_SIZE
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
+import com.mcosta.mybooks.social.model.BookSuggestion
 import com.mcosta.mybooks.social.model.CommunitySuggestion
+import com.mcosta.mybooks.social.model.FeedBook
 import com.mcosta.mybooks.social.model.FriendReading
 import com.mcosta.mybooks.social.model.SuggestedReader
 import com.mcosta.mybooks.social.model.FriendWithBook
@@ -147,6 +149,7 @@ internal fun mapSocialError(e: Throwable): SocialException = when {
         SocialException(SocialException.Kind.INVALID_CODE, "invalid code", e)
     e is PostgrestRestException && e.code == "23505" -> SocialException(SocialException.Kind.USERNAME_TAKEN, "username taken", e)
     e is PostgrestRestException && e.code == "P0002" -> SocialException(SocialException.Kind.NOT_AVAILABLE, "not available", e)
+    e is PostgrestRestException && e.code == "P0429" -> SocialException(SocialException.Kind.TOO_MANY, "too many", e)
     e is PostgrestRestException && e.code == "22023" -> SocialException(SocialException.Kind.REJECTED, "rejected", e)
     else -> SocialException(SocialException.Kind.OTHER, e.message ?: "error", e)
 }
@@ -471,6 +474,35 @@ internal class SupabaseSocial(
         override suspend fun friendsWithBook(isbn: String): List<FriendWithBook> = call {
             client.postgrest.rpc("friends_with_book", buildJsonObject { put("p_isbn", isbn) })
                 .decodeList<FriendWithBookRow>().map { it.toFriend(::avatarUrl) }
+        }
+
+        override suspend fun suggestBook(book: FeedBook, recipients: List<String>, note: String): Int = call {
+            client.postgrest.rpc("suggest_book", buildJsonObject {
+                put("p_book", buildJsonObject {
+                    put("isbn", book.isbn)
+                    put("title", book.title)
+                    put("authors", book.authors)
+                    put("cover_url", book.coverUrl)
+                    put("pages", book.pages)
+                    put("blurb", book.blurb)
+                })
+                put("p_recipients", JsonArray(recipients.map { JsonPrimitive(it) }))
+                put("p_note", note.trim())
+            }).decodeAs<Int>()
+        }
+
+        override suspend fun bookSuggestions(): List<BookSuggestion> = call {
+            client.postgrest.rpc("my_book_suggestions").decodeList<BookSuggestionRow>().map { it.toSuggestion(::avatarUrl) }
+        }
+
+        override suspend fun markSuggestionsSeen(ids: List<Long>) = call {
+            client.postgrest.rpc("mark_book_suggestions_seen", buildJsonObject { put("ids", JsonArray(ids.map { JsonPrimitive(it) })) })
+            Unit
+        }
+
+        override suspend fun closeSuggestion(id: Long) = call {
+            client.postgrest.rpc("close_book_suggestion", buildJsonObject { put("suggestion", id) })
+            Unit
         }
     }
 

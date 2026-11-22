@@ -3,12 +3,7 @@ package com.mcosta.mybooks
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Looper
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.test.captureToImage
@@ -17,7 +12,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
-import com.mcosta.mybooks.ui.news.HomeNewsCard
 import com.mcosta.mybooks.ui.news.NewsScreen
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
 import org.junit.Rule
@@ -65,17 +59,8 @@ class NewsScreenshotTest {
         }
     }
 
-    private fun homeCard(dark: Boolean) {
-        val vm = NewsHarness(context).viewModel()
-        shoot("news-home-card", dark, ready = { vm.state.value.items.isNotEmpty() }) {
-            Surface(Modifier.fillMaxSize()) { Column { HomeNewsCard(vm.state.collectAsState().value, onOpenStory = {}, onSeeAll = {}) } }
-        }
-    }
-
     @Test fun storiesLight() = stories(dark = false)
     @Test fun storiesDark() = stories(dark = true)
     @Test fun calendarLight() = calendar(dark = false)
     @Test fun calendarDark() = calendar(dark = true)
-    @Test fun homeCardLight() = homeCard(dark = false)
-    @Test fun homeCardDark() = homeCard(dark = true)
 }

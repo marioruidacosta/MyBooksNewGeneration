@@ -17,7 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -25,7 +24,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -204,35 +202,6 @@ private fun CalendarList(events: List<BookEvent>, loading: Boolean, open: (Strin
                 Text(event.usually(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-        }
-    }
-}
-
-/** Home's "Book news": the newest headlines, with See all. Nothing is shown until there are stories. */
-@Composable
-fun HomeNewsCard(state: NewsState, onOpenStory: (String) -> Unit, onSeeAll: () -> Unit) {
-    val latest = state.latest
-    if (latest.isEmpty()) return
-    Column {
-        Row(
-            Modifier.fillMaxWidth().clickable(onClick = onSeeAll).padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("Book news", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            Text("See all", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
-        }
-        OutlinedCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            latest.forEachIndexed { i, story ->
-                if (i > 0) HorizontalDivider()
-                Column(
-                    Modifier.fillMaxWidth().clickable(onClickLabel = OPEN_LABEL, role = Role.Button) { onOpenStory(story.url) }.padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    Text(state.sourceName(story.source), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(story.title, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Serif, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-            }
         }
     }
 }

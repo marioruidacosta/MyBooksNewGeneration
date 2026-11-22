@@ -15,6 +15,7 @@ import com.mcosta.mybooks.ui.Routes
 import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
+import com.mcosta.mybooks.alerts.AndroidSuggestionAlerts
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.mcosta.mybooks.ui.App
@@ -30,6 +31,7 @@ class MainActivity : ComponentActivity() {
         val services = androidPlatformServices(
             this,
             monthlyAlerts = AndroidMonthlyAlerts(this),
+            suggestionAlerts = AndroidSuggestionAlerts(this),
             ebooks = { results -> AndroidEbookPlatform(this, results, openReader = { ReaderActivity.start(this, it) }) },
         )
         if (savedInstanceState == null) openFrom(intent)
@@ -67,7 +69,7 @@ class MainActivity : ComponentActivity() {
         const val OPEN_ROUTE = "open-route"
 
         /** The routes another app's intent may open: New in Portugal, reading activity, a book, a shelf, adding an ebook. */
-        internal val OPENABLE = Regex("""releases|reading-activity|book/\d{1,18}|shelf/[A-Z_]{1,20}\?search=false|add-ebook/[a-z0-9]{1,20}""")
+        internal val OPENABLE = Regex("""releases|reading-activity|activity|book/\d{1,18}|shelf/[A-Z_]{1,20}\?search=false|add-ebook/[a-z0-9]{1,20}""")
 
         private val BOOK_TYPES = setOf("application/epub+zip", "application/pdf", "application/vnd.adobe.adept+xml")
 

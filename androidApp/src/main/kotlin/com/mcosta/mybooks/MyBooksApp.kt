@@ -1,9 +1,13 @@
 package com.mcosta.mybooks
 
 import android.app.Application
+import com.mcosta.mybooks.alerts.BookSuggestionWorker
 import com.mcosta.mybooks.alerts.ReleaseAlertWorker
 import com.mcosta.mybooks.social.SocialConfig
 import com.mcosta.mybooks.widget.ReadingWidget
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
 
 class MyBooksApp : Application(), ContainerOwner {
     override lateinit var container: AppContainer
@@ -19,6 +23,12 @@ class MyBooksApp : Application(), ContainerOwner {
         )
         // Kept scheduled while turned on (e.g. after a backup is restored on a new phone).
         if (container.releaseAlerts.enabled) ReleaseAlertWorker.schedule(this)
+        // Friends' suggestions are checked once someone is signed in. After signing out the check finds nobody and stops there.
+        container.suggestionAlerts?.let { alerts ->
+            val scope = MainScope()
+            scope.launch { alerts.shouldRun.filter { it }.collect { BookSuggestionWorker.schedule(this@MyBooksApp) } }
+            scope.launch { alerts.accountEnded.collect { BookSuggestionWorker.clearNotification(this@MyBooksApp) } }
+        }
         ReadingWidget.follow(this, container)
         // The active library's sync retries as soon as the network is back (whichever library is active then).
         if (container.social != null) followConnectivity(this) { container.sync?.connectivityRestored() }

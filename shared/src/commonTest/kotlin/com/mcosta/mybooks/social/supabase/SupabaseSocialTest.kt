@@ -387,6 +387,24 @@ class SupabaseSocialTest : MainDispatcherTest() {
     }
 
     @Test
+    fun markingSuggestionsSeenSendsTheIdsShown() = runTest {
+        val social = social(mapOf("/rest/v1/rpc/mark_book_suggestions_seen" to listOf(200 to "null")))
+        social.services.activity.markSuggestionsSeen(listOf(2L, 1L))
+        assertTrue(bodyOf("/rest/v1/rpc/mark_book_suggestions_seen").replace(" ", "").contains("\"ids\":[2,1]"))
+    }
+
+    @Test
+    fun theSuggestionLimitMapsToTooMany() = runTest {
+        val social = social(
+            mapOf("/rest/v1/rpc/suggest_book" to listOf(400 to """{"code":"P0429","message":"too many","details":null,"hint":null}""")),
+        )
+        val e = assertFailsWith<SocialException> {
+            social.services.activity.suggestBook(com.mcosta.mybooks.social.model.FeedBook("s", null, "T", "A", null), listOf("id-bruno"), "")
+        }
+        assertEquals(SocialException.Kind.TOO_MANY, e.kind)
+    }
+
+    @Test
     fun invalidDataMapsToRejected() = runTest {
         val social = social(
             mapOf("/rest/v1/rpc/publish_book" to listOf(400 to """{"code":"22023","message":"invalid book","details":null,"hint":null}"""))

@@ -8,6 +8,7 @@ import com.mcosta.mybooks.data.CoverFinder
 import com.mcosta.mybooks.platform.DocumentPicker
 import com.mcosta.mybooks.platform.MonthlyAlerts
 import com.mcosta.mybooks.data.releases.ReleaseAlerts
+import com.mcosta.mybooks.social.SuggestionAlerts
 import com.mcosta.mybooks.ui.today as currentDate
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,9 @@ class SettingsViewModel(
     /** The monthly New in Portugal notification and the platform's scheduling of it; null where unavailable. */
     private val releaseAlerts: ReleaseAlerts? = null,
     private val monthlyAlerts: MonthlyAlerts? = null,
+    /** The notification when a friend suggests a book, and the platform's scheduling of it; null where unavailable. */
+    private val suggestionAlerts: SuggestionAlerts? = null,
+    private val suggestionPlatform: MonthlyAlerts? = null,
 ) : ViewModel() {
     /** Whether the phone can send the monthly notification (Android). */
     val alertsAvailable: Boolean get() = releaseAlerts != null && monthlyAlerts != null
@@ -45,6 +49,26 @@ class SettingsViewModel(
             if (!on) platform.disable()
             alerts.setEnabled(on)
             _alertsOn.value = on
+        }
+    }
+
+    val suggestionAlertsAvailable: Boolean get() = suggestionAlerts != null && suggestionPlatform != null
+
+    private val _suggestionAlertsOn = MutableStateFlow(suggestionAlerts?.enabled == true)
+    val suggestionAlertsOn: StateFlow<Boolean> = _suggestionAlertsOn.asStateFlow()
+
+    /** Turns the notification for friends' book suggestions on (asking for permission to notify) or off. */
+    fun setSuggestionAlerts(on: Boolean) {
+        val alerts = suggestionAlerts ?: return
+        val platform = suggestionPlatform ?: return
+        viewModelScope.launch {
+            if (on && !platform.enable()) {
+                _message.value = "MyBooks isn't allowed to send notifications. You can allow them in the phone's settings."
+                return@launch
+            }
+            if (!on) platform.disable()
+            alerts.setEnabled(on)
+            _suggestionAlertsOn.value = on
         }
     }
 

@@ -3,8 +3,11 @@ package com.mcosta.mybooks.ui.social
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mcosta.mybooks.data.BookRepository
+import com.mcosta.mybooks.domain.Isbn
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.social.SocialServices
+import com.mcosta.mybooks.social.SuggestionInbox
+import com.mcosta.mybooks.social.model.BookSuggestion
 import com.mcosta.mybooks.social.model.FeedBook
 import com.mcosta.mybooks.social.model.FeedCursor
 import com.mcosta.mybooks.social.model.FeedEntry
@@ -69,6 +72,8 @@ class ActivityViewModel(
     private val repository: BookRepository,
     /** Where the library is matched against the shown books (thousands of books: off the main thread). */
     private val compute: CoroutineDispatcher = Dispatchers.Default,
+    /** Books friends suggested; null where the screen doesn't show them. */
+    private val inbox: SuggestionInbox? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(ActivityState())
     val state: StateFlow<ActivityState> = _state.asStateFlow()
@@ -119,7 +124,37 @@ class ActivityViewModel(
 
     fun refresh() {
         viewModelScope.launch { load() }
+        viewModelScope.launch { inbox?.refresh() }
     }
+
+    /** "Want to read" or "To buy" on a suggestion: the book joins the library and the suggestion is done. */
+    fun acceptSuggestion(suggestion: BookSuggestion, status: ReadingStatus) {
+        viewModelScope.launch {
+            // The ISBN came from another person's device: one the library can't store mustn't block adding the book.
+            val book = suggestion.book.copy(isbn = suggestion.book.isbn?.let(Isbn::normalize))
+            val added = adding.withLock { shelf.add(book, status) }
+            if (added != LibraryShelf.Added.FAILED) inbox?.close(suggestion.id)
+            val message = if (added == LibraryShelf.Added.ALREADY_THERE) "Already in your library" else LibraryShelf.message(added, status)
+            message?.let { m -> _state.update { it.copy(message = m) } }
+        }
+    }
+
+    fun dismissSuggestion(suggestion: BookSuggestion) {
+        viewModelScope.launch {
+            if (inbox?.close(suggestion.id) == false) _state.update { it.copy(message = "Couldn't dismiss the suggestion") }
+        }
+    }
+
+    /** Reports who sent it. The note goes along, as it isn't kept with the report otherwise. */
+    fun reportSuggestion(suggestion: BookSuggestion, reason: ReportReason, details: String) = action {
+        val note = suggestion.note.trim().takeIf { it.isNotEmpty() }?.let { "Note on the suggestion: $it" }
+        val text = listOfNotNull(details.trim().ifEmpty { null }, note).joinToString("\n\n").take(1000).ifEmpty { null }
+        services.safety.report(suggestion.sender.id, reason, text)
+        _state.update { it.copy(message = "Thanks, we'll look into it") }
+    }
+
+    /** What sending a suggestion said. */
+    fun showMessage(message: String) = _state.update { it.copy(message = message) }
 
     fun selectScope(scope: FeedScope) {
         if (scope == _state.value.scope) return

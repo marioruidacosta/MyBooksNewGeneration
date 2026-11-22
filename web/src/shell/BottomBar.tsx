@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { Link, useLocation } from '@tanstack/react-router'
+import { SuggestionBadge } from '../community/SuggestionBadge'
 import { ThemeSwitch } from '../ThemeSwitch'
 
 const svg = (children: ReactNode) => (
@@ -174,6 +175,7 @@ export function BottomBar({ onSignOut }: { onSignOut: () => void }) {
         <Link to="/community">
           {icons.community}
           <span>Community</span>
+          <SuggestionBadge />
         </Link>
         <Link to="/challenges">
           {icons.challenges}

@@ -37,8 +37,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mcosta.mybooks.social.SocialServices
+import com.mcosta.mybooks.social.SuggestionInbox
+import com.mcosta.mybooks.social.model.BookSuggestion
+import com.mcosta.mybooks.social.model.FeedBook
 import com.mcosta.mybooks.social.model.FeedEntry
 import com.mcosta.mybooks.social.model.FeedScope
+import kotlinx.coroutines.flow.MutableStateFlow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,8 +58,35 @@ fun ActivityScreen(
     onOpenFriends: (() -> Unit)? = null,
     /** Opens a book of the user's library (from "✓ In your library"). */
     onOpenLibraryBook: (Long) -> Unit = {},
+    /** Books friends suggested; null shows none. */
+    inbox: SuggestionInbox? = null,
+    /** Where "Suggest to a friend" sends from; null hides it. */
+    suggestServices: SocialServices? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val noSuggestions = remember { MutableStateFlow(emptyList<BookSuggestion>()) }
+    val suggestions by (inbox?.items ?: noSuggestions).collectAsStateWithLifecycle()
+    var suggesting by remember { mutableStateOf<FeedBook?>(null) }
+    var reportingSuggestion by remember { mutableStateOf<BookSuggestion?>(null) }
+    // On both tabs: the badge leads here whichever one was last open.
+    LaunchedEffect(state.signedIn, suggestions) {
+        if (state.signedIn && suggestions.isNotEmpty()) inbox?.markSeen()
+    }
+    val suggestedHeader: (@Composable () -> Unit)? =
+        if (suggestions.isNotEmpty()) {
+            {
+                SuggestedToYou(
+                    suggestions,
+                    onPerson = onOpenPerson,
+                    onBook = viewModel::openBook,
+                    onAccept = viewModel::acceptSuggestion,
+                    onDismiss = viewModel::dismissSuggestion,
+                    onReport = { reportingSuggestion = it },
+                )
+            }
+        } else {
+            null
+        }
     val snackbar = remember { SnackbarHostState() }
     var reporting by remember { mutableStateOf<FeedEntry?>(null) }
     var seeAllReading by remember { mutableStateOf(false) }
@@ -99,10 +131,11 @@ fun ActivityScreen(
             }
             PullToRefreshBox(isRefreshing = state.loading, onRefresh = viewModel::refresh, modifier = Modifier.fillMaxSize()) {
                 when {
-                    state.error != null && state.entries.isEmpty() -> ErrorState(state.error!!, viewModel::refresh)
+                    state.error != null && state.entries.isEmpty() -> ErrorState(state.error!!, viewModel::refresh, suggestedHeader)
                     state.entries.isEmpty() && !state.loading -> EmptyFeed(
                         noFriends = state.scope == FeedScope.FRIENDS && !state.hasFriends,
                         onFindPeople = onFindPeople,
+                        header = suggestedHeader,
                     )
                     else -> CommunityFeed(
                         state,
@@ -117,7 +150,9 @@ fun ActivityScreen(
                             onReport = { reporting = it },
                             onLoadMore = viewModel::loadMore,
                             onSeeAllReading = { seeAllReading = true },
+                            onSuggest = suggestServices?.let { { book -> suggesting = book } },
                         ),
+                        header = suggestedHeader,
                     )
                 }
             }
@@ -128,10 +163,27 @@ fun ActivityScreen(
         LikersSheet(people, onPerson = { viewModel.dismissLikers(); onOpenPerson(it) }, onDismiss = viewModel::dismissLikers)
     }
     state.openBook?.let { book ->
-        FeedBookSheet(book, state.openBookInLibrary, onAdd = viewModel::addToLibrary, onDismiss = viewModel::closeBook)
+        FeedBookSheet(
+            book, state.openBookInLibrary, onAdd = viewModel::addToLibrary, onDismiss = viewModel::closeBook,
+            onSuggest = suggestServices?.let { { viewModel.closeBook(); suggesting = book } },
+        )
     }
     if (seeAllReading) {
         FriendsReadingSheet(state.reading, onBook = { seeAllReading = false; viewModel.openBook(it) }, onDismiss = { seeAllReading = false })
+    }
+    if (suggestServices != null) suggesting?.let { book ->
+        SuggestBookSheet(
+            book, suggestServices,
+            onDone = { message -> suggesting = null; viewModel.showMessage(message) },
+            onDismiss = { suggesting = null },
+        )
+    }
+    reportingSuggestion?.let { suggestion ->
+        ReportDialog(
+            suggestion.sender.displayName,
+            onSend = { reason, details -> reportingSuggestion = null; viewModel.reportSuggestion(suggestion, reason, details) },
+            onDismiss = { reportingSuggestion = null },
+        )
     }
     reporting?.let { entry ->
         ReportDialog(
@@ -143,9 +195,10 @@ fun ActivityScreen(
 }
 
 @Composable
-private fun EmptyFeed(noFriends: Boolean, onFindPeople: () -> Unit) {
+private fun EmptyFeed(noFriends: Boolean, onFindPeople: () -> Unit, header: (@Composable () -> Unit)? = null) {
     // A scrollable list so pull-to-refresh also works when there's nothing yet.
     LazyColumn(Modifier.fillMaxSize()) {
+        if (header != null) item(key = "suggestions") { header() }
         item {
             Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (noFriends) {
@@ -160,8 +213,9 @@ private fun EmptyFeed(noFriends: Boolean, onFindPeople: () -> Unit) {
 }
 
 @Composable
-private fun ErrorState(message: String, onRetry: () -> Unit) {
+private fun ErrorState(message: String, onRetry: () -> Unit, header: (@Composable () -> Unit)? = null) {
     LazyColumn(Modifier.fillMaxSize()) {
+        if (header != null) item(key = "suggestions") { header() }
         item {
             Column(Modifier.fillMaxWidth().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(message, style = MaterialTheme.typography.bodyLarge)
