@@ -296,7 +296,7 @@ class AccountViewModelTest : MainDispatcherTest() {
         assertEquals(1, check.waiting)
         assertTrue(check.unconfirmed)
         assertEquals(listOf("1 change hasn't reached your account yet. Removing now loses it."), check.warnings())
-        assertEquals("Remove anyway", check.removeLabel)
+        assertEquals("Remove anyway and sign out", check.removeLabel)
         assertEquals(
             listOf("3 changes haven't reached your account yet. Removing now loses them."),
             check.copy(waiting = 3).warnings(),
@@ -328,7 +328,7 @@ class AccountViewModelTest : MainDispatcherTest() {
         val check = vm.state.value.signOutCheck
         assertEquals(SignOutCheck(), check)
         assertTrue(check.warnings().isEmpty())
-        assertEquals("Remove", check.removeLabel)
+        assertEquals("Remove and sign out", check.removeLabel)
         assertEquals(0L, testScheduler.currentTime)
     }
 
@@ -351,7 +351,7 @@ class AccountViewModelTest : MainDispatcherTest() {
         assertTrue(library.queue.rows.value.isEmpty())
         val check = vm.state.value.signOutCheck
         assertEquals(SignOutCheck(waiting = 1), check)
-        assertEquals("Remove anyway", check.removeLabel)
+        assertEquals("Remove anyway and sign out", check.removeLabel)
     }
 
     @Test
@@ -370,7 +370,7 @@ class AccountViewModelTest : MainDispatcherTest() {
         assertEquals(SignOutCheck(ebookFiles = true), check)
         assertEquals(listOf("Ebook files are only on this phone and will be deleted."), check.warnings())
         // Nothing is waiting: an ordinary "Remove".
-        assertEquals("Remove", check.removeLabel)
+        assertEquals("Remove and sign out", check.removeLabel)
     }
 
     @Test

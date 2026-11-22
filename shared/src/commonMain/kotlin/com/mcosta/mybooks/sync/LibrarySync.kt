@@ -268,7 +268,7 @@ class LibrarySync(
     internal suspend fun belongsToAnAccount(): Boolean = db.state.anyMerged()
 
     /**
-     * Before asking "Keep a copy of your library on this device?": while a session runs, one more push and pull and
+     * Before the sign-out dialog asks whether to keep the library on this device: while a session runs, one more push and pull and
      * then the cover photo uploads, waiting [timeoutMs] at most, so that "Remove" loses as little as possible. Then
      * says what still hasn't reached the account ([SignOutCheck]).
      */
