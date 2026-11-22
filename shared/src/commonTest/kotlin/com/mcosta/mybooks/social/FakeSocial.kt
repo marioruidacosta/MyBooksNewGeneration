@@ -316,7 +316,9 @@ class FakeSocial {
         override suspend fun markSuggestionsSeen(ids: List<Long>) {
             checkSuggestions()
             suggestionsSeenCalls++
-            suggestionsFor[me()]?.replaceAll { if (it.id in ids) it.copy(seen = true) else it }
+            suggestionsFor[me()]?.let { list ->
+                for (i in list.indices) if (list[i].id in ids) list[i] = list[i].copy(seen = true)
+            }
         }
         override suspend fun closeSuggestion(id: Long) {
             closeGate?.await()
