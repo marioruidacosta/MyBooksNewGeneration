@@ -1,6 +1,7 @@
 import { BUCKET, forgetSignedUrl, photoPath, type CoverStorage } from '../covers/storage'
 import { bookToFields, rowToBook } from '../sync/codec'
 import type { Book, SyncRow } from '../sync/model'
+import { SHARE_EXCLUDED_PREFIX } from '../share/publisher'
 import type { LibraryStore } from '../sync/store'
 import { combineRows } from '../sync/twin'
 import { statusDates } from '../book/status'
@@ -129,8 +130,13 @@ export async function mergeBooks(
   }
 
   const quotes = store.quotes(drop.id)
+  // "Don't share" on either copy wins: the kept book is about to take on what the private one holds (a score, a review).
+  // Set first, so that nothing of it can be posted.
+  const keptKey = SHARE_EXCLUDED_PREFIX + keep.id
+  const inherited = store.pref(SHARE_EXCLUDED_PREFIX + drop.id) === '1' && store.pref(keptKey) !== '1'
+  if (inherited) store.setPref(keptKey, '1')
   if (Object.keys(changes).length > 0 || restamp.length > 0) {
-    store.edit('books', keep.id, changes, { restamp })
+    store.edit('books', keep.id, changes, { restamp, origin: 'bulk' })
   }
   for (const q of quotes) store.edit('quotes', q.id, { book_id: keep.id })
   store.remove('books', drop.id)
@@ -142,11 +148,13 @@ export async function mergeBooks(
       const was = bookToFields(keepBefore)
       const back: Record<string, unknown> = {}
       for (const [f, v] of Object.entries(wrote)) if (current[f] === v) back[f] = was[f]
-      if (Object.keys(back).length > 0) store.edit('books', keep.id, back)
+      if (Object.keys(back).length > 0) store.edit('books', keep.id, back, { origin: 'bulk' })
     }
     store.restoreBook(dropBefore, dropTimes)
     const onKeep = new Set(store.quotes(keep.id).map((q) => q.id))
     for (const q of quotes) if (onKeep.has(q.id)) store.edit('quotes', q.id, { book_id: dropBefore.id })
+    // Last, once the kept book no longer holds the private copy's words.
+    if (inherited) store.setPref(keptKey, null)
   }
   return { coverKept, undo }
 }

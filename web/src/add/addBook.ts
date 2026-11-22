@@ -1,5 +1,5 @@
 import { authorKey, findInLibrary } from '../text/keys'
-import type { Book } from '../sync/model'
+import type { Book, Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { BOOK_LIMITS } from '../sync/limits'
 import type { Found } from './lookup'
@@ -28,8 +28,8 @@ export function inLibrary(found: Found, books: Book[]): Book | undefined {
   return findInLibrary({ isbn: found.isbn, title: found.title, authors: authorsText(found, books) }, books)
 }
 
-/** Adds the book as To read, unless the library has it: then `added` is false and `id` is the existing book. */
-export function addBook(store: LibraryStore, found: Found, now = Date.now()): Added {
+/** Adds the book (as To read unless told otherwise), unless the library has it: then `added` is false and `id` is the existing book. */
+export function addBook(store: LibraryStore, found: Found, now = Date.now(), status: Status = 'TO_READ'): Added {
   const books = store.books()
   const existing = inLibrary(found, books)
   if (existing) return { id: existing.id, added: false }
@@ -41,7 +41,7 @@ export function addBook(store: LibraryStore, found: Found, now = Date.now()): Ad
     // A source's texts can be long; the server refuses a row with one over its limit.
     coverUrl: found.coverUrl !== null && found.coverUrl.length > BOOK_LIMITS.cover_url ? null : found.coverUrl,
     description: found.description === null ? null : found.description.slice(0, BOOK_LIMITS.description),
-    status: 'TO_READ', rating: null, notes: '', dateAdded: now, dateRead: null, dateStarted: null, currentPage: null,
+    status, rating: null, notes: '', dateAdded: now, dateRead: null, dateStarted: null, currentPage: null,
     progressPercent: null, review: '', tags: [], series: null, seriesNumber: null, lentTo: null, lentOn: null,
     deleted: false,
   })

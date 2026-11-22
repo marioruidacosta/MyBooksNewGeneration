@@ -260,8 +260,9 @@ describe('LibraryPage', () => {
 
     // The book page's rule: Reading starts now.
     expect(edit.mock.calls).toEqual([
-      ['books', 'a', { status: 'READING', date_started: NOW }],
-      ['books', 'b', { status: 'READING', date_started: NOW }],
+      // Tagged, so that a change made to many books at once doesn't flood the community with new posts.
+      ['books', 'a', { status: 'READING', date_started: NOW }, { origin: 'bulk' }],
+      ['books', 'b', { status: 'READING', date_started: NOW }, { origin: 'bulk' }],
     ])
     expect(store.book('a')?.status).toBe('READING')
     expect(store.book('b')?.status).toBe('READING')
@@ -315,8 +316,8 @@ describe('LibraryPage', () => {
     expect(store.book('c')?.tags).toEqual(['new'])
     // Bravo had it already: not touched.
     expect(edit.mock.calls).toEqual([
-      ['books', 'a', { tags: ['x', 'new'] }],
-      ['books', 'c', { tags: ['new'] }],
+      ['books', 'a', { tags: ['x', 'new'] }, { origin: 'bulk' }],
+      ['books', 'c', { tags: ['new'] }, { origin: 'bulk' }],
     ])
 
     edit.mockClear()

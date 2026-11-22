@@ -92,7 +92,7 @@ Then:
 
 `web/` is a React site that works as another synced device for the MyBooks app: sign in with the same email code and
 you see the same library, and edits on either side reach the other within seconds. It also does the add-a-book
-search, import/export and tidy-up.
+search, import/export, tidy-up, the community (feed, friends, profiles, reviews) and reading challenges.
 
 It lives at https://marioruidacosta.github.io/MyBooksNewGeneration/app/ (the pages in `docs/` stay at the site root).
 

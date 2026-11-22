@@ -26,7 +26,14 @@ class ShareTracker(
     private val lock: ShareLock = ShareLock(),
     /** A book's sync uuid, which is also its public id; null when unknown (a random id is used then). */
     private val uuidOf: suspend (Long) -> String? = { null },
+    /** "Don't share this book" as synced between devices; null where the library doesn't sync. */
+    private val exclusions: ShareExclusions? = null,
+    /** The book with this uuid on this device, if it's here yet. */
+    private val bookIdOf: suspend (String) -> Long? = { null },
 ) {
+    @kotlin.concurrent.Volatile
+    private var joiningCloud = false
+
     suspend fun changed(old: Book?, new: Book) {
         val owner = activeOwner() ?: return
         if (old != null && !publicFieldsDiffer(old, new)) return
@@ -69,6 +76,7 @@ class ShareTracker(
                 false
             }
         }
+        uuidOf(book.id)?.let { exclusions?.mark(it, excluded) }
         if (marked) onPending()
     }
 
@@ -77,10 +85,33 @@ class ShareTracker(
      * values become this book's "before" values, so the next change made here is published against them. A row still
      * waiting keeps its "before": its own change hasn't been published yet, and the pulled book already includes it.
      */
-    suspend fun syncedFromElsewhere(book: Book) = lock.mutex.withLock {
-        val row = dao.get(book.id) ?: return@withLock
-        if (row.pending || row.deleted) return@withLock
-        dao.upsert(row.withBefore(book))
+    suspend fun syncedFromElsewhere(book: Book) {
+        // Its exclusion can arrive before the book does.
+        val uuid = uuidOf(book.id)
+        val excludedElsewhere = exclusions != null && uuid?.let(exclusions::isExcluded) == true
+        val marked = lock.mutex.withLock {
+            val row = dao.get(book.id)
+            if (excludedElsewhere) {
+                if (row?.excluded == true || row?.deleted == true) return@withLock false
+                return@withLock markExcludedElsewhere(book.id, row, uuid)
+            }
+            if (row == null || row.pending || row.deleted) return@withLock false
+            dao.upsert(row.withBefore(book))
+            false
+        }
+        if (marked) onPending()
+    }
+
+    /**
+     * An exclusion made on another device. The server has taken the public copy down, unless it sits under another id
+     * than the book's uuid and it couldn't tell (a restored backup keeps its old public id): that one goes from here.
+     * True when something is waiting to be unpublished.
+     */
+    private suspend fun markExcludedElsewhere(bookId: Long, row: ShareStateEntity?, uuid: String?): Boolean {
+        val base = row ?: newRow(bookId, activeOwner() ?: "")
+        val otherId = uuid != null && base.shareId != uuid
+        dao.upsert(base.copy(excluded = true, pending = otherId))
+        return otherId
     }
 
     /**
@@ -132,7 +163,75 @@ class ShareTracker(
             dao.upsert(kept)
             retired || kept.pending
         }
+        if (dao.get(toBookId)?.excluded == true) exclusions?.mark(newId, true)
         if (marked) onPending()
+    }
+
+    /** The synced exclusions' keys and values, for [com.mcosta.mybooks.sync.LibraryPrefs]. */
+    fun exclusionKeys(): List<String> = exclusions?.keys.orEmpty()
+
+    fun exclusionValue(key: String): String? = exclusions?.value(key)
+
+    /** A value pulled from another device; [applyExclusion] then brings the share state in line, after the commit. */
+    fun storeExclusion(key: String, value: String?) {
+        exclusions?.pulled(key, value)
+    }
+
+    /** Brings this device's share state in line with the synced exclusion [key]. */
+    suspend fun applyExclusion(key: String) {
+        val synced = exclusions ?: return
+        if (!key.startsWith(SHARE_EXCLUDED_PREFIX)) return
+        val uuid = key.removePrefix(SHARE_EXCLUDED_PREFIX)
+        val bookId = bookIdOf(uuid) ?: return
+        val excluded = synced.value(key) != null
+        val marked = lock.mutex.withLock {
+            val row = dao.get(bookId)
+            when {
+                row?.deleted == true -> false
+                // Anything waiting to be posted is dropped.
+                excluded -> if (row?.excluded != true) markExcludedElsewhere(bookId, row, uuid) else false
+                row?.excluded != true -> false
+                // This phone's own choice, on a book that has just taken a cloud twin's uuid: the removal is about the
+                // twin, and moving the share state uploads this exclusion.
+                joiningCloud && row.shareId != uuid -> false
+                else -> {
+                    if (row.pending) dao.upsert(row.copy(excluded = false, pending = false)) else dao.delete(bookId)
+                    false
+                }
+            }
+        }
+        if (marked) onPending()
+    }
+
+    /**
+     * Runs a first sign-in's pull. Until it ends, a book that has just taken its cloud twin's uuid still has its share
+     * state under the old id, so a removal pulled for that uuid is about the twin, not this phone's choice.
+     */
+    suspend fun <T> whileJoiningCloud(block: suspend () -> T): T {
+        joiningCloud = true
+        try {
+            return block()
+        } finally {
+            joiningCloud = false
+        }
+    }
+
+    /**
+     * Tells the other devices this one's exclusions are all in the cloud, so the website may post books it hasn't seen
+     * shared. Called once the first sign-in has moved them to their cloud ids: queued after them, it arrives after them.
+     */
+    suspend fun vouchForExclusions() {
+        val synced = exclusions ?: return
+        if (synced.carriedOver) synced.markSynced()
+    }
+
+    /** Uploads the exclusions made before they synced; runs once per library. */
+    suspend fun carryExclusionsOver() {
+        val synced = exclusions ?: return
+        if (synced.carriedOver) return
+        val excluded = lock.mutex.withLock { dao.all().filter { it.excluded && !it.deleted }.map { it.bookId } }
+        for (bookId in excluded) uuidOf(bookId)?.let { synced.upload(it) }
+        synced.markCarriedOver()
     }
 
     fun observeExcluded(bookId: Long): Flow<Boolean> = dao.observe(bookId).map { it?.excluded == true }
@@ -144,13 +243,16 @@ class ShareTracker(
      * A book restored from a backup: nothing to upload. A book that already has a row keeps it (its shared id
      * and anything still waiting); a "Don't share" from either side wins.
      */
-    suspend fun restored(bookId: Long, share: BackupShare) = lock.mutex.withLock {
-        val existing = dao.get(bookId)
-        if (existing != null) {
-            dao.upsert(existing.copy(excluded = existing.excluded || share.excluded))
-        } else {
-            dao.upsert(newRow(bookId, activeOwner() ?: "").copy(shareId = share.shareId, excluded = share.excluded))
+    suspend fun restored(bookId: Long, share: BackupShare) {
+        lock.mutex.withLock {
+            val existing = dao.get(bookId)
+            if (existing != null) {
+                dao.upsert(existing.copy(excluded = existing.excluded || share.excluded))
+            } else {
+                dao.upsert(newRow(bookId, activeOwner() ?: "").copy(shareId = share.shareId, excluded = share.excluded))
+            }
         }
+        if (share.excluded) uuidOf(bookId)?.let { exclusions?.mark(it, true) }
     }
 
     /**

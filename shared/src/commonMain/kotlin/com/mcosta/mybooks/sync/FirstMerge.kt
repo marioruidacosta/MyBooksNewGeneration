@@ -89,8 +89,9 @@ class FirstMerge(
         queueTheRest()
         pushQueue(api, db, applier, onSetAside)
         // From 0, whatever cursor another account left behind.
-        pullFrom(api, db, applier, 0L)
+        if (shares != null) shares.whileJoiningCloud { pullFrom(api, db, applier, 0L) } else pullFrom(api, db, applier, 0L)
         moveShares(owner)
+        shares?.vouchForExclusions()
     }
 
     // ---- books ----

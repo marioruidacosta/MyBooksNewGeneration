@@ -8,6 +8,7 @@ import com.mcosta.mybooks.data.FakeQuoteDao
 import com.mcosta.mybooks.data.FakeShareStateDao
 import com.mcosta.mybooks.data.FakeSyncQueueDao
 import com.mcosta.mybooks.data.FakeSyncStateDao
+import com.mcosta.mybooks.data.Preferences
 import com.mcosta.mybooks.data.covers.CoverStore
 import com.mcosta.mybooks.data.db.EbookEntity
 import com.mcosta.mybooks.data.ebooks.EbookFiles
@@ -17,6 +18,8 @@ import com.mcosta.mybooks.data.db.QuoteEntity
 import com.mcosta.mybooks.data.db.ShareStateEntity
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.searchKey
+import com.mcosta.mybooks.share.SHARE_EXCLUDED_PREFIX
+import com.mcosta.mybooks.share.ShareExclusions
 import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -84,7 +87,18 @@ private class Device(server: FakeSyncServer, scope: CoroutineScope, clock: () ->
     val covers = CoverStore(fs, "/covers".toPath())
     val shareDao = FakeShareStateDao()
     var pendingCalls = 0
-    val shares = ShareTracker(shareDao, activeOwner = { OWNER }, onPending = { pendingCalls++ })
+    val shares = ShareTracker(
+        shareDao, activeOwner = { OWNER }, onPending = { pendingCalls++ },
+        exclusions = ShareExclusions(
+            object : Preferences {
+                override fun get(key: String) = prefValues[key]
+                override fun set(key: String, value: String) { prefValues[key] = value }
+            },
+            { prefValues.keys },
+            onChanged = {},
+        ),
+        bookIdOf = { uuid -> books.getByUuid(uuid)?.id },
+    )
     val ebooks = FakeEbookDao()
     val ebookFiles = EbookFiles(fs, "/ebooks".toPath())
     val db = SyncDatabase(
@@ -725,6 +739,27 @@ class LibrarySyncTest {
         assertEquals("Clássicos\nPoesia", b.prefValues["home.pinnedTags"])
         assertEquals(a.state.rows["prefs/home.pinnedTags"], b.state.rows["prefs/home.pinnedTags"])
         assertTrue(b.queue.rows.value.isEmpty())
+    }
+
+    @Test
+    fun aBookExcludedOnOneDeviceIsExcludedOnTheOther() = runTest {
+        val server = server()
+        val a = device(server)
+        val b = device(server)
+        a.seed("book-1", "Dune")
+        val onB = b.seed("book-1", "Dune")
+        for (d in listOf(a, b)) d.sync.start(OWNER)
+        advanceUntilIdle()
+
+        advanceTimeBy(500)
+        val key = SHARE_EXCLUDED_PREFIX + "book-1"
+        a.prefValues[key] = "1"
+        a.state.rows["prefs/$key"] = testScheduler.currentTime.toString()
+        a.recorder.record(SyncTable.PREFS, key)
+        advanceUntilIdle()
+
+        assertTrue(b.shareDao.get(onB)!!.excluded)
+        assertTrue(b.queue.rows.value.isEmpty(), "a pulled exclusion isn't pushed back")
     }
 
     @Test

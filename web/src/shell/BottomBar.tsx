@@ -23,17 +23,18 @@ const icons = {
       <path d="M12 8v8M8 12h8" />
     </>,
   ),
-  news: svg(
+  community: svg(
     <>
-      <path d="M5 5h11v14H7a2 2 0 0 1-2-2z" />
-      <path d="M16 9h3v8a2 2 0 0 1-2 2" />
-      <path d="M8 9h5M8 12.5h5M8 16h3" />
+      <circle cx="9" cy="8" r="3.25" />
+      <path d="M3 19.5c.6-3.6 3-5.5 6-5.5s5.4 1.9 6 5.5" />
+      <path d="M16 5.2a3.25 3.25 0 0 1 0 5.6" />
+      <path d="M17.5 14.4c1.9.7 3.1 2.4 3.5 5.1" />
     </>,
   ),
-  year: svg(
+  challenges: svg(
     <>
-      <rect x="4" y="5.5" width="16" height="14" rx="2" />
-      <path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" />
+      <path d="M6 21V4" />
+      <path d="M6 4.5c3.5-1.8 6 1.6 12 0v9c-6 1.6-8.5-1.8-12 0" />
     </>,
   ),
   more: svg(
@@ -46,11 +47,11 @@ const icons = {
 }
 
 /** The pages under More: the bar holds the four used most. */
-const MORE_PATHS = ['/import', '/tidy']
+const MORE_PATHS = ['/year', '/news', '/import', '/tidy']
 
 /**
  * The phone's main navigation, fixed at the bottom where a thumb reaches (the installed app has no browser Back button):
- * Library, Add, News, Year, and More for Import, Tidy up, the theme and signing out.
+ * Library, Add, Community, Challenges, and More for the year, news, Import, Tidy up, the theme and signing out.
  */
 export function BottomBar({ onSignOut }: { onSignOut: () => void }) {
   const [open, setOpen] = useState(false)
@@ -139,6 +140,12 @@ export function BottomBar({ onSignOut }: { onSignOut: () => void }) {
             onClick={(e) => e.stopPropagation()}
             onKeyDown={keepTabInside}
           >
+            <Link to="/year" onClick={() => choose('/year')}>
+              Year in books
+            </Link>
+            <Link to="/news" onClick={() => choose('/news')}>
+              Book news
+            </Link>
             <Link to="/import" onClick={() => choose('/import')}>
               Import
             </Link>
@@ -164,13 +171,13 @@ export function BottomBar({ onSignOut }: { onSignOut: () => void }) {
           {icons.add}
           <span>Add</span>
         </Link>
-        <Link to="/news">
-          {icons.news}
-          <span>News</span>
+        <Link to="/community">
+          {icons.community}
+          <span>Community</span>
         </Link>
-        <Link to="/year">
-          {icons.year}
-          <span>Year</span>
+        <Link to="/challenges">
+          {icons.challenges}
+          <span>Challenges</span>
         </Link>
         <button
           ref={moreRef}

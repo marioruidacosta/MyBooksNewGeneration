@@ -33,7 +33,7 @@ export type LocalChangeArgs = {
  * import, filling in details) that, as on the phone, is never posted to the community; `restore` is an Undo bringing a
  * removed book back, which is not a book created on the site.
  */
-export type ChangeOrigin = 'import' | 'restore'
+export type ChangeOrigin = 'import' | 'restore' | 'bulk'
 
 /** What [LibraryStore.onLocalChangeWithOrigin] calls: the change, then its [ChangeOrigin] (undefined for an ordinary edit). */
 export type LocalChangeWithOrigin = (...args: [...LocalChangeArgs, origin: ChangeOrigin | undefined]) => void
@@ -443,6 +443,12 @@ export class LibraryStore {
     return out.sort((a, b) => a.year - b.year)
   }
 
+  /** A synced preference's value; null when it isn't set. */
+  pref(key: string): string | null {
+    const row = this.rows.get(rowKey('prefs', key))
+    return row && !isDeleted(row) && typeof row.fields.value === 'string' ? row.fields.value : null
+  }
+
   /**
    * The community posts left waiting by a tab that is gone (the publisher takes them up again), now this tab's. Those
    * of a tab still open stay with it; those of another account are forgotten.
@@ -482,6 +488,18 @@ export class LibraryStore {
       return
     }
     this.write(table, id, fields, options.restamp ?? [], false, options.origin)
+  }
+
+  /** Whether a change to this row is still waiting to reach the server. */
+  isQueued(table: SyncTable, id: string): boolean {
+    return this.queue.has(rowKey(table, id))
+  }
+
+  /** Sets a synced preference; null removes it (a marker that reaches the other devices). */
+  setPref(key: string, value: string | null): void {
+    if (value === null) this.write('prefs', key, { deleted: true }, [], false)
+    // The value is stamped even when it is the same: after a removal elsewhere, its stored value may be the empty one.
+    else this.write('prefs', key, { value, deleted: false }, ['value'], true)
   }
 
   /** Adds a book (or, when its id is here already, sets every field of it). */

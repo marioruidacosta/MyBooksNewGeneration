@@ -5,6 +5,7 @@ import { shrinkToJpeg, uploadCover } from '../covers/coverUpload'
 import { CoverContext, type CoverStorage } from '../covers/storage'
 import { allTags, STATUS_LABELS } from '../library/filters'
 import { supabase } from '../supabase'
+import { BookCommunity, ShareSwitch } from '../community/BookCommunity'
 import { useIsShared } from '../share/SharingContext'
 import { STATUSES, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
@@ -215,6 +216,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
           <AtAGlance
             book={book}
             shared={shared}
+            shareSwitch={<ShareSwitch id={id} />}
             ebook={ebook ? ebookLine(ebook) : null}
             onMarkRead={() => edit(statusChange(book, 'READ', Date.now()))}
             onProgress={(input) => edit(progressChange(book, input))}
@@ -289,6 +291,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
           </form>
 
           <QuoteList store={store} bookId={id} />
+          <BookCommunity book={book} />
 
           <section className="book-section cover-panel" aria-label="Cover">
             <h2>Cover</h2>

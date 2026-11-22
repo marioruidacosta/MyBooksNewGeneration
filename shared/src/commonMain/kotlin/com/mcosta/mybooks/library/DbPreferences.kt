@@ -42,6 +42,9 @@ class DbPreferences(
 
     override fun get(key: String): String? = cache.value[key]
 
+    /** Every key held, for preferences kept one key per item. */
+    fun keys(): Set<String> = cache.value.keys
+
     override fun set(key: String, value: String) {
         cache.update { it + (key to value) }
         pending.update { it + (key to value) }
