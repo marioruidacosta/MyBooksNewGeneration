@@ -29,6 +29,8 @@ data class FeedCallbacks(
     val onReport: (FeedEntry) -> Unit = {},
     val onLoadMore: () -> Unit = {},
     val onSeeAllReading: () -> Unit = {},
+    /** "Suggest to a friend"; null hides it. */
+    val onSuggest: ((FeedBook) -> Unit)? = null,
 )
 
 /**
@@ -36,9 +38,16 @@ data class FeedCallbacks(
  * loading more at the end.
  */
 @Composable
-fun CommunityFeed(state: ActivityState, callbacks: FeedCallbacks, modifier: Modifier = Modifier) {
+fun CommunityFeed(
+    state: ActivityState,
+    callbacks: FeedCallbacks,
+    modifier: Modifier = Modifier,
+    /** "Suggested to you", above everything else. */
+    header: (@Composable () -> Unit)? = null,
+) {
     val items = state.items
     LazyColumn(modifier.fillMaxSize()) {
+        if (header != null) item(key = "suggestions", contentType = "suggestions") { header() }
         if (state.scope == FeedScope.FRIENDS && state.reading.isNotEmpty()) {
             item(key = "reading", contentType = "reading") {
                 FriendsReadingRow(state.reading, onBook = callbacks.onBook, onSeeAll = callbacks.onSeeAllReading)
@@ -63,6 +72,7 @@ fun CommunityFeed(state: ActivityState, callbacks: FeedCallbacks, modifier: Modi
                         onWantToRead = if (mine) null else ({ callbacks.onWantToRead(entry.book) }),
                         onWantToBuy = if (mine) null else ({ callbacks.onWantToBuy(entry.book) }),
                         onOpenMine = { callbacks.onOpenMine(entry.book) },
+                        onSuggest = callbacks.onSuggest?.let { suggest -> { suggest(entry.book) } },
                     )
                 }
                 is FeedItem.Group -> FeedGroupCard(item, onPerson = { callbacks.onPerson(item.actor.id) }, onBook = callbacks.onBook)

@@ -11,15 +11,17 @@ import { StoreContext } from '../sync/StoreContext'
 import { LibraryStore } from '../sync/store'
 import { ToastContext } from '../ui/toastContext'
 import { AccountPage } from './AccountPage'
-import { CommunityError, createCommunityApi, relationshipFrom, type CommunityApi } from './api'
+import { CommunityError, communityMessage, createCommunityApi, relationshipFrom, type CommunityApi } from './api'
 import { BookCommunity, ShareSwitch } from './BookCommunity'
 import { CommunityProvider } from './CommunityProvider'
 import type { CommunityNav } from './useCommunity'
 import { CommunityPage } from './CommunityPage'
-import type { FeedEntry, Person, Profile } from './model'
+import type { BookSuggestion, FeedEntry, Person, Profile } from './model'
 import { PeoplePage } from './PeoplePage'
-import { suggestionText } from './text'
+import { suggestionSentText, suggestionText } from './text'
 import { PersonPage } from './PersonPage'
+import { SuggestionInbox } from './inbox'
+import { FollowSuggestions, SuggestionBadge } from './SuggestionBadge'
 
 const h = vi.hoisted(() => ({ signOut: vi.fn(async () => {}) }))
 vi.mock('../auth/signOut', () => ({ signOut: h.signOut }))
@@ -91,6 +93,10 @@ function fakeApi(over: Partial<CommunityApi> = {}): CommunityApi {
     friendsWithBook: vi.fn(async () => []),
     bookScore: vi.fn(async () => ({ ratings: 0, average: null, perScore: [0, 0, 0, 0, 0], reviews: 0 })),
     bookReviews: vi.fn(async () => []),
+    suggestBook: vi.fn(async (_book: unknown, recipients: string[]) => recipients.length),
+    bookSuggestions: vi.fn(async () => []),
+    markSuggestionsSeen: vi.fn(async () => {}),
+    closeSuggestion: vi.fn(async () => {}),
     ...over,
   } as CommunityApi
 }
@@ -585,5 +591,237 @@ describe('the server calls', () => {
     const c = client([])
     expect(await createCommunityApi(c, 'me').search(' a ')).toEqual([])
     expect(c.rpc).not.toHaveBeenCalled()
+  })
+})
+
+describe('book suggestions', () => {
+  const suggestion = (id: number, over: Partial<BookSuggestion> = {}): BookSuggestion => ({
+    id, sender: rui, note: '', createdAt: Date.now() - 60_000, seen: false,
+    book: { shareId: `suggestion:${id}`, isbn: '9780141439587', title: 'Stoner', authors: 'John Williams', coverUrl: null, blurb: null, pages: 288, currentPage: null },
+    ...over,
+  })
+  const withSuggestions = (...items: BookSuggestion[]) => fakeApi({ bookSuggestions: vi.fn(async () => items) })
+
+  it('showsWhoSuggestedItWithTheNoteAndMarksThemSeen', async () => {
+    const api = withSuggestions(suggestion(1, { note: "You'd love this" }))
+    show(api, <CommunityPage />)
+    expect(await screen.findByRole('heading', { name: 'Suggested to you' })).toBeInTheDocument()
+    expect(screen.getByText("“You'd love this”")).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Rui' })).toBeInTheDocument()
+    await waitFor(() => expect(api.markSuggestionsSeen).toHaveBeenCalledWith([1]))
+  })
+
+  it('isShownOnTheEveryoneTabToo', async () => {
+    window.localStorage.setItem('mybooks.community.scope', 'everyone')
+    const api = withSuggestions(suggestion(1))
+    show(api, <CommunityPage />)
+    expect(await screen.findByRole('heading', { name: 'Suggested to you' })).toBeInTheDocument()
+    await waitFor(() => expect(api.markSuggestionsSeen).toHaveBeenCalledWith([1]))
+  })
+
+  it('wantToReadAddsTheBookAndClosesTheSuggestion', async () => {
+    const user = userEvent.setup()
+    const api = withSuggestions(suggestion(1))
+    show(api, <CommunityPage />)
+    await user.click(await screen.findByRole('button', { name: 'Want to read Stoner' }))
+    await waitFor(() => expect(api.closeSuggestion).toHaveBeenCalledWith(1))
+    const added = store.books().find((b) => b.title === 'Stoner')
+    expect(added?.status).toBe('TO_READ')
+    expect(toast.show).toHaveBeenCalledWith('Added to To read', expect.anything())
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Suggested to you' })).not.toBeInTheDocument())
+  })
+
+  it('aBookAlreadyInTheLibraryIsNotAddedTwice', async () => {
+    const user = userEvent.setup()
+    const { addBook } = await import('../add/addBook')
+    addBook(store, { isbn: '9780141439587', title: 'Stoner', authors: ['John Williams'], publisher: null, year: null, pages: null, coverUrl: null, description: null }, Date.now(), 'READ')
+    const api = withSuggestions(suggestion(1))
+    show(api, <CommunityPage />)
+    await user.click(await screen.findByRole('button', { name: 'To buy Stoner' }))
+    await waitFor(() => expect(api.closeSuggestion).toHaveBeenCalledWith(1))
+    expect(store.books().filter((b) => b.title === 'Stoner')).toHaveLength(1)
+    expect(store.books().find((b) => b.title === 'Stoner')?.status).toBe('READ')
+    expect(toast.show).toHaveBeenCalledWith('Already in your library', expect.anything())
+  })
+
+  it('aMalformedIsbnIsNotStored', async () => {
+    const user = userEvent.setup()
+    const bad = suggestion(1)
+    const api = withSuggestions({ ...bad, book: { ...bad.book, isbn: '9781' } })
+    show(api, <CommunityPage />)
+    await user.click(await screen.findByRole('button', { name: 'Want to read Stoner' }))
+    await waitFor(() => expect(api.closeSuggestion).toHaveBeenCalledWith(1))
+    expect(store.books().find((b) => b.title === 'Stoner')?.isbn).toBeNull()
+  })
+
+  it('aFailedDismissShowsItAgain', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi({
+      bookSuggestions: vi.fn(async () => [suggestion(1)]),
+      closeSuggestion: vi.fn(async () => { throw new CommunityError('offline', 'offline') }),
+    })
+    show(api, <CommunityPage />)
+    await user.click(await screen.findByRole('button', { name: 'Dismiss Stoner' }))
+    await waitFor(() => expect(toast.show).toHaveBeenCalledWith("Couldn't dismiss the suggestion"))
+    expect(screen.getByRole('heading', { name: 'Suggested to you' })).toBeInTheDocument()
+  })
+
+  it('aReportCarriesTheNote', async () => {
+    const user = userEvent.setup()
+    const api = withSuggestions(suggestion(1, { note: 'buy my thing' }))
+    show(api, <CommunityPage />)
+    await user.click(await screen.findByRole('button', { name: 'Report suggestion of Stoner' }))
+    await user.click(screen.getByRole('button', { name: 'Send report' }))
+    await waitFor(() => expect(api.report).toHaveBeenCalledWith('rui', 'spam', 'Note on the suggestion: buy my thing', null))
+  })
+
+  it('sendsTheBookToTheChosenFriendsWithoutAPrivateCover', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi({ friends: vi.fn(async () => [rui, ana]) })
+    show(api, <BookCommunity book={book('Stoner', { coverUrl: 'data:image/jpeg;base64,xx' })} />)
+    await user.click(await screen.findByRole('button', { name: 'Suggest to a friend' }))
+    await user.click(await screen.findByRole('checkbox', { name: 'Ana' }))
+    await user.type(screen.getByLabelText('Note (optional)'), '  Read it  ')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(api.suggestBook).toHaveBeenCalledTimes(1))
+    const [sent, recipients, note] = vi.mocked(api.suggestBook).mock.calls[0]
+    expect(sent.title).toBe('Stoner')
+    expect(sent.coverUrl).toBeNull()
+    expect(recipients).toEqual(['ana'])
+    expect(note).toBe('Read it')
+    expect(toast.show).toHaveBeenCalledWith('Suggested to Ana')
+  })
+
+  it('aFailedSendKeepsTheDialogOpen', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi({
+      friends: vi.fn(async () => [ana]),
+      suggestBook: vi.fn(async () => { throw new CommunityError('offline', 'offline') }),
+    })
+    show(api, <BookCommunity book={book('Stoner')} />)
+    await user.click(await screen.findByRole('button', { name: 'Suggest to a friend' }))
+    await user.click(await screen.findByRole('checkbox', { name: 'Ana' }))
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/offline/i)
+    expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
+  })
+
+  it('theFeedOffersSuggestingABook', async () => {
+    const user = userEvent.setup()
+    const api = fakeApi({ friends: vi.fn(async () => [ana]), feed: vi.fn(async () => ({ entries: [entry()], next: null })) })
+    show(api, <CommunityPage />)
+    await user.click(await screen.findByRole('button', { name: 'Suggest Dune to a friend' }))
+    expect(await screen.findByRole('checkbox', { name: 'Ana' })).toBeInTheDocument()
+  })
+
+  it('theBadgeCountsTheNewOnes', async () => {
+    const api = withSuggestions(suggestion(2), suggestion(1, { seen: true }))
+    show(api, <><FollowSuggestions /><SuggestionBadge /></>)
+    expect(await screen.findByText('1 new book suggestion')).toBeInTheDocument()
+  })
+
+  it('theBadgeLooksAgainWhenTheAppComesBack', async () => {
+    const api = withSuggestions()
+    show(api, <><FollowSuggestions /><SuggestionBadge /></>)
+    await waitFor(() => expect(api.bookSuggestions).toHaveBeenCalledTimes(1))
+    vi.mocked(api.bookSuggestions).mockResolvedValue([suggestion(1), suggestion(2)])
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    expect(await screen.findByText('2 new book suggestions')).toBeInTheDocument()
+  })
+
+  it('aRefreshUnderWayDoesNotBringBackADismissedOne', async () => {
+    let answer: (rows: BookSuggestion[]) => void = () => {}
+    const api = fakeApi({ bookSuggestions: vi.fn(async () => [suggestion(1)]) })
+    const inbox = new SuggestionInbox(api)
+    await inbox.refresh()
+    vi.mocked(api.bookSuggestions).mockImplementation(() => new Promise((resolve) => { answer = resolve }))
+    const refreshing = inbox.refresh()
+    expect(await inbox.close(1)).toBe(true)
+    answer([suggestion(1)])
+    await refreshing
+    expect(inbox.items()).toEqual([])
+  })
+
+  it('oneArrivingWhileMarkingSeenStaysNew', async () => {
+    let answer: (rows: BookSuggestion[]) => void = () => {}
+    const api = fakeApi({ bookSuggestions: vi.fn(async () => [suggestion(1)]) })
+    const inbox = new SuggestionInbox(api)
+    await inbox.refresh()
+    vi.mocked(api.bookSuggestions).mockImplementation(() => new Promise((resolve) => { answer = resolve }))
+    const refreshing = inbox.refresh()
+    inbox.markSeen()
+    expect(api.markSuggestionsSeen).toHaveBeenCalledWith([1])
+    answer([suggestion(2), suggestion(1)])
+    await refreshing
+    expect(inbox.items().map((s) => s.id)).toEqual([2, 1])
+    expect(inbox.unseen()).toBe(1)
+  })
+
+  it('aRefreshDuringACloseDoesNotBringItBack', async () => {
+    let finish: () => void = () => {}
+    const api = fakeApi({
+      bookSuggestions: vi.fn(async () => [suggestion(1)]),
+      closeSuggestion: vi.fn(() => new Promise<void>((resolve) => { finish = resolve })),
+    })
+    const inbox = new SuggestionInbox(api)
+    await inbox.refresh()
+    const closing = inbox.close(1)
+    await inbox.refresh()
+    expect(inbox.items()).toEqual([])
+    finish()
+    expect(await closing).toBe(true)
+    expect(inbox.items()).toEqual([])
+  })
+
+  it('aFailedCloseDuringARefreshShowsItOnce', async () => {
+    let fail: (e: Error) => void = () => {}
+    const api = fakeApi({
+      bookSuggestions: vi.fn(async () => [suggestion(1)]),
+      closeSuggestion: vi.fn(() => new Promise<void>((_resolve, reject) => { fail = reject })),
+    })
+    const inbox = new SuggestionInbox(api)
+    await inbox.refresh()
+    const closing = inbox.close(1)
+    await inbox.refresh()
+    fail(new CommunityError('offline', 'offline'))
+    expect(await closing).toBe(false)
+    expect(inbox.items().map((s) => s.id)).toEqual([1])
+  })
+
+  it('anOlderAnswerDoesNotReplaceANewerOne', async () => {
+    const answers: ((rows: BookSuggestion[]) => void)[] = []
+    const api = fakeApi({ bookSuggestions: vi.fn(() => new Promise<BookSuggestion[]>((resolve) => { answers.push(resolve) })) })
+    const inbox = new SuggestionInbox(api)
+    const first = inbox.refresh()
+    const second = inbox.refresh()
+    answers[1]([suggestion(2), suggestion(1)])
+    await second
+    answers[0]([suggestion(1)])
+    await first
+    expect(inbox.items().map((s) => s.id)).toEqual([2, 1])
+  })
+
+  it('neverSendsHalfAnEmoji', async () => {
+    const rpc = vi.fn(async () => ({ data: 1, error: null }))
+    const real = createCommunityApi({ rpc } as unknown as Parameters<typeof createCommunityApi>[0], 'me')
+    const broken = { ...suggestion(1).book, title: 'T\ud83d', authors: 'A\ude00', blurb: 'ok \ud83d\ude00 cut\ud83d' }
+    await real.suggestBook(broken, ['ana'], 'note\ud83d')
+    const args = (rpc.mock.calls as unknown as [string, { p_book: Record<string, string>; p_note: string }][])[0][1]
+    expect([args.p_book.title, args.p_book.authors, args.p_book.blurb, args.p_note]).toEqual(['T', 'A', 'ok \ud83d\ude00 cut', 'note'])
+  })
+
+  it('theDailyLimitSaysSo', async () => {
+    const rpc = vi.fn(async () => ({ data: null, error: { code: 'P0429', message: 'too many' } }))
+    const real = createCommunityApi({ rpc } as unknown as Parameters<typeof createCommunityApi>[0], 'me')
+    const failure = await real.suggestBook(suggestion(1).book, ['ana'], '').catch((e: unknown) => e)
+    expect(communityMessage(failure)).toBe("You've suggested a lot of books today. Try again tomorrow.")
+  })
+
+  it('saysWhatHappenedToTheSuggestion', () => {
+    expect(suggestionSentText(1, [ana])).toBe('Suggested to Ana')
+    expect(suggestionSentText(2, [ana, rui])).toBe('Suggested to 2 friends')
+    expect(suggestionSentText(1, [ana, rui])).toBe('Suggested to 1 of 2 friends')
+    expect(suggestionSentText(0, [ana])).toBe("You've already suggested this to Ana")
+    expect(suggestionSentText(0, [ana, rui])).toBe("You've already suggested this to them")
   })
 })

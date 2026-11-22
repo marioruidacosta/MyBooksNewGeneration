@@ -84,6 +84,8 @@ class PlatformServices(
     val imageSharer: ImageSharer? = null,
     /** Null where background notifications aren't available (the setting is then hidden). */
     val monthlyAlerts: MonthlyAlerts? = null,
+    /** Background checks for books friends suggested; null where unavailable (the setting is then hidden). */
+    val suggestionAlerts: MonthlyAlerts? = null,
     /** Null where there is no ebook reader (iPhone for now): reading options are then hidden. */
     val ebooks: EbookPlatform? = null,
     /** Shares text through the platform's share sheet (BookNerd's abstracts); null hides Share. */

@@ -43,6 +43,9 @@ class ReleaseAlertWorker(context: Context, params: WorkerParameters) : Coroutine
         private const val CHANNEL = "new-in-portugal"
         private const val NOTIFICATION = 1
 
+        /** Its own: PendingIntents that differ only in their extras would overwrite each other (the widget uses 0 to 2). */
+        private const val TAP_REQUEST = 21
+
         /** Starts the daily check (kept as it is when already scheduled). */
         fun schedule(context: Context) {
             val request = PeriodicWorkRequestBuilder<ReleaseAlertWorker>(1, TimeUnit.DAYS)
@@ -70,7 +73,7 @@ class ReleaseAlertWorker(context: Context, params: WorkerParameters) : Coroutine
             val open = Intent(context, MainActivity::class.java)
                 .putExtra(MainActivity.OPEN_ROUTE, Routes.RELEASES)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            val tap = PendingIntent.getActivity(context, 0, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+            val tap = PendingIntent.getActivity(context, TAP_REQUEST, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
             val titles = (alert.byAuthors + alert.byPublishers).joinToString("\n") { b -> "${b.title} · ${b.authors.firstOrNull().orEmpty()}" }
             val notification = NotificationCompat.Builder(context, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)

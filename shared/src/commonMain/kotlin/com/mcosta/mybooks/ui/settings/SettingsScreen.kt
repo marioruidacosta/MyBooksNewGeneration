@@ -51,6 +51,7 @@ fun SettingsScreen(
     val coverProgress by viewModel.coverProgress.collectAsStateWithLifecycle()
     val followWallpaper by viewModel.followWallpaper.collectAsStateWithLifecycle()
     val alertsOn by viewModel.alertsOn.collectAsStateWithLifecycle()
+    val suggestionAlertsOn by viewModel.suggestionAlertsOn.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -89,9 +90,9 @@ fun SettingsScreen(
                 }
                 HorizontalDivider()
             }
-            if (viewModel.alertsAvailable) {
+            if (viewModel.alertsAvailable || viewModel.suggestionAlertsAvailable) {
                 Text("Notifications", style = MaterialTheme.typography.titleMedium)
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                if (viewModel.alertsAvailable) Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("New books from your authors", style = MaterialTheme.typography.bodyLarge)
                         Text(
@@ -101,6 +102,17 @@ fun SettingsScreen(
                         )
                     }
                     Switch(checked = alertsOn, onCheckedChange = viewModel::setAlerts)
+                }
+                if (viewModel.suggestionAlertsAvailable) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Book suggestions from friends", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "When a friend suggests a book to you. It can take a while to arrive.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = suggestionAlertsOn, onCheckedChange = viewModel::setSuggestionAlerts)
                 }
                 HorizontalDivider()
             }

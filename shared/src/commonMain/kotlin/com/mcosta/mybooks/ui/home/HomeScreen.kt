@@ -17,8 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.SmartToy
@@ -37,7 +35,6 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -61,14 +58,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.domain.Book
-import com.mcosta.mybooks.ui.news.HomeNewsCard
-import com.mcosta.mybooks.ui.news.NewsState
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.ui.activity.countText
 import com.mcosta.mybooks.ui.activity.text
@@ -104,10 +97,6 @@ fun HomeScreen(
     onOpenSuggestion: (Suggestion) -> Unit = {},
     onNotInterested: (String) -> Unit = {},
     onSeeAllSuggestions: () -> Unit = {},
-    /** "Book news": the newest headlines (hidden until there are some), opening a story's link, and the full screen. */
-    news: NewsState = NewsState(),
-    onOpenNews: (String) -> Unit = {},
-    onSeeAllNews: () -> Unit = {},
     onAddManually: () -> Unit,
     onScan: () -> Unit,
     /** A pinned tag's books. */
@@ -185,6 +174,9 @@ fun HomeScreen(
                     item(key = "openFailure") { OpenFailureBanner(openFailure, onOpenAccount) }
                 }
                 item {
+                    ChallengeCard(state, onClick = onOpenReadingActivity, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp))
+                }
+                item {
                     if (state.reading.isEmpty()) {
                         SectionTitle("Reading")
                     } else {
@@ -209,11 +201,7 @@ fun HomeScreen(
                         }
                     }
                 }
-                item {
-                    ChallengeCard(state, onClick = onOpenReadingActivity, modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp))
-                }
                 item { SuggestedForYou(suggestions, onOpenSuggestion, onNotInterested, onSeeAllSuggestions) }
-                item { HomeNewsCard(news, onOpenNews, onSeeAllNews) }
                 item { SectionTitle("Shelves") }
                 items(state.shelves, key = { it.status?.name ?: "ALL" }) { shelf ->
                     ShelfRow(shelf, onClick = { onOpenShelf(shelf.status) })

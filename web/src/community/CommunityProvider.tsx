@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { CommunityApi } from './api'
+import { SuggestionInbox } from './inbox'
 import type { Profile } from './model'
 import { CommunityContext, type Community, type CommunityNav } from './useCommunity'
 
@@ -9,6 +10,7 @@ export function CommunityProvider({ api, nav, children }: { api: CommunityApi; n
   const [profile, setProfile] = useState<Profile | null>(null)
   const [attempt, setAttempt] = useState(0)
   const wanted = useRef(false)
+  const inbox = useMemo(() => new SuggestionInbox(api), [api])
 
   useEffect(() => {
     if (attempt === 0) return
@@ -45,8 +47,8 @@ export function CommunityProvider({ api, nav, children }: { api: CommunityApi; n
     setAttempt((n) => n + 1)
   }, [])
   const value = useMemo(
-    () => ({ api, nav, status, profile, setProfile, reload, ensureLoaded }),
-    [api, nav, status, profile, reload, ensureLoaded],
+    () => ({ api, nav, inbox, status, profile, setProfile, reload, ensureLoaded }),
+    [api, nav, inbox, status, profile, reload, ensureLoaded],
   )
   return <CommunityContext.Provider value={value}>{children}</CommunityContext.Provider>
 }

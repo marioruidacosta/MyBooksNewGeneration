@@ -9,6 +9,8 @@ import { communityMessage } from './api'
 import { useCommunity } from './useCommunity'
 import { REPORT_REASONS, type FeedBook, type FeedEntry, type Person, type ReportReason } from './model'
 import { actionText, groupText, relativeTime, starsLabel, starsText, type FeedItem } from './text'
+import { foundFrom } from './suggestedBook'
+import { SuggestDialog } from './SuggestDialog'
 import { Avatar, CommunityCover, Dialog, PersonLink, PersonRow } from './ui'
 import { useLoaded } from './useLoaded'
 
@@ -29,15 +31,7 @@ function BookAction({ book }: { book: FeedBook }) {
     )
   }
   const add = (status: Status) => {
-    const { id } = addBook(
-      store,
-      {
-        isbn: book.isbn, title: book.title, authors: book.authors.split(',').map((a) => a.trim()).filter(Boolean),
-        publisher: null, year: null, pages: book.pages, coverUrl: book.coverUrl, description: book.blurb,
-      },
-      Date.now(),
-      status,
-    )
+    const { id } = addBook(store, foundFrom(book), Date.now(), status)
     toast.show(`Added to ${STATUS_LABELS[status]}`, { label: 'Open', run: () => nav.openBook(id) })
   }
   return (
@@ -49,7 +43,7 @@ function BookAction({ book }: { book: FeedBook }) {
 }
 
 /** The book in its own panel: cover, title, author and pages, progress, the blurb, and what to do with it. */
-function BookPanel({ book, progress }: { book: FeedBook; progress: number | null }) {
+function BookPanel({ book, progress, onSuggest }: { book: FeedBook; progress: number | null; onSuggest?: () => void }) {
   const details = [book.authors, book.pages !== null ? `${book.pages} pages` : null].filter(Boolean).join(' · ')
   return (
     <div className="feed-book">
@@ -71,6 +65,11 @@ function BookPanel({ book, progress }: { book: FeedBook; progress: number | null
         )}
         {book.blurb && <p className="feed-book__blurb">{book.blurb}</p>}
         <BookAction book={book} />
+        {onSuggest && (
+          <button type="button" className="quiet feed-book__suggest" aria-label={`Suggest ${book.title} to a friend`} onClick={onSuggest}>
+            Suggest to a friend
+          </button>
+        )}
       </div>
     </div>
   )
@@ -108,7 +107,9 @@ function LikersDialog({ activity, onClose }: { activity: number; onClose: () => 
 }
 
 /** Reports a person, or one of their posts. */
-export function ReportDialog({ person, activity = null, onClose }: { person: Person; activity?: number | null; onClose: () => void }) {
+export function ReportDialog({
+  person, activity = null, note = '', onClose,
+}: { person: Person; activity?: number | null; note?: string; onClose: () => void }) {
   const { api } = useCommunity()
   const toast = useToast()
   const [reason, setReason] = useState<ReportReason>('spam')
@@ -119,7 +120,11 @@ export function ReportDialog({ person, activity = null, onClose }: { person: Per
     setBusy(true)
     setError(null)
     try {
-      await api.report(person.id, reason, details, activity)
+      // A suggestion's note isn't kept with the report otherwise.
+      const sent = note.trim()
+        ? [details.trim(), `Note on the suggestion: ${note.trim()}`].filter(Boolean).join('\n\n').slice(0, REPORT_DETAILS_MAX)
+        : details
+      await api.report(person.id, reason, sent, activity)
       toast.show('Thanks. Your report was sent.')
       onClose()
     } catch (e) {
@@ -154,7 +159,7 @@ export function ReportDialog({ person, activity = null, onClose }: { person: Per
 function EntryCard({ entry, onChange, now }: { entry: FeedEntry; onChange: (entry: FeedEntry) => void; now: number }) {
   const { api, profile } = useCommunity()
   const toast = useToast()
-  const [dialog, setDialog] = useState<'likers' | 'report' | null>(null)
+  const [dialog, setDialog] = useState<'likers' | 'report' | 'suggest' | null>(null)
   const [busy, setBusy] = useState(false)
   const mine = entry.actor.id === api.me
   const stars = starsText(entry.rating)
@@ -186,7 +191,11 @@ function EntryCard({ entry, onChange, now }: { entry: FeedEntry; onChange: (entr
       </div>
       {stars && <p className="feed-stars" role="img" aria-label={starsLabel(entry.rating) ?? undefined}>{stars}</p>}
       {entry.kind === 'reviewed' && entry.review && <Review text={entry.review} />}
-      <BookPanel book={entry.book} progress={entry.kind === 'progress' ? entry.progress : null} />
+      <BookPanel
+        book={entry.book}
+        progress={entry.kind === 'progress' ? entry.progress : null}
+        onSuggest={canLike ? () => setDialog('suggest') : undefined}
+      />
       <div className="feed-card__actions">
         {!mine && (
           <button
@@ -211,6 +220,7 @@ function EntryCard({ entry, onChange, now }: { entry: FeedEntry; onChange: (entr
       </div>
       {dialog === 'likers' && <LikersDialog activity={entry.id} onClose={() => setDialog(null)} />}
       {dialog === 'report' && <ReportDialog person={entry.actor} activity={entry.id} onClose={() => setDialog(null)} />}
+      {dialog === 'suggest' && <SuggestDialog book={entry.book} onClose={() => setDialog(null)} />}
     </li>
   )
 }
@@ -219,6 +229,8 @@ function EntryCard({ entry, onChange, now }: { entry: FeedEntry; onChange: (entr
 function GroupCard({ item, now }: { item: Extract<FeedItem, { type: 'group' }>; now: number }) {
   const [open, setOpen] = useState(false)
   const [book, setBook] = useState<FeedBook | null>(null)
+  const [suggesting, setSuggesting] = useState<FeedBook | null>(null)
+  const { profile } = useCommunity()
   const shown = open ? item.entries : item.entries.slice(0, 4)
   const more = item.entries.length - shown.length
   return (
@@ -246,12 +258,17 @@ function GroupCard({ item, now }: { item: Extract<FeedItem, { type: 'group' }>; 
       </div>
       {book && (
         <Dialog title={book.title} onClose={() => setBook(null)}>
-          <BookPanel book={book} progress={null} />
+          <BookPanel
+            book={book}
+            progress={null}
+            onSuggest={profile ? () => { setSuggesting(book); setBook(null) } : undefined}
+          />
           <div className="dialog__actions">
             <button type="button" onClick={() => setBook(null)}>Close</button>
           </div>
         </Dialog>
       )}
+      {suggesting && <SuggestDialog book={suggesting} onClose={() => setSuggesting(null)} />}
     </li>
   )
 }

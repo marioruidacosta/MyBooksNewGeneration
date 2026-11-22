@@ -131,6 +131,10 @@ class AppContainer(
 
     val preferences: Preferences? = appSettings?.let(::SettingsPreferences)
 
+    /** The background check for books friends suggested; null without the community. */
+    val suggestionAlerts: com.mcosta.mybooks.social.SuggestionAlerts? =
+        social?.let { com.mcosta.mybooks.social.SuggestionAlerts(it, preferences) }
+
     /** Book colours or the wallpaper's, remembered. */
     val appearance = Appearance(preferences)
 

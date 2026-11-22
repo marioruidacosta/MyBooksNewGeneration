@@ -41,7 +41,13 @@ fun LikersSheet(people: List<Person>, onPerson: (String) -> Unit, onDismiss: () 
 /** A book from the feed, with "Add to my books" (or a note that it's already in the library). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FeedBookSheet(book: FeedBook, inLibrary: Boolean, onAdd: (ReadingStatus) -> Unit, onDismiss: () -> Unit) {
+fun FeedBookSheet(
+    book: FeedBook,
+    inLibrary: Boolean,
+    onAdd: (ReadingStatus) -> Unit,
+    onDismiss: () -> Unit,
+    onSuggest: (() -> Unit)? = null,
+) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(16.dp).padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -61,6 +67,7 @@ fun FeedBookSheet(book: FeedBook, inLibrary: Boolean, onAdd: (ReadingStatus) -> 
                     OutlinedButton(onClick = { onAdd(ReadingStatus.WISHLIST) }) { Text("To buy") }
                 }
             }
+            if (onSuggest != null) OutlinedButton(onClick = onSuggest) { Text("Suggest to a friend") }
         }
     }
 }

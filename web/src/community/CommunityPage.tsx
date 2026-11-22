@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useCommunity } from './useCommunity'
 import { FeedList } from './FeedCard'
 import { JoinCommunity } from './JoinCommunity'
+import { SuggestedToYou } from './SuggestedToYou'
 import type { FeedScope, FriendReading } from './model'
 import { CommunityCover, Avatar, LoadError } from './ui'
 import { useLoaded } from './useLoaded'
@@ -100,6 +101,7 @@ function Feed() {
         <button type="button" className="chip" aria-pressed={scope === 'friends'} onClick={() => choose('friends')}>Friends</button>
         <button type="button" className="chip" aria-pressed={scope === 'everyone'} onClick={() => choose('everyone')}>Everyone</button>
       </div>
+      <SuggestedToYou />
       {scope === 'friends' && <FriendsReadingRow />}
       {feed.loading && <p className="loading-inline">Loading…</p>}
       {!feed.loading && feed.count === 0 && !feed.error && (

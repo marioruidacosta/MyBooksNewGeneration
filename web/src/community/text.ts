@@ -125,3 +125,10 @@ export function suggestionText(s: SuggestedReader): string {
   }
   return parts.join(' · ')
 }
+
+/** What sending said: [sent] of the friends [asked] got it; the others already had this book from you. */
+export function suggestionSentText(sent: number, asked: { displayName: string }[]): string {
+  if (sent === 0) return `You've already suggested this to ${asked.length === 1 ? asked[0].displayName : 'them'}`
+  if (sent < asked.length) return `Suggested to ${sent} of ${asked.length} friends`
+  return asked.length === 1 ? `Suggested to ${asked[0].displayName}` : `Suggested to ${asked.length} friends`
+}

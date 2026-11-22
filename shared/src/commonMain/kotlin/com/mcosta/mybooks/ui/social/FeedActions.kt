@@ -31,7 +31,12 @@ internal class LibraryShelf(private val repository: BookRepository) {
     }
 
     suspend fun add(book: FeedBook, status: ReadingStatus): Added =
-        add(Book(isbn = book.isbn, title = book.title, authors = book.authors, coverUrl = book.coverUrl, status = status))
+        add(
+            Book(
+                isbn = book.isbn, title = book.title, authors = book.authors, coverUrl = book.coverUrl,
+                pageCount = book.pages, description = book.blurb, status = status,
+            ),
+        )
 
     companion object {
         fun message(added: Added, status: ReadingStatus): String? = when (added) {

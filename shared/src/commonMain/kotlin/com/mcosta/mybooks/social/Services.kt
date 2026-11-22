@@ -2,6 +2,8 @@ package com.mcosta.mybooks.social
 
 import com.mcosta.mybooks.social.model.BookReview
 import com.mcosta.mybooks.social.model.BookScore
+import com.mcosta.mybooks.social.model.BookSuggestion
+import com.mcosta.mybooks.social.model.FeedBook
 import com.mcosta.mybooks.social.model.CommunitySuggestion
 import com.mcosta.mybooks.social.model.FriendReading
 import com.mcosta.mybooks.social.model.FriendWithBook
@@ -22,7 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 /** Failures the social screens explain to the user; every service call throws only this. */
 class SocialException(val kind: Kind, message: String, cause: Throwable? = null) : Exception(message, cause) {
     /** REJECTED: the server refused the data (e.g. a title over its length limit). */
-    enum class Kind { OFFLINE, SECURE_CONNECTION, TIMEOUT, INVALID_CODE, USERNAME_TAKEN, NOT_AVAILABLE, REJECTED, OTHER }
+    enum class Kind { OFFLINE, SECURE_CONNECTION, TIMEOUT, INVALID_CODE, USERNAME_TAKEN, NOT_AVAILABLE, REJECTED, TOO_MANY, OTHER }
 }
 
 /** Email one-time-code sign-in. */
@@ -95,6 +97,14 @@ interface ActivityService {
     suspend fun friendsReading(): List<FriendReading> = emptyList()
     /** Friends who have a book with this ISBN: read first, then reading, to read, to buy. */
     suspend fun friendsWithBook(isbn: String): List<FriendWithBook> = emptyList()
+    /** Suggests [book] to [recipients] (friends only); how many got it: those who already had it from you don't. */
+    suspend fun suggestBook(book: FeedBook, recipients: List<String>, note: String): Int = 0
+    /** What friends suggested to the signed-in person and is still open, newest first. */
+    suspend fun bookSuggestions(): List<BookSuggestion> = emptyList()
+    /** The person has looked at these suggestions: only the ones on their screen. */
+    suspend fun markSuggestionsSeen(ids: List<Long>) = Unit
+    /** The book was added or dismissed. */
+    suspend fun closeSuggestion(id: Long) = Unit
 }
 
 class SocialServices(

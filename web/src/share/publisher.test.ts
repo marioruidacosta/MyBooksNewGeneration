@@ -8,7 +8,7 @@ import type { Book, SyncRow } from '../sync/model'
 import { openDB } from 'idb'
 import { databaseName } from '../sync/queue'
 import { LibraryStore } from '../sync/store'
-import { SHARE_EXCLUSIONS_SYNCED, Publisher, publicFieldsDiffer, publicState, type RpcClient } from './publisher'
+import { SHARE_EXCLUSIONS_SYNCED, Publisher, blurbOf, publicFieldsDiffer, publicState, type RpcClient } from './publisher'
 
 const T = 5_000
 
@@ -103,6 +103,14 @@ afterEach(async () => {
 })
 
 describe('publicState (PublicStateTest.kt)', () => {
+  it('neverCutsAnEmojiInHalf', () => {
+    expect(blurbOf('x'.repeat(599) + '😀')).toBe('x'.repeat(599))
+    expect(blurbOf('x'.repeat(598) + '😀y')).toBe('x'.repeat(598) + '😀')
+    const state = publicState(book('s', { title: 'x'.repeat(299) + '😀', authors: 'y'.repeat(299) + '😀' }))
+    expect(state.title).toBe('x'.repeat(299))
+    expect(state.authors).toBe('y'.repeat(299))
+  })
+
   it('carriesPagesAndBlurb', () => {
     const b = book('s', { title: 'A Relíquia', status: 'READING', pageCount: 344, currentPage: 182, description: 'Teodorico.' })
     const state = publicState(b)

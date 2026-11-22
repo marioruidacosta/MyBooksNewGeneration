@@ -78,6 +78,20 @@ data class BookScore(val ratings: Int, val average: Double?, val perScore: List<
 /** A reader's score and review of a book. */
 data class BookReview(val person: Person, val rating: Int?, val review: String, val updatedAt: Instant)
 
+/** The longest note on a book suggestion, and how many friends one can go to (the server's limits). */
+const val SUGGESTION_NOTE_MAX = 280
+const val SUGGESTION_MAX_FRIENDS = 20
+
+/** A book a friend suggested to the signed-in person. [seen]: they have looked at it (the badge counts the others). */
+data class BookSuggestion(
+    val id: Long,
+    val sender: Person,
+    val book: FeedBook,
+    val note: String,
+    val createdAt: Instant,
+    val seen: Boolean,
+)
+
 /** A book community readers loved: [readers] of them who also loved the reader's favourite [because] (an ISBN). */
 data class CommunitySuggestion(
     val isbn: String,

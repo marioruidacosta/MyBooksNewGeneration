@@ -36,6 +36,7 @@ import { useCommitOnHide } from './ui/useCommitOnHide'
 import { BottomBar } from './shell/BottomBar'
 import { createCommunityApi } from './community/api'
 import { CommunityProvider } from './community/CommunityProvider'
+import { FollowSuggestions, SuggestionBadge } from './community/SuggestionBadge'
 import type { CommunityNav } from './community/useCommunity'
 import { InstallHint } from './pwa/InstallHint'
 
@@ -93,6 +94,7 @@ function Shell() {
   const publisher = useContext(SharingContext)
   return (
     <WithCommunity>
+    <FollowSuggestions />
     <ToastProvider pinned={<UpdateNotice watcher={updates} store={store} publisher={publisher} />}>
       {store && (
         <header className="app-bar">
@@ -103,7 +105,7 @@ function Shell() {
                 Library
               </Link>
               <Link to="/add">Add a book</Link>
-              <Link to="/community">Community</Link>
+              <Link to="/community">Community<SuggestionBadge /></Link>
               <Link to="/challenges">Challenges</Link>
               <Link to="/import">Import</Link>
               <Link to="/tidy">Tidy up</Link>

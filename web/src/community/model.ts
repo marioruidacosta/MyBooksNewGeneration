@@ -87,6 +87,20 @@ export const FEED_PAGE_SIZE = 20
 /** Reviews per page of `book_reviews` (the server function's default). */
 export const BOOK_REVIEWS_PAGE = 10
 
+/** The longest note on a book suggestion, and how many friends one can go to (the server's limits). */
+export const SUGGESTION_NOTE_MAX = 280
+export const SUGGESTION_MAX_FRIENDS = 20
+
+/** A book a friend suggested to the signed-in person. [seen]: they have looked at it (the badge counts the others). */
+export type BookSuggestion = {
+  id: number
+  sender: Person
+  book: FeedBook
+  note: string
+  createdAt: number
+  seen: boolean
+}
+
 export type FriendReading = { person: Person; book: FeedBook; progress: number | null; updatedAt: number }
 
 export type FriendWithBook = {

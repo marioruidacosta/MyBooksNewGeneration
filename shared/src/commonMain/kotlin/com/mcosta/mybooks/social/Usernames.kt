@@ -18,5 +18,6 @@ fun socialMessage(e: Throwable): String = when ((e as? SocialException)?.kind) {
     SocialException.Kind.INVALID_CODE -> "That code is wrong or has expired"
     SocialException.Kind.USERNAME_TAKEN -> "That username is taken"
     SocialException.Kind.NOT_AVAILABLE -> "This profile isn't available"
+    SocialException.Kind.TOO_MANY -> "You've suggested a lot of books today. Try again tomorrow."
     SocialException.Kind.REJECTED, SocialException.Kind.OTHER, null -> "Something went wrong, please try again"
 }
