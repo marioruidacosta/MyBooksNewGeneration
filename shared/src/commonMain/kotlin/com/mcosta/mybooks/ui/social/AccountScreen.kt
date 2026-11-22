@@ -2,14 +2,18 @@ package com.mcosta.mybooks.ui.social
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -20,6 +24,7 @@ import androidx.compose.material.icons.filled.SyncProblem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BasicAlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -50,6 +55,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.mcosta.mybooks.sync.SignOutCheck
 import com.mcosta.mybooks.sync.SyncStatus
@@ -299,18 +305,26 @@ fun SyncStatusSection(info: SyncInfo, now: Long, onRetry: () -> Unit, modifier: 
 }
 
 /**
- * Signing out while the library syncs: keep a local copy of it ("Keep", the default) or erase it ("Remove", or
- * "Remove anyway" when [check] says changes would be lost).
+ * Signing out while the library syncs. The library stays on this device unless the person ticks the box to remove it,
+ * and only then does the dialog say what removing would lose ([check]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KeepLibraryDialog(check: SignOutCheck, onKeep: () -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
-    BasicAlertDialog(onDismissRequest = onDismiss) { KeepLibraryCard(check, onKeep, onRemove) }
+    BasicAlertDialog(onDismissRequest = onDismiss) { KeepLibraryCard(check, onKeep, onRemove, onCancel = onDismiss) }
 }
 
 /** [KeepLibraryDialog]'s card, drawn like an alert dialog (on its own for screenshots, which can't draw dialog windows). */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun KeepLibraryCard(check: SignOutCheck, onKeep: () -> Unit, onRemove: () -> Unit) {
+fun KeepLibraryCard(
+    check: SignOutCheck,
+    onKeep: () -> Unit,
+    onRemove: () -> Unit,
+    onCancel: () -> Unit = {},
+    startRemoving: Boolean = false,
+) {
+    var removing by rememberSaveable { mutableStateOf(startRemoving) }
     Surface(
         shape = AlertDialogDefaults.shape,
         color = AlertDialogDefaults.containerColor,
@@ -318,27 +332,55 @@ fun KeepLibraryCard(check: SignOutCheck, onKeep: () -> Unit, onRemove: () -> Uni
     ) {
         Column(Modifier.padding(start = 24.dp, top = 24.dp, end = 24.dp, bottom = 18.dp)) {
             Text(
-                "Keep a copy of your library on this device?",
+                "Sign out?",
                 style = MaterialTheme.typography.headlineSmall,
                 color = AlertDialogDefaults.titleContentColor,
             )
             Text(
-                "The library in your account stays as it is.",
+                if (removing) {
+                    "Your library stays in your account and comes back here when you sign in again."
+                } else {
+                    "Your library stays in your account and on this phone. You'll see it again when you sign back in."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = AlertDialogDefaults.textContentColor,
                 modifier = Modifier.padding(top = 16.dp),
             )
-            for (warning in check.warnings()) {
+            Row(
+                Modifier
+                    .padding(top = 12.dp)
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .toggleable(value = removing, role = Role.Checkbox, onValueChange = { removing = it }),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = removing, onCheckedChange = null)
                 Text(
-                    warning,
+                    "Also remove my library from this phone",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 12.dp),
+                    modifier = Modifier.padding(start = 12.dp),
                 )
             }
-            Row(Modifier.padding(top = 24.dp).align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onRemove) { Text(check.removeLabel, color = MaterialTheme.colorScheme.error) }
-                TextButton(onClick = onKeep) { Text("Keep") }
+            if (removing) {
+                for (warning in check.warnings()) {
+                    Text(
+                        warning,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+            FlowRow(
+                Modifier.padding(top = 20.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            ) {
+                TextButton(onClick = onCancel) { Text("Cancel") }
+                if (removing) {
+                    TextButton(onClick = onRemove) { Text(check.removeLabel, color = MaterialTheme.colorScheme.error) }
+                } else {
+                    TextButton(onClick = onKeep) { Text("Sign out") }
+                }
             }
         }
     }

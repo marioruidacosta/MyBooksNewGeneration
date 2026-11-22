@@ -591,10 +591,10 @@ class ScreenshotTest {
                 androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f)).padding(40.dp),
                 contentAlignment = androidx.compose.ui.Alignment.Center,
             ) {
-                KeepLibraryCard(check, onKeep = {}, onRemove = {})
+                KeepLibraryCard(check, onKeep = {}, onRemove = {}, startRemoving = check != SignOutCheck())
             }
         }
-        for (text in listOf("Keep a copy of your library on this device?", "Keep")) compose.onNodeWithText(text).assertExists()
+        for (text in listOf("Sign out?", "Cancel")) compose.onNodeWithText(text).assertExists()
     }
 
     /** An account's first sign-in on a phone with books of its own: add them to the account? */
@@ -633,14 +633,14 @@ class ScreenshotTest {
     private fun signOutDialogPending(dark: Boolean) {
         signOutDialog(dark, SignOutCheck(waiting = 3, unconfirmed = true), "sign-out-dialog-pending")
         compose.onNodeWithText("3 changes haven't reached your account yet. Removing now loses them.").assertExists()
-        compose.onNodeWithText("Remove anyway").assertExists()
+        compose.onNodeWithText("Remove anyway and sign out").assertExists()
     }
 
     /** Signing out with ebook files on the phone (they never sync). */
     private fun signOutDialogEbooks(dark: Boolean) {
         signOutDialog(dark, SignOutCheck(ebookFiles = true), "sign-out-dialog-ebooks")
         compose.onNodeWithText("Ebook files are only on this phone and will be deleted.").assertExists()
-        compose.onNodeWithText("Remove").assertExists()
+        compose.onNodeWithText("Remove and sign out").assertExists()
     }
 
     /** A book whose ebook was added on another device: its record synced, its file didn't. */
@@ -668,7 +668,7 @@ class ScreenshotTest {
     @Test fun accountCombiningDark() = accountCombining(dark = true)
     @Test fun signOutDialogLight() {
         signOutDialog(dark = false)
-        compose.onNodeWithText("Remove").assertExists()
+        compose.onNodeWithText("Sign out").assertExists()
     }
     @Test fun signOutDialogPendingLight() = signOutDialogPending(dark = false)
     @Test fun signOutDialogPendingDark() = signOutDialogPending(dark = true)

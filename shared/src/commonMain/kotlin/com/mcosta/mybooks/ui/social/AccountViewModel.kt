@@ -79,7 +79,7 @@ data class SyncInfo(
     val setAside: Int = 0,
 )
 
-/** The keep-library question's lines after the question itself: what "Remove" would lose. */
+/** What removing the library from this device would lose; shown only once the person asks to remove it. */
 fun SignOutCheck.warnings(): List<String> = buildList {
     when {
         waiting == 1 -> add("1 change hasn't reached your account yet. Removing now loses it.")
@@ -89,8 +89,8 @@ fun SignOutCheck.warnings(): List<String> = buildList {
     if (ebookFiles) add("Ebook files are only on this phone and will be deleted.")
 }
 
-/** The keep-library question's "Remove" button. */
-val SignOutCheck.removeLabel: String get() = if (anythingWaiting) "Remove anyway" else "Remove"
+/** The sign-out dialog's button once "Also remove my library from this phone" is ticked. */
+val SignOutCheck.removeLabel: String get() = if (anythingWaiting) "Remove anyway and sign out" else "Remove and sign out"
 
 /** Shown in Settings → Account when the account's library couldn't be opened. */
 const val OPEN_FAILED = "Couldn't open your library. Try signing in again."
@@ -248,7 +248,7 @@ class AccountViewModel(
     }
 
     /**
-     * The answer to "Keep a copy of your library on this device?": the phone then shows its own library, and "Remove"
+     * The answer to the sign-out dialog (keep the library on this device, or remove it): the phone then shows its own library, and "Remove"
      * deletes the account's.
      */
     fun signOut(keepLibrary: Boolean) = launchAction {
@@ -264,7 +264,7 @@ class AccountViewModel(
         viewModelScope.launch { sync.refresh() }
     }
 
-    /** The keep-library question was dismissed: still signed in. */
+    /** The sign-out dialog was dismissed: still signed in. */
     fun cancelSignOut() {
         preparing?.cancel()
         _state.update { it.copy(askKeepLibrary = false, preparingSignOut = false) }
