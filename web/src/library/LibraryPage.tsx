@@ -262,20 +262,22 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
   }, [onAdd, remove, view])
 
   // Each change goes through `edit` for each book, and only where the book would change: the rest is not stamped.
+  // Changes to many books at once: they don't each become a new post in the community.
+  const bulkEdit = (id: string, fields: Record<string, unknown>) => store.edit('books', id, fields, { origin: 'bulk' })
   const bulk: BulkActions = {
     // The status and the dates it goes with, as the book page does (Read finishes now, To read forgets the dates).
     setStatus: (status) => {
       const now = Date.now()
-      for (const b of selected) if (b.status !== status) store.edit('books', b.id, statusChange(b, status, now))
+      for (const b of selected) if (b.status !== status) bulkEdit(b.id, statusChange(b, status, now))
     },
     addTag: (raw) => {
       const tag = raw.trim()
       if (tag === '' || tag.includes('\n')) return
-      for (const b of selected) if (!b.tags.includes(tag)) store.edit('books', b.id, { tags: [...b.tags, tag] })
+      for (const b of selected) if (!b.tags.includes(tag)) bulkEdit(b.id, { tags: [...b.tags, tag] })
     },
     removeTag: (raw) => {
       const tag = raw.trim()
-      for (const b of selected) if (b.tags.includes(tag)) store.edit('books', b.id, { tags: b.tags.filter((t) => t !== tag) })
+      for (const b of selected) if (b.tags.includes(tag)) bulkEdit(b.id, { tags: b.tags.filter((t) => t !== tag) })
     },
     setSeries: (rawSeries, rawNumber) => {
       const series = rawSeries.trim() === '' ? null : rawSeries.trim()
@@ -287,17 +289,17 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
         if (series === null && b.seriesNumber !== null) fields.series_number = null
         // A number with no series is ignored.
         if (series !== null && number !== '' && b.seriesNumber !== number) fields.series_number = number
-        if (Object.keys(fields).length > 0) store.edit('books', b.id, fields)
+        if (Object.keys(fields).length > 0) bulkEdit(b.id, fields)
       }
     },
     lend: (raw) => {
       const to = raw.trim()
       if (to === '') return
       const now = Date.now()
-      for (const b of selected) if (b.lentTo !== to) store.edit('books', b.id, { lent_to: to, lent_on: now })
+      for (const b of selected) if (b.lentTo !== to) bulkEdit(b.id, { lent_to: to, lent_on: now })
     },
     markReturned: () => {
-      for (const b of selected) if (b.lentTo !== null || b.lentOn !== null) store.edit('books', b.id, { lent_to: null, lent_on: null })
+      for (const b of selected) if (b.lentTo !== null || b.lentOn !== null) bulkEdit(b.id, { lent_to: null, lent_on: null })
     },
     remove,
   }

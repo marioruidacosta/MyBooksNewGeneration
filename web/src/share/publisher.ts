@@ -2,6 +2,17 @@ import type { Book, Status } from '../sync/model'
 import type { PendingPublish, StoredPublish } from '../sync/queue'
 import type { LibraryStore } from '../sync/store'
 
+/** "Don't share this book": one synced preference per book, value '1'. The server enforces it too. */
+export const SHARE_EXCLUDED_PREFIX = 'share_excluded.'
+
+const excludedKey = (id: string) => SHARE_EXCLUDED_PREFIX + id
+
+/**
+ * Synced once every exclusion is in the cloud: an updated phone sets it after uploading the ones it kept to itself, and
+ * the site when the community is joined here. Until then a book the server doesn't list may be private on a phone.
+ */
+export const SHARE_EXCLUSIONS_SYNCED = 'share_exclusions.synced'
+
 /** The server's limit for a shared title or authors. */
 const MAX_SHARED_TEXT = 300
 
@@ -77,7 +88,7 @@ export type RpcClient = {
 export type PublisherOptions = {
   store: Pick<
     LibraryStore,
-    'onLocalChangeWithOrigin' | 'loadPublishes' | 'putPublish' | 'deletePublish' | 'book'
+    'onLocalChangeWithOrigin' | 'loadPublishes' | 'putPublish' | 'deletePublish' | 'book' | 'pref' | 'setPref' | 'isQueued'
   >
   client: RpcClient
   /** Waits after the last change before sending (dragging a slider sends one update); the phone waits 2 s. */
@@ -91,6 +102,11 @@ export type PublisherOptions = {
    * can't be read (an error, offline). Nothing is sent unless it is [owner]; 'unknown' waits, anything else drops.
    */
   currentOwner: () => string | null | 'unknown' | Promise<string | null | 'unknown'>
+  /**
+   * Whether this account shares its activity: false with no community profile or with sharing off, 'unknown' when it
+   * can't be read. Left out, the server alone decides.
+   */
+  readSharing?: () => Promise<boolean | 'unknown'>
 }
 
 type Entry = PendingPublish
@@ -102,9 +118,12 @@ const isRefusal = (code: string | undefined) => code !== undefined && /^(22|23|4
 
 /**
  * Posts the site's changes to the community exactly as the phone does (`Publisher.kt`, `ShareTracker.kt`):
- * - A book counts as shared when the server lists it in `my_shared_book_ids()` (read at load, at the start of every
- *   send pass so a phone's exclusion or sharing is seen, and after each publish; when that read fails nothing is
- *   decided from the old list and the change waits) or the site just created it. There is no per-book switch.
+ * - A change made to a book by hand publishes unless the book is excluded ("Don't share this book", synced between
+ *   devices, see [setExcluded]). That takes the account's exclusions being in the cloud ([SHARE_EXCLUSIONS_SYNCED]);
+ *   until they are, and for changes to many books at once, only books the server already has are posted. A book counts
+ *   as shared when the server lists it in `my_shared_book_ids()` (read at load, at the start of every send pass, and
+ *   after each publish; when that read fails nothing is decided from the old list and the change waits) or the site
+ *   just created it.
  * - Only a change to what the community sees publishes, sent with the state from before the batch of changes so the
  *   server creates the right feed entries; changes arriving together go as one. Removing a shared book unpublishes it.
  * - Changes pulled from a phone never publish (the store tells only of edits made here), and bulk writes tagged
@@ -114,8 +133,7 @@ const isRefusal = (code: string | undefined) => code !== undefined && /^(22|23|4
  *   again once what the community sees of it changes (as on the phone). The local edit is never touched.
  * - Every send first checks the session is still this publisher's account.
  * - Changes waiting at a closed tab are kept in the browser's copy of the library and sent at the next visit of the same
- *   account (dropped for any other). The shared ids are read first, so a post for a book that is no longer shared goes
- *   nowhere: the phone stays the source of truth for what's shared.
+ *   account (dropped for any other). A post for a book excluded meanwhile goes nowhere.
  */
 export class Publisher {
   private readonly client: RpcClient
@@ -124,6 +142,9 @@ export class Publisher {
   private readonly store: PublisherOptions['store']
   private readonly owner: string | undefined
   private readonly currentOwner: PublisherOptions['currentOwner'] | undefined
+  private readonly readSharing: PublisherOptions['readSharing'] | undefined
+  /** Whether the account shares, as last read; null until then. */
+  private sharing: boolean | null = null
 
   private ids = new Set<string>()
   private idsKnown = false
@@ -150,6 +171,7 @@ export class Publisher {
     this.retryDelays = options.retryDelays?.length ? options.retryDelays : RETRY_DELAYS
     this.owner = options.owner
     this.currentOwner = options.currentOwner
+    this.readSharing = options.readSharing
   }
 
   /** Starts listening to the store and reads the shared ids; resolves when that first read is over. */
@@ -159,6 +181,7 @@ export class Publisher {
       if (change[0] === 'books') this.onBook(change[1], change[2], change[3])
     })
     if (typeof window !== 'undefined') window.addEventListener('online', this.onOnline)
+    await this.refreshSharing()
     if (!(await this.refreshIds())) this.scheduleRetry()
     else if (this.pending.size > 0 && !this.stopped) this.schedule()
   }
@@ -175,23 +198,64 @@ export class Publisher {
 
   /** Whether the community has this book (or the site just posted it); null until the shared books are known. */
   isShared(id: string): boolean | null {
+    if (this.sharing === false || this.isExcluded(id)) return false
     if (this.created.has(id)) return true
     return this.idsKnown ? this.ids.has(id) : null
   }
 
+  /** Reads what the server has shared again (sharing was just turned on or off). */
+  async refresh(): Promise<void> {
+    await this.refreshSharing()
+    await this.refreshIds()
+    this.notify()
+  }
+
+  /** "Don't share this book", as set on any device. */
+  isExcluded(id: string): boolean {
+    return this.store.pref(excludedKey(id)) === '1'
+  }
+
   /**
-   * Whether changes are waiting to be sent that closing the tab could lose: a post for a book that is shared (or was
-   * made on the site). A change to a book that isn't shared will never be posted, so it doesn't count. (They are kept
+   * Sets "Don't share this book" for every device. Excluding takes the public copy down (the server does too, when the
+   * preference reaches it). Sharing again posts the book as it is, measured from itself, so no feed entry appears.
+   */
+  setExcluded(id: string, excluded: boolean): void {
+    if (excluded === this.isExcluded(id)) return
+    this.store.setPref(excludedKey(id), excluded ? '1' : null)
+    if (excluded) {
+      this.refused.delete(id)
+      this.queueUnpublish(id)
+    } else {
+      const book = this.store.book(id)
+      if (book) this.queuePublish(book, book, false, { reshare: true })
+    }
+    this.notify()
+  }
+
+  /**
+   * Whether changes are waiting to be sent that closing the tab could lose. A change to an excluded book will never be
+   * posted, so it doesn't count. (They are kept
    * in the browser's copy too, and go at the next visit; this is for the person who would rather they went now.)
    */
   hasPending(): boolean {
+    // Not sharing: what's waiting will be dropped, not sent.
+    if (this.sharing === false) return false
+    // Offline nothing can go out, and what waits is in the browser's copy: it goes at the next visit.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return false
     for (const [id, entry] of this.pending) {
+      if (entry.kind === 'publish' && this.isExcluded(id)) continue
       // Which books are shared isn't known yet: any change might be.
       if (!this.idsKnown) return true
-      if (entry.kind === 'publish' && entry.created) return true
+      if (entry.kind === 'publish' && this.mayPost(entry)) return true
       if (this.ids.has(id)) return true
     }
     return false
+  }
+
+  /** Whether a post may put its book in the community even though the server doesn't have it. */
+  private mayPost(entry: Extract<Entry, { kind: 'publish' }>): boolean {
+    return entry.created || entry.reshare === true ||
+      (entry.mayShare === true && this.store.pref(SHARE_EXCLUSIONS_SYNCED) === '1')
   }
 
   /** Called when the shared books change. Returns the way to stop. */
@@ -265,6 +329,7 @@ export class Publisher {
       if (before) this.queueUnpublish(before.id)
       return
     }
+    if (this.isExcluded(after.id)) return
     if (!before && origin === 'restore') {
       // Undo of a removal. Not a book created on the site, however it looks to the store (it was "deleted", now it
       // isn't): posting it as new would put a book the phone excluded into the community, bring back the copy a Tidy
@@ -292,18 +357,26 @@ export class Publisher {
       this.queuePublish(before, after, true)
       return
     }
-    if (publicFieldsDiffer(before, after)) this.queuePublish(before, after, false)
+    if (publicFieldsDiffer(before, after)) {
+      this.queuePublish(before, after, false, origin === undefined ? { mayShare: true } : {})
+    }
   }
 
-  private queuePublish(before: Book | null, after: Book, created: boolean) {
-    const held = this.pending.get(after.id)
-    // "Before" is the state before this batch of changes: the first one stays.
-    const entry: Entry =
-      held?.kind === 'publish'
-        ? { kind: 'publish', before: held.before, after, created: held.created || created }
-        : { kind: 'publish', before, after, created }
+  private queuePublish(
+    before: Book | null, after: Book, created: boolean, flags: { mayShare?: boolean; reshare?: boolean } = {},
+  ) {
+    const found = this.pending.get(after.id)
+    const held = found?.kind === 'publish' ? found : null
+    // "Before" is the state before this batch of changes: the first one stays. An undone removal has none, so a real
+    // change after it is measured from just before that change.
+    const first = held && (held.before !== null || held.created || before === null) ? held.before : before
+    const entry: Extract<Entry, { kind: 'publish' }> = {
+      kind: 'publish', before: first, after, created: (held?.created ?? false) || created,
+      ...(held?.mayShare || flags.mayShare ? { mayShare: true } : {}),
+      ...(held?.reshare || flags.reshare ? { reshare: true } : {}),
+    }
     // Changed and changed back before anything was sent: nothing to say.
-    if (!entry.created && entry.before && !publicFieldsDiffer(entry.before, after)) {
+    if (!entry.created && !entry.reshare && entry.before && !publicFieldsDiffer(entry.before, after)) {
       this.deletePending(after.id)
       return
     }
@@ -367,6 +440,20 @@ export class Publisher {
   private async drain(): Promise<void> {
     while (!this.stopped && this.pending.size > 0) {
       if (!(await this.sessionIsOurs()) || this.stopped) return
+      // Read at every pass, as sharing can be turned on or off on another device. Not sharing: nothing goes out, and
+      // what was waiting is dropped, as the phone does.
+      const sharing = await this.refreshSharing()
+      if (this.stopped) return
+      if (sharing === 'unknown') {
+        this.scheduleRetry()
+        return
+      }
+      if (!sharing) {
+        this.created.clear()
+        this.clearPending()
+        this.notify()
+        return
+      }
       // Read fresh at every pass: a phone may have excluded or shared books since. A failed read decides nothing.
       if (!(await this.refreshIds())) {
         this.scheduleRetry()
@@ -374,11 +461,23 @@ export class Publisher {
       }
       if (this.stopped) return
       let published = false
+      let waiting = false
       for (const [id, entry] of [...this.pending]) {
         if (this.stopped) return
-        // Not shared (a phone excluded it, or sharing is off): not for the site to post.
-        if (entry.kind === 'publish' && !entry.created && !this.ids.has(id)) {
+        // Excluded (here or on another device), even since it was queued: never posted.
+        if (entry.kind === 'publish' && this.isExcluded(id)) {
+          this.created.delete(id)
           this.deletePending(id)
+          continue
+        }
+        // Not on the server, and not a change that may put it there.
+        if (entry.kind === 'publish' && !this.ids.has(id) && !this.mayPost(entry)) {
+          this.deletePending(id)
+          continue
+        }
+        // Shared again: the server would ignore it until it has heard the exclusion is gone.
+        if (entry.kind === 'publish' && entry.reshare && this.store.isQueued('prefs', excludedKey(id))) {
+          waiting = true
           continue
         }
         if (entry.kind === 'unpublish' && !this.ids.has(id)) {
@@ -398,7 +497,7 @@ export class Publisher {
             this.deletePending(id)
             continue
           }
-          if (!entry.created && entry.before && !publicFieldsDiffer(entry.before, current)) {
+          if (!entry.created && !entry.reshare && entry.before && !publicFieldsDiffer(entry.before, current)) {
             this.deletePending(id)
             continue
           }
@@ -442,6 +541,10 @@ export class Publisher {
         this.notify()
       }
       if (published) await this.refreshIds()
+      if (waiting) {
+        this.scheduleRetry()
+        return
+      }
     }
   }
 
@@ -487,6 +590,19 @@ export class Publisher {
     this.clearPending()
     this.notify()
     return false
+  }
+
+  /** Reads whether the account shares; 'unknown' keeps what was known. */
+  private async refreshSharing(): Promise<boolean | 'unknown'> {
+    if (!this.readSharing) return true
+    let answer: boolean | 'unknown'
+    try {
+      answer = await this.readSharing()
+    } catch {
+      answer = 'unknown'
+    }
+    if (answer !== 'unknown') this.sharing = answer
+    return answer
   }
 
   /** Reads the shared ids; false when that failed (the ones known stay). */

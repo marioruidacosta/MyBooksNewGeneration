@@ -3,12 +3,12 @@ import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mergeBooks } from '../tidy/mergeBooks'
 import { applyPlan, type Plan } from '../io/importPlan'
-import type { PullPage, PushResult, SyncApi } from '../sync/api'
+import { rowKey, type PullPage, type PushResult, type SyncApi } from '../sync/api'
 import type { Book, SyncRow } from '../sync/model'
 import { openDB } from 'idb'
 import { databaseName } from '../sync/queue'
 import { LibraryStore } from '../sync/store'
-import { Publisher, publicFieldsDiffer, publicState, type RpcClient } from './publisher'
+import { SHARE_EXCLUSIONS_SYNCED, Publisher, publicFieldsDiffer, publicState, type RpcClient } from './publisher'
 
 const T = 5_000
 
@@ -28,8 +28,8 @@ class FakeApi implements SyncApi {
     const rows = this.rows.filter((r) => (r.seq ?? 0) > after)
     return { rows, last: rows.length ? Math.max(...rows.map((r) => r.seq ?? 0)) : after }
   }
-  async push(): Promise<PushResult> {
-    return { applied: [], rejected: [] }
+  async push(changes: SyncRow[]): Promise<PushResult> {
+    return { applied: changes.map((c) => rowKey(c.table, c.id)), rejected: [] }
   }
   onPing(): () => void {
     return () => {}
@@ -75,7 +75,7 @@ const stores: LibraryStore[] = []
 const publishers: Publisher[] = []
 
 async function setup(
-  opts: { shared?: string[]; books?: Book[]; retryDelays?: number[]; owner?: string; currentOwner?: () => string | null | 'unknown' | Promise<string | null | 'unknown'> } = {},
+  opts: { shared?: string[]; books?: Book[]; retryDelays?: number[]; readSharing?: () => Promise<boolean | 'unknown'>; untrusted?: boolean; owner?: string; currentOwner?: () => string | null | 'unknown' | Promise<string | null | 'unknown'> } = {},
 ) {
   const api = new FakeApi()
   const rpc = new FakeRpc()
@@ -84,8 +84,9 @@ async function setup(
   stores.push(store)
   await store.load()
   for (const b of opts.books ?? []) store.create(b)
+  if (!opts.untrusted) store.setPref(SHARE_EXCLUSIONS_SYNCED, '1')
   const publisher = new Publisher({
-    store, client: rpc, debounceMs: 0, retryDelays: opts.retryDelays ?? [5], owner: opts.owner ?? 'u1', currentOwner: opts.currentOwner ?? (() => 'u1'),
+    store, client: rpc, debounceMs: 0, retryDelays: opts.retryDelays ?? [5], readSharing: opts.readSharing, owner: opts.owner ?? 'u1', currentOwner: opts.currentOwner ?? (() => 'u1'),
   })
   publishers.push(publisher)
   await publisher.start()
@@ -166,14 +167,220 @@ describe('the publisher', () => {
     expect(rpc.of('my_shared_book_ids')).toHaveLength(3)
   }, T)
 
-  it('anUnsharedBookIsNeverPublished', async () => {
+  it('aChangeToABookNotSharedYetPublishesItLikeThePhone', async () => {
     const { rpc, store, publisher } = await setup({ shared: ['other'], books: [book('b1')] })
+    await publisher.idle()
+    rpc.calls.length = 0
     store.edit('books', 'b1', { status: 'READ', rating: 5 })
+    await publisher.idle()
+    const sent = rpc.of('publish_book')
+    expect(sent).toHaveLength(1)
+    // Measured from the state before the change, so an old book makes one entry and not a "new book" one.
+    expect((sent[0].args.before as { status: string }).status).toBe('to_read')
+    expect(publisher.isShared('b1')).toBe(true)
+  }, T)
+
+  it('anAccountThatDoesNotShareSendsNothing', async () => {
+    const { rpc, store, publisher } = await setup({ shared: [], books: [book('b1')], readSharing: async () => false })
+    store.edit('books', 'b1', { status: 'READ' })
+    expect(publisher.hasPending()).toBe(false)
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(0)
+  }, T)
+
+  it('whetherTheAccountSharesIsReadAgainAtEverySend', async () => {
+    let sharing = false
+    const { rpc, store, publisher } = await setup({ shared: [], books: [book('b1')], readSharing: async () => sharing })
+    store.edit('books', 'b1', { status: 'READING' })
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(0)
+    sharing = true // turned on, here or on another device
+    store.edit('books', 'b1', { status: 'READ' })
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+  }, T)
+
+  it('whenSharingCannotBeReadTheChangeWaits', async () => {
+    let answer: boolean | 'unknown' = 'unknown'
+    const { rpc, store, publisher } = await setup({
+      shared: [], books: [book('b1')], retryDelays: [1], readSharing: async () => answer,
+    })
+    store.edit('books', 'b1', { status: 'READ' })
+    await new Promise((r) => setTimeout(r, 15))
+    expect(rpc.of('publish_book')).toHaveLength(0)
+    expect(publisher.hasPending()).toBe(true)
+    answer = true
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+  }, T)
+
+  it('untilThePhonesHaveUploadedTheirExclusionsOnlySharedBooksPost', async () => {
+    const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1'), book('b2')], untrusted: true })
+    await publisher.idle()
+    store.edit('books', 'b2', { status: 'READ' }) // may be private on a phone that hasn't updated
+    store.edit('books', 'b1', { status: 'READ' })
+    expect(publisher.hasPending()).toBe(true)
+    await publisher.idle()
+    expect(rpc.of('publish_book').map((c) => (c.args.book as { id: string }).id)).toEqual(['b1'])
+  }, T)
+
+  it('anUntrustedAccountStillPostsABookMadeOnTheSite', async () => {
+    const { rpc, store, publisher } = await setup({ shared: [], untrusted: true })
+    store.create(book('new'))
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+  }, T)
+
+  it('bulkChangesPostOnlyBooksTheServerHas', async () => {
+    const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1'), book('b2')] })
+    await publisher.idle()
+    store.edit('books', 'b1', { status: 'READ' }, { origin: 'bulk' })
+    store.edit('books', 'b2', { status: 'READ' }, { origin: 'bulk' })
+    await publisher.idle()
+    expect(rpc.of('publish_book').map((c) => (c.args.book as { id: string }).id)).toEqual(['b1'])
+  }, T)
+
+  it('aPersonalEditAfterABulkOneStillPosts', async () => {
+    const { rpc, store, publisher } = await setup({ shared: [], books: [book('b1')] })
+    await publisher.idle()
+    store.edit('books', 'b1', { tags: ['x'], status: 'READING' }, { origin: 'bulk' })
+    store.edit('books', 'b1', { rating: 4 })
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+  }, T)
+
+  it('aPostQueuedByTheOlderSiteStaysOnlyIfShared', async () => {
+    const api = new FakeApi()
+    const rpc = new FakeRpc()
+    rpc.shared = ['listed']
+    const store = new LibraryStore({ api, owner: 'u1', pollMs: 0, retryDelays: [60_000] })
+    stores.push(store)
+    await store.load()
+    for (const id of ['listed', 'never']) store.create(book(id, { status: 'READ' }))
+    store.setPref(SHARE_EXCLUSIONS_SYNCED, '1')
+    // As the previous version stored them: a change to a book, with no flags.
+    vi.spyOn(store, 'loadPublishes').mockResolvedValue(['listed', 'never'].map((id) => ({
+      id, owner: 'u1', entry: { kind: 'publish' as const, before: { ...store.book(id)!, status: 'TO_READ' as const }, after: store.book(id)!, created: false },
+    })))
+    const publisher = new Publisher({ store, client: rpc, debounceMs: 0, retryDelays: [5], owner: 'u1', currentOwner: () => 'u1' })
+    publishers.push(publisher)
+    await publisher.start()
+    await publisher.idle()
+    expect(rpc.of('publish_book').map((c) => (c.args.book as { id: string }).id)).toEqual(['listed'])
+  }, T)
+
+  it('reExcludingWinsOverARemovalFromAPhone', async () => {
+    const { store } = await setup({ shared: [], books: [] })
+    store.setPref('share_excluded.b1', '1')
+    store.setPref('share_excluded.b1', null)
+    const stored = () => (store as unknown as { rows: Map<string, SyncRow> }).rows.get('prefs/share_excluded.b1') ??
+      [...(store as unknown as { rows: Map<string, SyncRow> }).rows.values()].find((r) => r.id === 'share_excluded.b1')!
+    const before = stored().times.value
+    store.setPref('share_excluded.b1', '1')
+    // The value's time moves too, so the server takes this value over a phone's newer empty one.
+    expect(stored().times.value).toBeGreaterThan(before)
+  }, T)
+
+  it('sharingAgainWaitsUntilTheServerKnowsTheExclusionIsGone', async () => {
+    const { rpc, store, publisher } = await setup({ shared: [], books: [book('b1')], retryDelays: [1] })
+    store.setPref('share_excluded.b1', '1')
+    await store.idle()
+    await publisher.idle()
+    let queued = true
+    const isQueued = vi.spyOn(store, 'isQueued').mockImplementation(() => queued)
+    publisher.setExcluded('b1', false)
+    await new Promise((r) => setTimeout(r, 15))
+    expect(rpc.of('publish_book')).toHaveLength(0)
+    queued = false
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(1)
+    isQueued.mockRestore()
+  }, T)
+
+  it('offlineNothingIsHeldBackFromClosing', async () => {
+    const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1')] })
+    await publisher.idle()
+    rpc.idsError = true
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    store.edit('books', 'b1', { status: 'READ' })
+    expect(publisher.hasPending()).toBe(false) // it is kept in the browser and goes at the next visit
+    online.mockRestore()
+    rpc.idsError = false
+  }, T)
+
+  it('tidyMergeIntoASharedBookKeepsAPrivateCopyPrivate', async () => {
+    const { rpc, store, publisher } = await setup({
+      shared: ['k'],
+      books: [book('k', { title: 'Same' }), book('d', { title: 'Same', rating: 2, review: 'my private review' })],
+    })
+    store.setPref('share_excluded.d', '1')
+    await publisher.idle()
+    rpc.calls.length = 0
+    const { undo } = await mergeBooks(store, store.book('k')!, store.book('d')!)
+    await publisher.idle()
+    expect(store.book('k')?.review).toBe('my private review')
+    expect(store.pref('share_excluded.k')).toBe('1')
+    expect(rpc.of('publish_book')).toEqual([])
+    undo()
+    expect(store.pref('share_excluded.k')).toBeNull()
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toEqual([])
+  }, T)
+
+  it('anExcludedBookIsNeverPublished', async () => {
+    const { rpc, store, publisher } = await setup({ shared: ['other'], books: [book('b1')] })
+    store.setPref('share_excluded.b1', '1')
+    store.edit('books', 'b1', { status: 'READ', rating: 5 })
+    await publisher.idle()
     store.remove('books', 'b1')
     await publisher.idle()
     expect(rpc.of('publish_book')).toHaveLength(0)
     expect(rpc.of('unpublish_book')).toHaveLength(0)
     expect(publisher.isShared('b1')).toBe(false)
+  }, T)
+
+  it('aChangeWaitingWhenTheBookIsExcludedElsewhereIsDropped', async () => {
+    const { rpc, store, publisher } = await setup({ shared: [], books: [book('b1')] })
+    await publisher.idle()
+    store.edit('books', 'b1', { status: 'READ' })
+    store.setPref('share_excluded.b1', '1') // as a pull from a phone would
+    expect(publisher.hasPending()).toBe(false)
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(0)
+  }, T)
+
+  it('excludingABookSyncsItAndTakesItDown', async () => {
+    const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1')] })
+    publisher.setExcluded('b1', true)
+    expect(store.pref('share_excluded.b1')).toBe('1')
+    expect(publisher.isExcluded('b1')).toBe(true)
+    expect(publisher.isShared('b1')).toBe(false)
+    await publisher.idle()
+    expect(rpc.of('unpublish_book').map((c) => c.args.id)).toEqual(['b1'])
+  }, T)
+
+  it('excludingDropsAPostStillWaiting', async () => {
+    const { rpc, store, publisher } = await setup({ shared: [], books: [book('b1')] })
+    await publisher.idle()
+    store.edit('books', 'b1', { status: 'READ' })
+    publisher.setExcluded('b1', true)
+    await publisher.idle()
+    expect(rpc.of('publish_book')).toHaveLength(0)
+  }, T)
+
+  it('sharingABookAgainPostsItWithoutAFeedEntry', async () => {
+    const { rpc, store, publisher } = await setup({ shared: [], books: [book('b1', { status: 'READ' })] })
+    store.setPref('share_excluded.b1', '1')
+    await publisher.idle()
+    publisher.setExcluded('b1', false)
+    expect(store.pref('share_excluded.b1')).toBeNull()
+    expect(publisher.isExcluded('b1')).toBe(false)
+    await publisher.idle()
+    const sent = rpc.of('publish_book').filter((c) => (c.args.book as { id: string }).id === 'b1')
+    expect(sent).toHaveLength(1)
+    // "Before" equals the book: the server sees no change, so nothing appears in anyone's feed.
+    expect(sent[0].args.before).toEqual(sent[0].args.book)
+    expect(publisher.isShared('b1')).toBe(true)
   }, T)
 
   it('notesOnlyChangesDontPublish', async () => {
@@ -230,10 +437,12 @@ describe('the publisher', () => {
     expect(store.book('b1')?.status).toBe('READ')
     expect(store.book('imp1')).toBeDefined()
     expect(rpc.of('publish_book')).toHaveLength(0)
-    // A book imported here is not "created on the site": editing it later doesn't publish either.
+    // Importing posts nothing, but a later change to an imported book is a change like any other, as on the phone.
     store.edit('books', 'imp1', { status: 'READ' })
     await publisher.idle()
-    expect(rpc.of('publish_book')).toHaveLength(0)
+    const sent = rpc.of('publish_book')
+    expect(sent).toHaveLength(1)
+    expect((sent[0].args.before as { status: string }).status).toBe('to_read')
   }, T)
 
   it('tidyMergeUnpublishesTheDroppedBookAndPublishesTheKeptOnce', async () => {
@@ -247,10 +456,24 @@ describe('the publisher', () => {
     expect((rpc.of('publish_book')[0].args.book as { id: string }).id).toBe('k')
   }, T)
 
-  it('tidyMergeOfUnsharedBooksPublishesNothing', async () => {
+  it('tidyMergeOfBooksNotSharedYetNeverPostsTheDroppedCopy', async () => {
     const { rpc, store, publisher } = await setup({
       shared: [], books: [book('k', { title: 'Same' }), book('d', { title: 'Same', pageCount: 300 })],
     })
+    await publisher.idle()
+    await mergeBooks(store, store.book('k')!, store.book('d')!)
+    await publisher.idle()
+    expect(rpc.of('unpublish_book')).toEqual([])
+    expect(rpc.of('publish_book').filter((c) => (c.args.book as { id: string }).id === 'd')).toEqual([])
+  }, T)
+
+  it('tidyMergeOfExcludedBooksPublishesNothing', async () => {
+    const { rpc, store, publisher } = await setup({
+      shared: [], books: [book('k', { title: 'Same' }), book('d', { title: 'Same', pageCount: 300 })],
+    })
+    store.setPref('share_excluded.k', '1')
+    store.setPref('share_excluded.d', '1')
+    await publisher.idle()
     await mergeBooks(store, store.book('k')!, store.book('d')!)
     await publisher.idle()
     expect(rpc.calls.filter((c) => c.fn !== 'my_shared_book_ids')).toEqual([])
@@ -344,6 +567,7 @@ describe('the publisher', () => {
     const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1')] })
     expect(publisher.isShared('b1')).toBe(true)
     rpc.shared = [] // the person excluded it on the phone while this tab was open
+    store.setPref('share_excluded.b1', '1')
     store.edit('books', 'b1', { status: 'READ' })
     await publisher.idle()
     expect(rpc.of('publish_book')).toHaveLength(0)
@@ -729,9 +953,10 @@ describe('the publisher', () => {
     }
   }, T)
 
-  it('anUnsharedEditDoesNotWarnOnClose', async () => {
+  it('anExcludedBooksEditDoesNotWarnOnClose', async () => {
     const { rpc, store, publisher } = await setup({ shared: ['b1'], books: [book('b1'), book('b2')] })
-    // b2 is not shared: its edit will never be posted, so closing the tab loses nothing.
+    // b2 is excluded: its edit will never be posted, so closing the tab loses nothing.
+    store.setPref('share_excluded.b2', '1')
     store.edit('books', 'b2', { status: 'READ' })
     expect(publisher.hasPending()).toBe(false)
     // b1 is shared: closing now would lose the post.

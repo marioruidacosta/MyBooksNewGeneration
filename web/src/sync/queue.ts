@@ -8,7 +8,20 @@ export type QueueEntry = { table: SyncTable; id: string }
 
 /** A community post waiting to be sent (see `Publisher`): the book as it was before the changes and after them. */
 export type PendingPublish =
-  | { kind: 'publish'; before: Book | null; after: Book; created: boolean }
+  | {
+      kind: 'publish'
+      before: Book | null
+      after: Book
+      created: boolean
+      /**
+       * A change made to this book by hand, which may put it in the community even if the server doesn't have it yet.
+       * Without it (an undo, a change to many books at once, a post queued by an older version) it goes only if the
+       * server already has the book.
+       */
+      mayShare?: boolean
+      /** Shared again after "Don't share": sent even though nothing changed, so the book is back with no feed entry. */
+      reshare?: boolean
+    }
   | { kind: 'unpublish' }
 
 /** A [PendingPublish] as kept in the cache, with the book it is about and the account that made it. */
