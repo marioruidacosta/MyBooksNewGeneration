@@ -1,5 +1,9 @@
 package com.mcosta.mybooks.sync
 
+import com.mcosta.mybooks.share.ShareExclusions
+import com.mcosta.mybooks.share.SHARE_EXCLUSIONS_SYNCED
+import com.mcosta.mybooks.share.SHARE_EXCLUDED_PREFIX
+import com.mcosta.mybooks.data.Preferences
 import com.mcosta.mybooks.data.FakeBookDao
 import com.mcosta.mybooks.data.FakeBookmarkDao
 import com.mcosta.mybooks.data.FakeChallengeDao
@@ -108,12 +112,32 @@ private class Phone(api: SyncApi, scope: CoroutineScope, clock: () -> Long) {
     val ebookFiles = EbookFiles(fs, "/ebooks".toPath())
     val recorder = SyncRecorder(queue, clock, { true }, { it() })
     var pendingCalls = 0
+    val prefValues = mutableMapOf<String, String>()
     val shares = ShareTracker(
         shareDao, activeOwner = { OWNER }, onPending = { pendingCalls++ }, uuidOf = { id -> books.getById(id)?.uuid },
+        exclusions = ShareExclusions(
+            object : Preferences {
+                override fun get(key: String) = prefValues[key]
+                override fun set(key: String, value: String) { prefValues[key] = value }
+            },
+            { prefValues.keys },
+            onChanged = { key ->
+                recorder.transaction {
+                    state.set(prefTimeKey(key), clock().toString())
+                    recorder.record(SyncTable.PREFS, key)
+                }
+            },
+        ),
+        bookIdOf = { uuid -> books.getByUuid(uuid)?.id },
     )
     val db = SyncDatabase(
         books = books, quotes = quotes, ebooks = ebooks, bookmarks = bookmarks, challenges = challenges,
         queue = queue, state = state, shareState = shareDao,
+        prefs = object : SyncedPrefs {
+            override val keys: Collection<String> get() = shares.exclusionKeys()
+            override fun get(key: String) = shares.exclusionValue(key)
+            override fun set(key: String, value: String?) = shares.storeExclusion(key, value)
+        },
     )
     val applier = RemoteApplier(db, recorder, covers, shares)
     val sync = LibrarySync(
@@ -255,6 +279,33 @@ class FirstMergeTest {
         assertEquals(100 to 250, seen.filterNotNull().first())
         assertNull(again.progress.value)
         assertNotNull(phone.state.get("merged:$OWNER"))
+    }
+
+    @Test
+    fun theWebsiteIsToldAfterTheExclusionUnderTheCloudId() = runTest {
+        val server = server()
+        server.push(listOf(book("C", "Os Maias", isbn = "9789720049572", time = 500).toRow(null)))
+        val pushed = mutableListOf<String>()
+        val api = object : SyncApi by server {
+            override suspend fun push(rows: List<SyncRow>) = server.push(rows).also { pushed += rows.map { r -> r.id } }
+        }
+        val phone = phone(api)
+        val id = phone.books.insert(book("S", "Os Maias", isbn = "9789720049572"))
+        phone.shareDao.upsert(
+            ShareStateEntity(
+                id, shareId = "S", owner = OWNER, hasBefore = false, beforeStatus = null, beforeRating = null,
+                beforeProgress = null, beforeReview = null, pending = false, excluded = true, deleted = false,
+            ),
+        )
+        phone.shares.carryExclusionsOver()
+
+        phone.sync.start(OWNER)
+        advanceUntilIdle()
+
+        val exclusion = pushed.lastIndexOf(SHARE_EXCLUDED_PREFIX + "C")
+        val marker = pushed.indexOf(SHARE_EXCLUSIONS_SYNCED)
+        assertTrue(exclusion >= 0, "pushed: $pushed")
+        assertTrue(marker > exclusion, "the marker vouches for it, so it goes after: $pushed")
     }
 
     @Test

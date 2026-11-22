@@ -13,6 +13,7 @@ import com.mcosta.mybooks.data.db.SyncStateDao
 import com.mcosta.mybooks.data.db.toBook
 import com.mcosta.mybooks.data.ebooks.EbookFiles
 import com.mcosta.mybooks.domain.EbookFormat
+import com.mcosta.mybooks.share.SHARE_EXCLUDED_PREFIX
 import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
@@ -104,6 +105,16 @@ class RemoteApplier(
                 throw e
             } catch (_: Exception) {
                 // The share state is best effort: the library is already up to date.
+            }
+        }
+        for (row in rows) {
+            if (row.table != SyncTable.PREFS || !row.id.startsWith(SHARE_EXCLUDED_PREFIX)) continue
+            try {
+                tracker.applyExclusion(row.id)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Best effort too: the server refuses to publish an excluded book anyway.
             }
         }
     }

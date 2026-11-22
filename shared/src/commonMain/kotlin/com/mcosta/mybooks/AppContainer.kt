@@ -29,6 +29,7 @@ import com.mcosta.mybooks.library.LibrarySessions
 import com.mcosta.mybooks.library.LibrarySpace
 import com.mcosta.mybooks.library.LibraryUpgrade
 import com.mcosta.mybooks.library.UpgradeResult
+import com.mcosta.mybooks.share.ShareExclusions
 import com.mcosta.mybooks.share.Publisher
 import com.mcosta.mybooks.share.ShareLock
 import com.mcosta.mybooks.share.ShareTracker
@@ -290,6 +291,8 @@ internal fun sharingFor(
     dao: ShareStateDao,
     scope: CoroutineScope,
     uuidOf: suspend (Long) -> String? = { null },
+    exclusions: ShareExclusions? = null,
+    bookIdOf: suspend (String) -> Long? = { null },
     loadBook: suspend (Long) -> Book?,
 ): Sharing? {
     if (social == null || id !is LibraryId.Account) return null
@@ -300,7 +303,10 @@ internal fun sharingFor(
     val activeOwner = { status.state.value.activeOwner }
     val lock = ShareLock()
     val publisher = Publisher(dao, loadBook, social.activity, activeOwner, scope, lock = lock)
-    val tracker = ShareTracker(dao, activeOwner, onPending = publisher::requestSync, lock = lock, uuidOf = uuidOf)
+    val tracker = ShareTracker(
+        dao, activeOwner, onPending = publisher::requestSync, lock = lock, uuidOf = uuidOf,
+        exclusions = exclusions, bookIdOf = bookIdOf,
+    )
     status = SharingStatus(social, scope, onActivated = publisher::requestSync, onDisabled = tracker::forgetOwner, session = ownSession)
     return Sharing(tracker, status, publisher)
 }

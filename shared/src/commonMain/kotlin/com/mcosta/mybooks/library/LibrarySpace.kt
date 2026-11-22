@@ -23,6 +23,7 @@ import com.mcosta.mybooks.data.suggestions.SubjectSearch
 import com.mcosta.mybooks.data.suggestions.SuggestionEngine
 import com.mcosta.mybooks.domain.ReadingSummary
 import com.mcosta.mybooks.domain.readingSummary
+import com.mcosta.mybooks.share.ShareExclusions
 import com.mcosta.mybooks.share.SharingStatus
 import com.mcosta.mybooks.sharingFor
 import com.mcosta.mybooks.social.SocialServices
@@ -142,6 +143,11 @@ class LibrarySpace(
     private val sharing: Sharing? = sharingFor(
         id, device.social, database.shareStateDao(), spaceScope,
         uuidOf = { bookId -> database.bookDao().getById(bookId)?.uuid },
+        exclusions = ShareExclusions(
+            libraryPrefs, libraryPrefs::keys, prefChanged,
+            persist = { key, value -> storeLibraryPreference(database.syncStateDao(), key, value) },
+        ),
+        bookIdOf = { uuid -> database.bookDao().getByUuid(uuid)?.id },
     ) { bookId -> repository.getBook(bookId) }
 
     /** Whether this account shares its reading activity; null for the no-account library (it never publishes) and without the community. */
@@ -225,7 +231,7 @@ class LibrarySpace(
             challenges = database.challengeDao(),
             queue = database.syncQueueDao(),
             state = database.syncStateDao(),
-            prefs = LibraryPrefs(pinnedTags, hiddenSuggestions),
+            prefs = LibraryPrefs(pinnedTags, hiddenSuggestions, sharing?.tracker),
             shareState = database.shareStateDao(),
         ),
         syncRecorder, spaceScope, device.clock, sharing?.tracker, coverStore, ebookFiles,
@@ -236,6 +242,16 @@ class LibrarySpace(
         libraryPrefs.load()
         pinnedTags.reload()
         hiddenSuggestions.reload()
+        // "Don't share this book" used to stay on the phone: upload what was set before it synced.
+        try {
+            sharing?.tracker?.carryExclusionsOver()
+            // Not joined yet: a first sign-in may still move them to cloud ids, and says so itself when it has.
+            if (database.syncStateDao().anyMerged()) sharing?.tracker?.vouchForExclusions()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Tried again at the next start; the books stay unshared on this device meanwhile.
+        }
     }
 
     /**

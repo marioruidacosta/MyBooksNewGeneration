@@ -24,6 +24,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.mcosta.mybooks.social.SocialServices
+import com.mcosta.mybooks.share.SHARE_EXCLUSIONS_SYNCED
 import com.mcosta.mybooks.sync.SyncTable
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respondError
@@ -150,7 +151,9 @@ class LibrarySpaceTest {
         space.close()
 
         val again = openLibraryDatabase(context, account)
-        assertEquals(listOf(SyncTable.PREFS.wire to "home.pinnedTags"), again.syncQueueDao().batch(10).map { it.table to it.rowId })
+        // Opening the library also queues the marker that its exclusions are in the cloud.
+        val queued = again.syncQueueDao().batch(10).map { it.table to it.rowId }.filterNot { it.second == SHARE_EXCLUSIONS_SYNCED }
+        assertEquals(listOf(SyncTable.PREFS.wire to "home.pinnedTags"), queued)
         again.close()
     }
 
