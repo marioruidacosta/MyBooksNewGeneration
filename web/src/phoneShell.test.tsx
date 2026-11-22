@@ -46,17 +46,19 @@ describe('the phone layout', () => {
     const href = (name: string) => within(bar).getByRole('link', { name }).getAttribute('href')
     expect(href('Library')).toBe('/MyBooksNewGeneration/app/')
     expect(href('Add')).toBe('/MyBooksNewGeneration/app/add')
-    expect(href('News')).toBe('/MyBooksNewGeneration/app/news')
-    expect(href('Year')).toBe('/MyBooksNewGeneration/app/year')
+    expect(href('Community')).toBe('/MyBooksNewGeneration/app/community')
+    expect(href('Challenges')).toBe('/MyBooksNewGeneration/app/challenges')
     // The page being shown is marked, for assistive technology and for the eye.
     expect(within(bar).getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page')
 
-    // The rest is under More: Import, Tidy up, the theme and signing out.
+    // The rest is under More: the year, the news, Import, Tidy up, the theme and signing out.
     const more = within(bar).getByRole('button', { name: 'More' })
     expect(more).toHaveAttribute('aria-expanded', 'false')
     await user.click(more)
     expect(more).toHaveAttribute('aria-expanded', 'true')
     const menu = screen.getByRole('dialog', { name: 'More' })
+    expect(within(menu).getByRole('link', { name: 'Year in books' }).getAttribute('href')).toBe('/MyBooksNewGeneration/app/year')
+    expect(within(menu).getByRole('link', { name: 'Book news' }).getAttribute('href')).toBe('/MyBooksNewGeneration/app/news')
     expect(within(menu).getByRole('link', { name: 'Import' }).getAttribute('href')).toBe('/MyBooksNewGeneration/app/import')
     expect(within(menu).getByRole('link', { name: 'Tidy up' }).getAttribute('href')).toBe('/MyBooksNewGeneration/app/tidy')
     expect(within(menu).getByLabelText('Theme')).toBeInTheDocument()
@@ -90,13 +92,13 @@ describe('the phone layout', () => {
 
     await user.click(more)
     const menu = screen.getByRole('dialog', { name: 'More' })
-    expect(within(menu).getByRole('link', { name: 'Import' })).toHaveFocus()
+    expect(within(menu).getByRole('link', { name: 'Year in books' })).toHaveFocus()
 
     // Tab never leaves the sheet: from the last item it wraps to the first, and back.
     await user.tab({ shift: true })
     expect(within(menu).getByRole('button', { name: 'Sign out' })).toHaveFocus()
     await user.tab()
-    expect(within(menu).getByRole('link', { name: 'Import' })).toHaveFocus()
+    expect(within(menu).getByRole('link', { name: 'Year in books' })).toHaveFocus()
 
     // Escape, and a tap outside, return focus to More.
     await user.keyboard('{Escape}')
@@ -113,6 +115,16 @@ describe('the phone layout', () => {
     expect(document.body).not.toHaveFocus()
   })
 
+  it('choosingYearOrNewsFromTheSheetPutsFocusOnTheNewPage', async () => {
+    setPhone(true)
+    const user = userEvent.setup({ delay: null })
+    render(<App createApi={() => api} />)
+    const bar = await screen.findByRole('navigation', { name: 'Main' })
+    await user.click(within(bar).getByRole('button', { name: 'More' }))
+    await user.click(within(screen.getByRole('dialog', { name: 'More' })).getByRole('link', { name: 'Year in books' }))
+    await vi.waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Year in books' })).toHaveFocus())
+  })
+
   it('theJumpBoxStaysReachableWithASearchIconInsteadOfTheKeyHint', async () => {
     setPhone(true)
     render(<App createApi={() => api} />)
@@ -125,7 +137,7 @@ describe('the phone layout', () => {
     render(<App createApi={() => api} />)
     const pages = await screen.findByRole('navigation', { name: 'Pages' })
     expect(within(pages).getAllByRole('link').map((a) => a.textContent)).toEqual([
-      'Library', 'Add a book', 'Import', 'Tidy up', 'Year in books', 'Book news',
+      'Library', 'Add a book', 'Community', 'Challenges', 'Import', 'Tidy up', 'Year in books', 'Book news',
     ])
     expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument()
     expect(screen.getByText(/Ctrl K|⌘ K/)).toBeInTheDocument()

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   Link,
   Outlet,
@@ -34,6 +34,9 @@ import { ToastProvider } from './ui/Toast'
 import { usePhone } from './ui/usePhone'
 import { useCommitOnHide } from './ui/useCommitOnHide'
 import { BottomBar } from './shell/BottomBar'
+import { createCommunityApi } from './community/api'
+import { CommunityProvider } from './community/CommunityProvider'
+import type { CommunityNav } from './community/useCommunity'
 import { InstallHint } from './pwa/InstallHint'
 
 // The import and tidy pages (with the ZIP reader and the import code) load when first opened.
@@ -41,6 +44,11 @@ const ImportPage = lazy(() => import('./io/ImportPage').then((m) => ({ default: 
 const TidyPage = lazy(() => import('./tidy/TidyPage').then((m) => ({ default: m.TidyPage })))
 const YearPage = lazy(() => import('./year/YearPage').then((m) => ({ default: m.YearPage })))
 const NewsPage = lazy(() => import('./news/NewsPage').then((m) => ({ default: m.NewsPage })))
+const ChallengesPage = lazy(() => import('./year/ChallengesPage').then((m) => ({ default: m.ChallengesPage })))
+const CommunityPage = lazy(() => import('./community/CommunityPage').then((m) => ({ default: m.CommunityPage })))
+const PeoplePage = lazy(() => import('./community/PeoplePage').then((m) => ({ default: m.PeoplePage })))
+const PersonPage = lazy(() => import('./community/PersonPage').then((m) => ({ default: m.PersonPage })))
+const AccountPage = lazy(() => import('./community/AccountPage').then((m) => ({ default: m.AccountPage })))
 
 const loadingPage = <p className="loading">Loading…</p>
 
@@ -62,12 +70,29 @@ function Jump({ store, compact }: { store: Store; compact: boolean }) {
   )
 }
 
+/** The community for the signed-in account's pages; its profile is loaded when a page first needs it. */
+function WithCommunity({ children }: { children: ReactNode }) {
+  const owner = useContext(CoverContext)?.owner
+  const navigate = useNavigate()
+  const api = useMemo(() => (owner ? createCommunityApi(supabase, owner) : null), [owner])
+  const nav = useMemo<CommunityNav>(() => ({
+    personHref: (id) => `${import.meta.env.BASE_URL}community/person/${id}`,
+    openPerson: (id) => void navigate({ to: '/community/person/$id', params: { id } }),
+    openBook: (id) => void navigate({ to: '/book/$id', params: { id } }),
+    openPeople: () => void navigate({ to: '/community/people' }),
+    openAccount: () => void navigate({ to: '/community/account' }),
+    openFeed: () => void navigate({ to: '/community' }),
+  }), [navigate])
+  return api ? <CommunityProvider key={owner} api={api} nav={nav}>{children}</CommunityProvider> : <>{children}</>
+}
+
 function Shell() {
   const store = useOptionalStore()
   const phone = usePhone()
   useCommitOnHide()
   const publisher = useContext(SharingContext)
   return (
+    <WithCommunity>
     <ToastProvider pinned={<UpdateNotice watcher={updates} store={store} publisher={publisher} />}>
       {store && (
         <header className="app-bar">
@@ -78,6 +103,8 @@ function Shell() {
                 Library
               </Link>
               <Link to="/add">Add a book</Link>
+              <Link to="/community">Community</Link>
+              <Link to="/challenges">Challenges</Link>
               <Link to="/import">Import</Link>
               <Link to="/tidy">Tidy up</Link>
               <Link to="/year">Year in books</Link>
@@ -98,6 +125,7 @@ function Shell() {
       <Outlet />
       {store && phone && <BottomBar onSignOut={() => void signOut()} />}
     </ToastProvider>
+    </WithCommunity>
   )
 }
 
@@ -144,10 +172,13 @@ function TidyRoute() {
 function YearRoute() {
   const store = useStore()
   const navigate = useNavigate()
+  const { year } = yearRoute.useSearch()
   return (
     <PageBoundary>
       <Suspense fallback={loadingPage}>
         <YearPage
+          key={year ?? 'now'}
+          year={year}
           store={store}
           onOpen={(id) => void navigate({ to: '/book/$id', params: { id } })}
           onLibrary={() => void navigate({ to: '/' })}
@@ -155,6 +186,36 @@ function YearRoute() {
       </Suspense>
     </PageBoundary>
   )
+}
+
+function ChallengesRoute() {
+  const store = useStore()
+  const navigate = useNavigate()
+  return (
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>
+        <ChallengesPage
+          store={store}
+          onOpen={(id) => void navigate({ to: '/book/$id', params: { id } })}
+          onOpenYear={(year) => void navigate({ to: '/year', search: { year } })}
+        />
+      </Suspense>
+    </PageBoundary>
+  )
+}
+
+/** A community page, loaded when first opened. */
+function CommunityRoutePage({ children }: { children: ReactNode }) {
+  return (
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>{children}</Suspense>
+    </PageBoundary>
+  )
+}
+
+function PersonRoute() {
+  const { id } = personRoute.useParams()
+  return <CommunityRoutePage><PersonPage id={id} /></CommunityRoutePage>
 }
 
 function NewsRoute() {
@@ -227,7 +288,46 @@ const yearRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/year',
   beforeLoad: requireSession,
+  validateSearch: (search: Record<string, unknown>): { year?: number } => {
+    const year = Number(search.year)
+    return Number.isInteger(year) && year >= 1900 && year <= 9999 ? { year } : {}
+  },
   component: YearRoute,
+})
+
+const challengesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/challenges',
+  beforeLoad: requireSession,
+  component: ChallengesRoute,
+})
+
+const communityRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/community',
+  beforeLoad: requireSession,
+  component: () => <CommunityRoutePage><CommunityPage /></CommunityRoutePage>,
+})
+
+const peopleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/community/people',
+  beforeLoad: requireSession,
+  component: () => <CommunityRoutePage><PeoplePage /></CommunityRoutePage>,
+})
+
+const personRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/community/person/$id',
+  beforeLoad: requireSession,
+  component: PersonRoute,
+})
+
+const accountRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/community/account',
+  beforeLoad: requireSession,
+  component: () => <CommunityRoutePage><AccountPage /></CommunityRoutePage>,
 })
 
 const newsRoute = createRoute({
@@ -237,7 +337,7 @@ const newsRoute = createRoute({
   component: NewsRoute,
 })
 
-const routeTree = rootRoute.addChildren([signInRoute, libraryRoute, bookRoute, addRoute, importRoute, tidyRoute, yearRoute, newsRoute])
+const routeTree = rootRoute.addChildren([signInRoute, libraryRoute, bookRoute, addRoute, importRoute, tidyRoute, yearRoute, challengesRoute, communityRoute, peopleRoute, personRoute, accountRoute, newsRoute])
 
 const router = createRouter({
   routeTree,
@@ -269,6 +369,15 @@ export function App({ createApi = (owner) => createSupabaseSyncApi(supabase, own
       store,
       client: supabase,
       owner: userId ?? '',
+      readSharing: async () => {
+        try {
+          const { data, error } = await supabase.from('profiles').select('share_activity').eq('id', userId ?? '').maybeSingle()
+          // No profile yet: nothing is shared.
+          return error ? 'unknown' : data?.share_activity === true
+        } catch {
+          return 'unknown'
+        }
+      },
       currentOwner: async () => {
         try {
           const { data, error } = await supabase.auth.getSession()

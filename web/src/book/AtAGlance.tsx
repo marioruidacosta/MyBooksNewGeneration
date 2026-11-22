@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Book } from '../sync/model'
 import { formatDay } from '../text/dates'
 import { ProgressEditor } from './ProgressEditor'
@@ -8,6 +8,8 @@ type Props = {
   book: Book
   /** null when sharing isn't known (no sharing state to show). */
   shared: boolean | null
+  /** "Don't share this book", under the sharing line. */
+  shareSwitch?: ReactNode
   /** The ebook line ("file.epub, EPUB, 120 KB"), when the phone has one. */
   ebook: string | null
   onMarkRead: () => void
@@ -26,7 +28,7 @@ function progressText(book: Book, percent: number): string {
  * The summary beside the cover (under the hero on a small screen): progress, dates, tags, who has the book, sharing,
  * the ebook, and the two quick actions.
  */
-export function AtAGlance({ book, shared, ebook, onMarkRead, onProgress }: Props) {
+export function AtAGlance({ book, shared, shareSwitch, ebook, onMarkRead, onProgress }: Props) {
   const [editing, setEditing] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   // Set when the editor closes from the keyboard: the button (disabled while it was open) takes focus back.
@@ -86,6 +88,7 @@ export function AtAGlance({ book, shared, ebook, onMarkRead, onProgress }: Props
         <p>{book.lentOn !== null ? `Lent to ${book.lentTo} on ${formatDay(book.lentOn)}` : `Lent to ${book.lentTo}`}</p>
       )}
       {shared !== null && <p className="share-state">{shared ? 'Shared with friends' : 'Not shared'}</p>}
+      {shareSwitch}
       {ebook !== null && <p>Ebook: {ebook}</p>}
       {(book.status !== 'READ' || reading) && (
         <div className="glance__actions">
