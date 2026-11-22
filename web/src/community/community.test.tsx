@@ -12,7 +12,8 @@ import { LibraryStore } from '../sync/store'
 import { ToastContext } from '../ui/toastContext'
 import { AccountPage } from './AccountPage'
 import { CommunityError, communityMessage, createCommunityApi, relationshipFrom, type CommunityApi } from './api'
-import { BookCommunity, ShareSwitch } from './BookCommunity'
+import { BookCommunity, ShareSwitch, SuggestToFriend } from './BookCommunity'
+import { SharingSection } from './SharingSection'
 import { CommunityProvider } from './CommunityProvider'
 import type { CommunityNav } from './useCommunity'
 import { CommunityPage } from './CommunityPage'
@@ -146,6 +147,20 @@ describe('joining', () => {
     expect(await screen.findByRole('heading', { name: 'Join the community' })).toBeInTheDocument()
     expect(screen.getByText(/changes to your books are shared/)).toBeInTheDocument()
     expect(screen.getByText(/keep any book private/)).toBeInTheDocument()
+  })
+
+  it('anAccountWithoutAProfileCanStillBeDeleted', async () => {
+    const user = userEvent.setup()
+    const api = noProfile()
+    show(api, <CommunityPage />)
+    await user.click(await screen.findByRole('button', { name: 'Delete account' }))
+    const dialog = screen.getByRole('dialog')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete account' })
+    expect(confirm).toBeDisabled()
+    await user.type(within(dialog).getByLabelText(/Type delete/), 'delete')
+    await user.click(confirm)
+    await waitFor(() => expect(api.deleteAccount).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(h.signOut).toHaveBeenCalledTimes(1))
   })
 
   it('createsTheProfileAndOpensTheFeed', async () => {
@@ -493,6 +508,40 @@ describe('a book', () => {
     publisher.stop()
   })
 
+  it('theReviewAndTheShareSwitchSitTogether', async () => {
+    const user = userEvent.setup()
+    store.create(book('b1'))
+    const publisher = await publisherFor()
+    show(fakeApi(), <SharingSection id="b1" shared review={(label) => <label>{label}<textarea /></label>} />, publisher)
+    const section = await screen.findByRole('group', { name: 'Sharing' })
+    expect(within(section).getByLabelText('Review (shared with friends)')).toBeInTheDocument()
+    expect(within(section).queryByText('Shared with friends')).not.toBeInTheDocument()
+    await user.click(await within(section).findByRole('switch', { name: "Don't share this book" }))
+    expect(within(section).getByLabelText('Review (not shared)')).toBeInTheDocument()
+    expect(within(section).queryByText(/^Not shared/)).not.toBeInTheDocument()
+    await publisher.idle()
+    publisher.stop()
+  })
+
+  it('aBookNotPostedYetSaysSoWithoutContradictingTheReview', async () => {
+    store.create(book('b1'))
+    const publisher = await publisherFor()
+    show(fakeApi(), <SharingSection id="b1" shared={false} review={(label) => <label>{label}<textarea /></label>} />, publisher)
+    const section = await screen.findByRole('group', { name: 'Sharing' })
+    expect(within(section).getByLabelText('Review (shared with friends)')).toBeInTheDocument()
+    expect(within(section).getByText('Not shared yet')).toBeInTheDocument()
+    publisher.stop()
+  })
+
+  it('withoutAProfileItIsJustYourReview', async () => {
+    const api = fakeApi({ myProfile: vi.fn(async () => null) })
+    show(api, <SharingSection id="b1" shared={null} review={(label) => <label>{label}<textarea /></label>} />)
+    await waitFor(() => expect(api.myProfile).toHaveBeenCalled())
+    const section = await screen.findByRole('group', { name: 'Your review' })
+    expect(within(section).getByLabelText('Review')).toBeInTheDocument()
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+  })
+
   it('theSwitchIsHiddenWhileTheAccountDoesNotShare', async () => {
     store.create(book('b1'))
     const publisher = await publisherFor()
@@ -678,7 +727,7 @@ describe('book suggestions', () => {
   it('sendsTheBookToTheChosenFriendsWithoutAPrivateCover', async () => {
     const user = userEvent.setup()
     const api = fakeApi({ friends: vi.fn(async () => [rui, ana]) })
-    show(api, <BookCommunity book={book('Stoner', { coverUrl: 'data:image/jpeg;base64,xx' })} />)
+    show(api, <SuggestToFriend book={book('Stoner', { coverUrl: 'data:image/jpeg;base64,xx' })} />)
     await user.click(await screen.findByRole('button', { name: 'Suggest to a friend' }))
     await user.click(await screen.findByRole('checkbox', { name: 'Ana' }))
     await user.type(screen.getByLabelText('Note (optional)'), '  Read it  ')
@@ -698,7 +747,7 @@ describe('book suggestions', () => {
       friends: vi.fn(async () => [ana]),
       suggestBook: vi.fn(async () => { throw new CommunityError('offline', 'offline') }),
     })
-    show(api, <BookCommunity book={book('Stoner')} />)
+    show(api, <SuggestToFriend book={book('Stoner')} />)
     await user.click(await screen.findByRole('button', { name: 'Suggest to a friend' }))
     await user.click(await screen.findByRole('checkbox', { name: 'Ana' }))
     await user.click(screen.getByRole('button', { name: 'Send' }))

@@ -483,7 +483,7 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
               ? 'No book matches.'
               : firstVisitOffline
                 ? "You're offline. Your library will appear once you're connected."
-                : 'No books yet. Press n to add one.'}
+                : 'No books yet. Choose Add to put in your first one.'}
           </p>
         )}
       </div>

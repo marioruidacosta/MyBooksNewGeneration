@@ -5,7 +5,8 @@ import { shrinkToJpeg, uploadCover } from '../covers/coverUpload'
 import { CoverContext, type CoverStorage } from '../covers/storage'
 import { allTags, STATUS_LABELS } from '../library/filters'
 import { supabase } from '../supabase'
-import { BookCommunity, ShareSwitch } from '../community/BookCommunity'
+import { BookCommunity, SuggestToFriend } from '../community/BookCommunity'
+import { SharingSection } from '../community/SharingSection'
 import { useIsShared } from '../share/SharingContext'
 import { STATUSES, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
@@ -215,8 +216,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
         <div className="book-body">
           <AtAGlance
             book={book}
-            shared={shared}
-            shareSwitch={<ShareSwitch id={id} />}
+            suggest={<SuggestToFriend key={id} book={book} />}
             ebook={ebook ? ebookLine(ebook) : null}
             onMarkRead={() => edit(statusChange(book, 'READ', Date.now()))}
             onProgress={(input) => edit(progressChange(book, input))}
@@ -234,12 +234,19 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
             </fieldset>
 
             <fieldset className="book-section">
-              <legend>Your words</legend>
+              <legend>Your notes</legend>
               <div className="book-fields">
-                <Field kind="area" label="Review" limit={BOOK_LIMITS.review} shown={book.review} onCommit={plainText('review', book.review)} />
                 <Field kind="area" label="Notes" limit={BOOK_LIMITS.notes} shown={book.notes} onCommit={plainText('notes', book.notes)} />
               </div>
             </fieldset>
+
+            <SharingSection
+              id={id}
+              shared={shared}
+              review={(label) => (
+                <Field kind="area" label={label} limit={BOOK_LIMITS.review} shown={book.review} onCommit={plainText('review', book.review)} />
+              )}
+            />
 
             <fieldset className="book-section">
               <legend>About the book</legend>

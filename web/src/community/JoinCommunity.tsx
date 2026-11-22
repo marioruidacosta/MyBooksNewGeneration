@@ -2,6 +2,7 @@ import { useId, useState, type FormEvent } from 'react'
 import { SHARE_EXCLUSIONS_SYNCED } from '../share/publisher'
 import { useOptionalStore } from '../sync/StoreContext'
 import { communityMessage } from './api'
+import { DeleteAccountDialog } from './DeleteAccountDialog'
 import { useCommunity } from './useCommunity'
 import { normalizeUsername, usernameProblem } from './text'
 
@@ -14,6 +15,7 @@ export function JoinCommunity() {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -79,6 +81,11 @@ export function JoinCommunity() {
         {error && <p className="error" role="alert">{error}</p>}
         <button type="submit" disabled={busy}>Create profile</button>
       </form>
+      <p className="community-join__leave">
+        Don't want your account any more?{' '}
+        <button type="button" className="quiet" onClick={() => setDeleting(true)}>Delete account</button>
+      </p>
+      {deleting && <DeleteAccountDialog username={null} onClose={() => setDeleting(false)} />}
     </main>
   )
 }
