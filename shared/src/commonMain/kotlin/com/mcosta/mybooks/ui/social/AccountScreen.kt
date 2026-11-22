@@ -234,8 +234,8 @@ fun AccountScreen(viewModel: AccountViewModel, onBack: () -> Unit) {
             title = { Text("Delete account?") },
             text = {
                 Text(
-                    "Delete your MyBooks community account? Your profile, friends and requests are removed for good. " +
-                        "The books on this phone stay."
+                    "This deletes your MyBooks account for good: your profile, friends, shared books and the library saved " +
+                        "in the cloud. The books on this phone stay, but they stop syncing."
                 )
             },
             confirmButton = {
