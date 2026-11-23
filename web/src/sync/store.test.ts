@@ -167,6 +167,22 @@ describe('LibraryStore', () => {
     expect(again.books()).toHaveLength(1_201)
   }, T)
 
+  it('aNewerPrefBeatsAnOlderRemovalFromAnotherDevice', async () => {
+    const server = new FakeServer()
+    const store = open(server)
+    await store.load()
+    store.setPref('bookcase.w', 'first')
+    await store.idle()
+    clock = 3_000
+    store.setPref('bookcase.w', 'renamed')
+    await store.idle()
+    // A phone removed it offline at 2,000, before that rename, and only syncs now.
+    server.write('prefs', 'bookcase.w', { deleted: true }, { deleted: 2_000 })
+    await store.refresh()
+    await store.idle()
+    expect(store.pref('bookcase.w')).toBe('renamed')
+  }, T)
+
   it('aLibraryWithALocalCopyOpensWithoutWaitingForTheFirstSync', async () => {
     const server = new FakeServer()
     serverBook(server, 'b1')

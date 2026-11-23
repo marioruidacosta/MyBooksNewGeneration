@@ -333,11 +333,12 @@ internal fun syncFor(
     shares: ShareTracker?,
     coverStore: CoverStore?,
     ebookFiles: EbookFiles?,
+    shelfExists: (String) -> Boolean = { true },
 ): LibrarySync? {
     if (id !is LibraryId.Account) return null
     val api = social?.sync ?: return null
     val applier = RemoteApplier(db, recorder, coverStore, shares, ebookFiles)
-    return LibrarySync(api, db, recorder, applier, clock, scope, shares = shares, coverStore = coverStore, ebookFiles = ebookFiles)
+    return LibrarySync(api, db, recorder, applier, clock, scope, shares = shares, coverStore = coverStore, ebookFiles = ebookFiles, shelfExists = shelfExists)
 }
 
 /**

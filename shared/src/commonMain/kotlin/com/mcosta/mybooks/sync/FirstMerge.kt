@@ -48,6 +48,8 @@ class FirstMerge(
     private val applier: RemoteApplier,
     private val shares: ShareTracker?,
     private val coverStore: CoverStore? = null,
+    /** Whether a shelf is on a bookcase of this library: a copy on one beats a copy on a removed shelf. */
+    private val shelfExists: (String) -> Boolean = { true },
     /** Books and rows the server set aside (kept on this device, not synced). */
     private val onSetAside: (Int) -> Unit = {},
 ) {
@@ -162,7 +164,7 @@ class FirstMerge(
         val holderRow = holder.toRow(coverStore)
         val extraRow = extra.toRow(coverStore).copy(id = holder.uuid)
         val merged = keepBothTexts(mergeFields(holderRow, extraRow), holderRow, extraRow, "notes", "review")
-            .withShelfPair(holderRow, extraRow)
+            .withShelfPair(holderRow, extraRow, shelfExists)
         // A photo travels as a marker: keep the file of the side whose cover won, drop the other one.
         val extraCover = merged.fields["cover_url"] != holderRow.fields["cover_url"] ||
             merged.times["cover_url"] != holderRow.times["cover_url"]

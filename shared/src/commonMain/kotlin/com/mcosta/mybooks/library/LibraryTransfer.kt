@@ -10,6 +10,7 @@ import com.mcosta.mybooks.data.ebooks.EbookFiles
 import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
 import com.mcosta.mybooks.physical.BookcaseStore
+import com.mcosta.mybooks.physical.findShelf
 import com.mcosta.mybooks.sync.SyncDatabase
 import com.mcosta.mybooks.sync.SyncRecorder
 import com.mcosta.mybooks.sync.SyncRow
@@ -186,7 +187,9 @@ class LibraryTransfer(private val io: CoroutineDispatcher = Dispatchers.IO) {
         val bookRow = book.toRow(from.coverStore).copy(id = held.uuid)
         var merged = valuesOverEmpty(mergeFields(heldRow, bookRow), heldRow, bookRow)
         for (field in listOf("notes", "review")) merged = keepBothTexts(merged, heldRow, bookRow, field)
-        merged = merged.withShelfPair(heldRow, bookRow)
+        // The source's bookcases were adopted first, so the target knows every real shelf.
+        val shelves = to.bookcases?.bookcases?.value
+        merged = merged.withShelfPair(heldRow, bookRow) { shelves == null || shelves.findShelf(it) != null }
         // A photo travels as a marker: the side whose cover won keeps its file (copied over already).
         val bookCover = merged.fields["cover_url"] != heldRow.fields["cover_url"] || merged.times["cover_url"] != heldRow.times["cover_url"]
         val cover = if (bookCover) book.coverUrl else held.coverUrl

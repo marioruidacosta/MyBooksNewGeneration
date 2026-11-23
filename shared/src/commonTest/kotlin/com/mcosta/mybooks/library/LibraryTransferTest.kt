@@ -149,8 +149,23 @@ class LibraryTransferTest {
     }
 
     @Test
+    fun aCopyOnARemovedShelfLosesToARealPlace() = runTest(timeout = 30.seconds) {
+        val account = Lib(LibraryId.Account("ana"), records = true)
+        account.bookcases.save(shelfCase)
+        account.store.books.insert(book("Os Maias", "9789720049575").copy(shelfId = "gone", shelfPosition = 1.0))
+        phone.store.books.insert(book("Os Maias", "9789720049575").copy(shelfId = "s1", shelfPosition = 4.0))
+
+        transfer.move(phone.contents, account.contents)
+
+        val merged = account.store.live().single()
+        assertEquals("s1", merged.shelfId)
+        assertEquals(4.0, merged.shelfPosition)
+    }
+
+    @Test
     fun aMatchedBookKeepsOnePlaceWhole() = runTest(timeout = 30.seconds) {
         val account = Lib(LibraryId.Account("ana"), records = true)
+        phone.bookcases.save(shelfCase)
         account.store.books.insert(book("Os Maias", "9789720049575", times = mapOf("title" to 5L)))
         phone.store.books.insert(
             book("Os Maias", "9789720049575", times = mapOf("shelf_id" to 3L, "shelf_position" to 3L)).copy(shelfId = "s1", shelfPosition = 4.0),

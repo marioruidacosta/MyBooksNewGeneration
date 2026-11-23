@@ -77,6 +77,8 @@ class LibrarySync(
     shares: ShareTracker? = null,
     private val coverStore: CoverStore? = null,
     private val ebookFiles: EbookFiles? = null,
+    /** Whether a shelf is on a bookcase of this library (the first merge prefers a copy on a real shelf). */
+    shelfExists: (String) -> Boolean = { true },
 ) {
     init {
         require(retryDelays.isNotEmpty()) { "retryDelays is empty" }
@@ -93,7 +95,7 @@ class LibrarySync(
     /** Changes the server refused (set aside) since [start]; they left the queue, the device keeps its values. */
     val setAside: StateFlow<Int> = _setAside.asStateFlow()
 
-    private val firstMerge = FirstMerge(api, db, applier, shares, coverStore) { n -> _setAside.update { it + n } }
+    private val firstMerge = FirstMerge(api, db, applier, shares, coverStore, shelfExists) { n -> _setAside.update { it + n } }
 
     private val coverSync = coverStore?.let {
         CoverSync(api, it, db.state, clock) { write ->

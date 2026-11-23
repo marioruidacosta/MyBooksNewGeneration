@@ -144,7 +144,7 @@ private class Phone(api: SyncApi, scope: CoroutineScope, clock: () -> Long) {
         api, db, recorder, applier, clock, scope, shares = shares, coverStore = covers, ebookFiles = ebookFiles,
     )
 
-    fun merge(api: SyncApi) = FirstMerge(api, db, applier, shares, covers)
+    fun merge(api: SyncApi, shelfExists: (String) -> Boolean = { true }) = FirstMerge(api, db, applier, shares, covers, shelfExists)
 
     fun live() = books.rows.value.values.filter { !it.deleted }
     fun book(uuid: String): BookEntity? = books.rows.value.values.firstOrNull { it.uuid == uuid }
@@ -341,6 +341,21 @@ class FirstMergeTest {
         // Published against its current state: no feed entry for history.
         assertEquals(social.published.single().first, social.published.single().second)
         assertEquals(listOf(id), phone.shareDao.all().map { it.bookId })
+    }
+
+    @Test
+    fun aTwinOnARemovedShelfTakesTheOtherCopysRealPlace() = runTest {
+        val server = server()
+        val phone = phone(server)
+        phone.books.insert(book("a", "Os Maias", isbn = "9789720049572").copy(shelfId = "gone", shelfPosition = 1.0))
+        phone.books.insert(book("b", "Os Maias: episódios").copy(shelfId = "real", shelfPosition = 2.0))
+
+        phone.merge(server) { it == "real" }.run(OWNER)
+        advanceUntilIdle()
+
+        val kept = phone.live().single()
+        assertEquals("real", kept.shelfId)
+        assertEquals(2.0, kept.shelfPosition)
     }
 
     @Test

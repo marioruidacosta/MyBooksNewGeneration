@@ -28,6 +28,8 @@ type Props = {
   owner: string
   id: string
   onBack?: () => void
+  /** What Back says: where it returns to. */
+  backLabel?: string
   onOpenShelf?: (shelfId: string) => void
   onAddBookcase?: () => void
   /** Where cover photos go; the real storage unless a test brings its own. */
@@ -62,7 +64,7 @@ const ebookLine = (e: Ebook) =>
   [e.fileName, e.format, e.size !== null ? `${String(Math.max(1, Math.round(e.size / 1024)))} KB` : null].filter(Boolean).join(', ') || 'Yes'
 
 /** One book: every field saved as focus leaves it, status and score, quotes and the cover. */
-export function BookPage({ store, owner, id, onBack, onOpenShelf, onAddBookcase, storage = supabase.storage, shrink = shrinkToJpeg }: Props) {
+export function BookPage({ store, owner, id, onBack, backLabel = 'Back to the library', onOpenShelf, onAddBookcase, storage = supabase.storage, shrink = shrinkToJpeg }: Props) {
   const book = useSyncExternalStore(store.subscribe, () => store.book(id))
   const [coverLink, setCoverLink] = useState('')
   const [coverError, setCoverError] = useState<string | null>(null)
@@ -75,7 +77,7 @@ export function BookPage({ store, owner, id, onBack, onOpenShelf, onAddBookcase,
         <p>That book isn&apos;t in your library.</p>
         {onBack && (
           <button type="button" onClick={onBack}>
-            Back to the library
+            {backLabel}
           </button>
         )}
       </main>
@@ -168,7 +170,7 @@ export function BookPage({ store, owner, id, onBack, onOpenShelf, onAddBookcase,
           <div className="book-hero__inner">
             {onBack && (
               <button type="button" className="back" onClick={onBack}>
-                Back to the library
+                {backLabel}
               </button>
             )}
             <CoverImage book={book} className="cover-large" />

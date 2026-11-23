@@ -24,6 +24,7 @@ import com.mcosta.mybooks.data.suggestions.SuggestionEngine
 import com.mcosta.mybooks.domain.ReadingSummary
 import com.mcosta.mybooks.domain.readingSummary
 import com.mcosta.mybooks.physical.BookcaseStore
+import com.mcosta.mybooks.physical.findShelf
 import com.mcosta.mybooks.share.ShareExclusions
 import com.mcosta.mybooks.share.SharingStatus
 import com.mcosta.mybooks.sharingFor
@@ -243,6 +244,7 @@ class LibrarySpace(
             shareState = database.shareStateDao(),
         ),
         syncRecorder, spaceScope, device.clock, sharing?.tracker, coverStore, ebookFiles,
+        shelfExists = { bookcases.bookcases.value.findShelf(it) != null },
     )
 
     /** Loads this library's preferences (its first database query); call once, off the main thread, before it's used. */
