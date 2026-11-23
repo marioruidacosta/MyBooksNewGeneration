@@ -250,7 +250,9 @@ function BookRoute() {
     ? { label: 'Back to the shelf', go: () => void navigate({ to: '/physical/shelf/$shelfId', params: { shelfId } }) }
     : from === 'unplaced'
       ? { label: 'Back to Without a place', go: () => void navigate({ to: '/physical/unplaced' }) }
-      : { label: 'Back to the library', go: () => void navigate({ to: '/' }) }
+      : from === 'physical'
+        ? { label: 'Back to Physical library', go: () => void navigate({ to: '/physical' }) }
+        : { label: 'Back to the library', go: () => void navigate({ to: '/' }) }
   return (
     <BookPage
       store={store}
@@ -272,6 +274,7 @@ function PhysicalRoute() {
       <Suspense fallback={loadingPage}>
         <PhysicalLibraryPage
           store={store}
+          onOpenBook={(id) => void navigate({ to: '/book/$id', params: { id }, search: { from: 'physical' } })}
           onOpenBookcase={(id) => void navigate({ to: '/physical/$id', params: { id } })}
           onAdd={() => void navigate({ to: '/physical/new' })}
           onOpenUnplaced={() => void navigate({ to: '/physical/unplaced' })}
@@ -377,10 +380,10 @@ const libraryRoute = createRoute({
   beforeLoad: requireSession,
   component: LibraryRoute,
 })
-/** Where a book's Back returns to. Only these two kinds, so a link can't make it go anywhere else. */
+/** Where a book's Back returns to. Only these kinds, so a link can't make it go anywhere else. */
 function bookSearch(search: Record<string, unknown>): { from?: string } {
   const { from } = search
-  return typeof from === 'string' && (from === 'unplaced' || /^shelf:[A-Za-z0-9_-]{1,40}$/.test(from)) ? { from } : {}
+  return typeof from === 'string' && (from === 'physical' || from === 'unplaced' || /^shelf:[A-Za-z0-9_-]{1,40}$/.test(from)) ? { from } : {}
 }
 
 const bookRoute = createRoute({

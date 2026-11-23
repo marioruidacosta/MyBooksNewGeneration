@@ -1,9 +1,9 @@
-import { useId, useState, useSyncExternalStore } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore } from 'react'
 import { Dialog } from '../community/ui'
 import type { Book } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { BookcaseDrawing } from './BookcaseDrawing'
-import { byRoom, MAX_BOOKCASE_NAME, onShelf, shelfIds, withoutPlace, type Bookcase } from './model'
+import { byRoom, findInHome, MAX_BOOKCASE_NAME, onShelf, ordinal, shelfIds, withoutPlace, type Bookcase, type FoundBook } from './model'
 import { useBookcases } from './useBookcases'
 
 const counted = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${String(n)} ${many}`)
@@ -41,11 +41,35 @@ function RenameRoom({ room, onRename, onClose }: { room: string; onRename: (name
   )
 }
 
-/** Your home: rooms, each with its bookcases. */
+/** A book found by the search, and where to go to get it. */
+function FoundRow({ found, onOpen }: { found: FoundBook; onOpen: () => void }) {
+  const { book, place, fromLeft } = found
+  const where = place
+    ? [place.location, fromLeft === null ? null : `${ordinal(fromLeft)} from the left`].filter(Boolean).join(' · ')
+    : 'Without a place'
+  return (
+    <li>
+      <button type="button" className="bookcase-row" onClick={onOpen}>
+        <span className="bookcase-row__text">
+          <strong>{book.title}</strong>
+          {book.authors !== '' && <span>{book.authors}</span>}
+          <span className="found-where">{where}</span>
+          {book.lentTo !== null && <span>Lent to {book.lentTo}</span>}
+        </span>
+      </button>
+    </li>
+  )
+}
+
+/** The search to show again when coming back from a book opened from its results; any other visit starts empty. */
+const searchToReturnTo = new WeakMap<LibraryStore, string>()
+
+/** Your home: rooms, each with its bookcases, and a search that says where a book is. */
 export function PhysicalLibraryPage({
-  store, onOpenBookcase, onAdd, onOpenUnplaced,
+  store, onOpenBook, onOpenBookcase, onAdd, onOpenUnplaced,
 }: {
   store: LibraryStore
+  onOpenBook: (id: string) => void
   onOpenBookcase: (id: string) => void
   onAdd: () => void
   onOpenUnplaced: () => void
@@ -54,13 +78,41 @@ export function PhysicalLibraryPage({
   const { bookcases, renameRoom } = useBookcases(store)
   const [renaming, setRenaming] = useState<string | null>(null)
   const waiting = withoutPlace(books, bookcases, store.ebookIds()).length
+  const [query, setQuery] = useState(() => searchToReturnTo.get(store) ?? '')
+  useEffect(() => {
+    searchToReturnTo.delete(store)
+  }, [store])
+  const searchId = useId()
+  const searching = query.trim() !== ''
+  const found = findInHome(books, bookcases, store.ebookIds(), query)
   return (
     <main className="physical-page">
       <h1>Physical library</h1>
-      {bookcases.length === 0 && (
+      {books.length > 0 && (
+        <div className="dialog__field physical-search">
+          <label htmlFor={searchId}>Find a book by title or author</label>
+          <input id={searchId} value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+      )}
+      {searching && found.length === 0 && <p className="empty">No books match your search.</p>}
+      {searching && (
+        <ul className="found-list">
+          {found.map((f) => (
+            <FoundRow
+              key={f.book.id}
+              found={f}
+              onOpen={() => {
+                searchToReturnTo.set(store, query)
+                onOpenBook(f.book.id)
+              }}
+            />
+          ))}
+        </ul>
+      )}
+      {!searching && bookcases.length === 0 && (
         <p className="physical-lead">Recreate the bookcases in your home, then record which shelf each book is on.</p>
       )}
-      {byRoom(bookcases).map(([room, cases]) => (
+      {!searching && byRoom(bookcases).map(([room, cases]) => (
         <section key={room} className="physical-room">
           <div className="physical-room__head">
             <h2>{room}</h2>
@@ -71,7 +123,7 @@ export function PhysicalLibraryPage({
           </ul>
         </section>
       ))}
-      {waiting > 0 && (
+      {!searching && waiting > 0 && (
         <button type="button" className="bookcase-row bookcase-row--waiting" onClick={onOpenUnplaced}>
           <span className="bookcase-row__text">
             <strong>{counted(waiting, 'book without a place', 'books without a place')}</strong>
@@ -79,7 +131,7 @@ export function PhysicalLibraryPage({
           </span>
         </button>
       )}
-      <button type="button" className="primary physical-add" onClick={onAdd}>Add a bookcase</button>
+      {!searching && <button type="button" className="primary physical-add" onClick={onAdd}>Add a bookcase</button>}
       {renaming !== null && (
         <RenameRoom
           room={renaming}

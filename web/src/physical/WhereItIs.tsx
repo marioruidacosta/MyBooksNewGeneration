@@ -4,18 +4,10 @@ import type { Book } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { useToast } from '../ui/toastContext'
 import { BookcaseDrawing } from './BookcaseDrawing'
-import { findShelf, onShelf } from './model'
+import { findShelf, onShelf, ordinal } from './model'
 import { ShelfPicker } from './PickBooksDialog'
 import { placeAll, setPlace } from './places'
 import { useBookcases } from './useBookcases'
-
-/** 1st, 2nd, 3rd, 4th, 11th, 21st… */
-function ordinal(n: number): string {
-  const tens = n % 100
-  const units = n % 10
-  const suffix = tens >= 11 && tens <= 13 ? 'th' : units === 1 ? 'st' : units === 2 ? 'nd' : units === 3 ? 'rd' : 'th'
-  return `${String(n)}${suffix}`
-}
 
 /** Where to go to find this book, and the way to put it there. A To buy book has no place. */
 export function WhereItIs({

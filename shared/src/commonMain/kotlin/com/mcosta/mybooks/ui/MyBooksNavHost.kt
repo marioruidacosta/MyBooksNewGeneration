@@ -636,6 +636,7 @@ fun MyBooksNavHost(
                     onBack = { nav.popBackStack() },
                     onOpenBookcase = { nav.navigate(Routes.bookcase(it)) },
                     onAdd = { nav.navigate(Routes.bookcaseEdit()) },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
                     onOpenUnplaced = { nav.navigate(Routes.UNPLACED) },
                 )
             }

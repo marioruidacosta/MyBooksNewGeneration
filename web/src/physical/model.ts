@@ -1,4 +1,5 @@
 import type { Book } from '../sync/model'
+import { searchKey } from '../text/keys'
 
 /** A bookcase is one synced preference, `bookcase.<uuid>`. The Android app reads and writes the same JSON. */
 export const BOOKCASE_PREFIX = 'bookcase.'
@@ -155,6 +156,46 @@ export function onShelf(books: Book[], shelfId: string): Book[] {
 export function withoutPlace(books: Book[], cases: Bookcase[], ebookIds: ReadonlySet<string>): Book[] {
   const shelves = new Set(cases.flatMap(shelfIds))
   return books.filter((b) => b.status !== 'WISHLIST' && !ebookIds.has(b.id) && (b.shelfId === null || !shelves.has(b.shelfId)))
+}
+
+/** A book found by [findInHome]: its shelf (null when it has none yet) and its place from the left, when it has an order. */
+export type FoundBook = { book: Book; place: ShelfPlace | null; fromLeft: number | null }
+
+/**
+ * The books with every word of [query] in their title or author, and where each one is. To buy books have no place, and
+ * an ebook only appears once it was put on a shelf.
+ */
+export function findInHome(books: Book[], cases: Bookcase[], ebookIds: ReadonlySet<string>, query: string): FoundBook[] {
+  const words = searchKey(query).split(/\s+/).filter((w) => w !== '')
+  if (words.length === 0) return []
+  const shelves = new Map<string, Book[]>()
+  const found: FoundBook[] = []
+  for (const book of books) {
+    if (book.status === 'WISHLIST') continue
+    const key = searchKey(`${book.title}\n${book.authors}`)
+    if (!words.every((w) => key.includes(w))) continue
+    const place = findShelf(cases, book.shelfId)
+    if (place === null && ebookIds.has(book.id)) continue
+    let fromLeft: number | null = null
+    if (place !== null && book.shelfPosition !== null) {
+      let shelf = shelves.get(place.shelfId)
+      if (!shelf) {
+        shelf = onShelf(books, place.shelfId)
+        shelves.set(place.shelfId, shelf)
+      }
+      fromLeft = shelf.findIndex((b) => b.id === book.id) + 1
+    }
+    found.push({ book, place, fromLeft })
+  }
+  return found.sort((a, b) => byText(a.book.title.toLowerCase(), b.book.title.toLowerCase()) || byText(a.book.id, b.book.id))
+}
+
+/** 1st, 2nd, 3rd, 4th, 11th, 21st… */
+export function ordinal(n: number): string {
+  const tens = n % 100
+  const units = n % 10
+  const suffix = tens >= 11 && tens <= 13 ? 'th' : units === 1 ? 'st' : units === 2 ? 'nd' : units === 3 ? 'rd' : 'th'
+  return `${String(n)}${suffix}`
 }
 
 /** The position after every book on the shelf. */

@@ -182,6 +182,17 @@ describe('going back from a book', () => {
     expect(await screen.findByRole('heading', { name: 'Without a place' })).toBeInTheDocument()
   })
 
+  it('aBookFoundInThePhysicalLibraryGoesBackToTheSearch', async () => {
+    window.history.pushState({}, '', '/MyBooksNewGeneration/app/physical')
+    const user = userEvent.setup({ delay: null })
+    render(<App createApi={() => apiWith({ ...stoner, shelfId: 's1', shelfPosition: 1 })} />)
+    await user.type(await screen.findByLabelText('Find a book by title or author'), 'stoner')
+    await user.click(await screen.findByRole('button', { name: /^Stoner/ }))
+    await user.click(await screen.findByRole('button', { name: 'Back to Physical library' }))
+    expect(await screen.findByLabelText('Find a book by title or author')).toHaveValue('stoner')
+    expect(await screen.findByText(/Shelf A1 · 1st from the left/)).toBeInTheDocument()
+  })
+
   it('anUnknownOriginGoesBackToTheLibrary', async () => {
     window.history.pushState({}, '', '/MyBooksNewGeneration/app/book/nope?from=https://example.com')
     render(<App createApi={() => api} />)

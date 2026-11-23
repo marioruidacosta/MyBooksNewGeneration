@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Book, Status } from '../sync/model'
 import {
-  byRoom, endPosition, findShelf, MAX_COLUMNS, MAX_SHELVES, newBookcase, onShelf, parseBookcase, positionBetween, renumbered,
+  byRoom, endPosition, findInHome, findShelf, MAX_COLUMNS, MAX_SHELVES, newBookcase, onShelf, parseBookcase, positionBetween, renumbered,
   shelfIds, shelfLabel, toStored, withColumnAdded, withoutColumn, withoutPlace, withoutShelf, withShelfAdded, type Bookcase,
 } from './model'
 
@@ -135,5 +135,35 @@ describe('books on shelves', () => {
   it('renumberedKeepsTheVisibleOrder', () => {
     const shelf = onShelf([book('1', 'Zola', 's'), book('2', 'Austen', 's'), book('3', 'First', 's', 0.25)], 's')
     expect([...renumbered(shelf)]).toEqual([['3', 1], ['2', 2], ['1', 3]])
+  })
+})
+
+describe('finding a book at home', () => {
+  const by = (id: string, title: string, authors: string, shelf: string | null = null, position: number | null = null): Book =>
+    ({ ...book(id, title, shelf, position), authors })
+
+  it('findMatchesTitleAndAuthorTogether', () => {
+    const books = [by('1', 'Ensaio sobre a Cegueira', 'José Saramago'), by('2', 'Memorial do Convento', 'José Saramago'), by('3', 'A Cegueira', 'Outro')]
+    expect(findInHome(books, [windowCase], new Set(), 'saramago  CEGUEIRA').map((f) => f.book.id)).toEqual(['1'])
+    expect(findInHome(books, [windowCase], new Set(), 'jose').map((f) => f.book.id)).toEqual(['1', '2'])
+    expect(findInHome(books, [windowCase], new Set(), '   ')).toEqual([])
+  })
+
+  it('findSaysWhereTheBookIs', () => {
+    const books = [by('1', 'Alpha', 'A', 's2', 1), by('2', 'Target', 'B', 's2', 2), by('3', 'No order', 'C', 's2')]
+    const [found] = findInHome(books, [windowCase], new Set(), 'target')
+    expect(found.place?.location).toBe('Living room › By the window › Shelf A2')
+    expect(found.fromLeft).toBe(2)
+    expect(findInHome(books, [windowCase], new Set(), 'no order')[0].fromLeft).toBeNull()
+  })
+
+  it('findLeavesOutWhatHasNoPlaceToBe', () => {
+    const books = [
+      by('1', 'Paper', 'Someone'), by('2', 'Ebook', 'Someone'), by('3', 'Placed ebook', 'Someone', 's1', 1),
+      by('4', 'Gone', 'Someone', 'removed', 1), { ...by('5', 'To buy', 'Someone', 's1', 2), status: 'WISHLIST' as const },
+    ]
+    const found = findInHome(books, [windowCase], new Set(['2', '3']), 'someone')
+    expect(found.map((f) => f.book.id)).toEqual(['4', '1', '3'])
+    expect(found.map((f) => f.place?.shelfId ?? null)).toEqual([null, null, 's1'])
   })
 })
