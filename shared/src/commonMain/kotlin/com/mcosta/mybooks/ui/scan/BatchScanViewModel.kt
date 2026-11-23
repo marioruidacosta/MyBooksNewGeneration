@@ -65,6 +65,26 @@ class BatchScanViewModel(
     /** One scan at a time onto a shelf, in order: a slow lookup must not swap two books. */
     private val inOrder = Mutex()
 
+    init {
+        // "Add by hand" opens another screen, which puts the book on this shelf: its row then says so.
+        if (shelfId != null) viewModelScope.launch {
+            repo.observeBooks(null, "").collect { books -> markAddedByHand(books, shelfId) }
+        }
+    }
+
+    private fun markAddedByHand(books: List<Book>, shelf: String) {
+        _state.update { s ->
+            s.copy(
+                items = s.items.map { item ->
+                    if (item.result != ScanResult.NotFound) return@map item
+                    val book = books.firstOrNull { it.isbn == item.isbn && it.shelfId == shelf } ?: return@map item
+                    // Placed, not Added: Undo takes it off the shelf and keeps what was typed in.
+                    item.copy(result = ScanResult.Placed(book, null, null, book.status))
+                },
+            )
+        }
+    }
+
     fun setStatus(status: ReadingStatus) {
         _state.update { it.copy(status = status) }
     }

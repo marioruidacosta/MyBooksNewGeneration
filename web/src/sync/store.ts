@@ -514,8 +514,9 @@ export class LibraryStore {
   /** Sets a synced preference; null removes it (a marker that reaches the other devices). */
   setPref(key: string, value: string | null): void {
     if (value === null) this.write('prefs', key, { deleted: true }, [], false)
-    // The value is stamped even when it is the same: after a removal elsewhere, its stored value may be the empty one.
-    else this.write('prefs', key, { value, deleted: false }, ['value'], true)
+    // Both are stamped even when they are the same: after a removal elsewhere the stored value may be the empty one,
+    // and a removal made earlier on a device that syncs later must not beat this newer write.
+    else this.write('prefs', key, { value, deleted: false }, ['value', 'deleted'], true)
   }
 
   /** Adds a book (or, when its id is here already, sets every field of it). */

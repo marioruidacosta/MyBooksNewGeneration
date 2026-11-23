@@ -19,6 +19,8 @@ vi.mock('./supabase', () => ({
 
 import { App } from './App'
 import { rowKey, type SyncApi } from './sync/api'
+import { bookToFields } from './sync/codec'
+import type { Book, SyncRow } from './sync/model'
 import { clearMedia, setPhone } from './test-media'
 
 const api: SyncApi = {
@@ -142,5 +144,47 @@ describe('the phone layout', () => {
     ])
     expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument()
     expect(screen.getByText(/Ctrl K|⌘ K/)).toBeInTheDocument()
+  })
+})
+
+describe('going back from a book', () => {
+  const stoner: Book = {
+    id: 'b1', isbn: null, title: 'Stoner', authors: 'John Williams', publisher: null, publishedYear: null, pageCount: null,
+    coverUrl: null, description: null, status: 'READ', rating: null, notes: '', dateAdded: 1, dateRead: null, dateStarted: null,
+    currentPage: null, progressPercent: null, review: '', tags: [], series: null, seriesNumber: null, lentTo: null, lentOn: null,
+    shelfId: null, shelfPosition: null, deleted: false,
+  }
+  const bookcase = JSON.stringify({ v: 1, name: 'By the window', room: 'Living room', columns: [{ id: 'c', shelves: ['s1'] }] })
+  const apiWith = (book: Book): SyncApi => {
+    const fields = bookToFields(book)
+    const rows: SyncRow[] = [
+      { table: 'books', id: book.id, fields, times: Object.fromEntries(Object.keys(fields).map((f) => [f, 1])), seq: 1 },
+      { table: 'prefs', id: 'bookcase.w', fields: { value: bookcase, deleted: false }, times: { value: 1, deleted: 1 }, seq: 2 },
+    ]
+    return { ...api, pull: async (after) => (after === 0 ? { rows, last: 2 } : { rows: [], last: after }) }
+  }
+
+  it('aBookOpenedFromAShelfGoesBackToIt', async () => {
+    window.history.pushState({}, '', '/MyBooksNewGeneration/app/physical/shelf/s1')
+    const user = userEvent.setup({ delay: null })
+    render(<App createApi={() => apiWith({ ...stoner, shelfId: 's1', shelfPosition: 1 })} />)
+    await user.click(await screen.findByRole('button', { name: /^Stoner/ }))
+    await user.click(await screen.findByRole('button', { name: 'Back to the shelf' }))
+    expect(await screen.findByRole('heading', { name: 'Shelf A1' })).toBeInTheDocument()
+  })
+
+  it('aBookOpenedFromWithoutAPlaceGoesBackToIt', async () => {
+    window.history.pushState({}, '', '/MyBooksNewGeneration/app/physical/unplaced')
+    const user = userEvent.setup({ delay: null })
+    render(<App createApi={() => apiWith(stoner)} />)
+    await user.click(await screen.findByRole('button', { name: /^Stoner/ }))
+    await user.click(await screen.findByRole('button', { name: 'Back to Without a place' }))
+    expect(await screen.findByRole('heading', { name: 'Without a place' })).toBeInTheDocument()
+  })
+
+  it('anUnknownOriginGoesBackToTheLibrary', async () => {
+    window.history.pushState({}, '', '/MyBooksNewGeneration/app/book/nope?from=https://example.com')
+    render(<App createApi={() => api} />)
+    expect(await screen.findByRole('button', { name: 'Back to the library' })).toBeInTheDocument()
   })
 })

@@ -45,6 +45,25 @@ class ShelfScanTest : MainDispatcherTest() {
     private fun result(vm: BatchScanViewModel, isbn: String) = vm.state.value.items.first { it.isbn == isbn }.result
 
     @Test
+    fun aBookAddedByHandShowsAsPlaced() = runTest {
+        val vm = BatchScanViewModel(repo, "s1")
+        vm.scanned(unknown)
+        advanceUntilIdle()
+        assertIs<ScanResult.NotFound>(result(vm, unknown))
+
+        val id = saved(Book(isbn = unknown, title = "By hand"))
+        repo.placeAtEnd(id, "s1")
+        advanceUntilIdle()
+
+        assertIs<ScanResult.Placed>(result(vm, unknown))
+        assertEquals(1, vm.state.value.placed)
+        // Undo takes it off the shelf and keeps what was typed in.
+        vm.undo(unknown)
+        advanceUntilIdle()
+        assertNull(assertNotNull(repo.getBook(id)).shelfId)
+    }
+
+    @Test
     fun scanningBuildsTheOrder() = runTest {
         val vm = BatchScanViewModel(repo, "s1")
         for (isbn in listOf(emma, stoner, remains)) vm.scanned(isbn)

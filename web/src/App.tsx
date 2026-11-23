@@ -244,12 +244,20 @@ function BookRoute() {
   const owner = useContext(CoverContext)?.owner
   if (!owner) throw new Error('BookRoute: no signed-in account')
   const navigate = useNavigate()
+  const { from } = bookRoute.useSearch()
+  const shelfId = from?.startsWith('shelf:') ? from.slice('shelf:'.length) : null
+  const back = shelfId !== null
+    ? { label: 'Back to the shelf', go: () => void navigate({ to: '/physical/shelf/$shelfId', params: { shelfId } }) }
+    : from === 'unplaced'
+      ? { label: 'Back to Without a place', go: () => void navigate({ to: '/physical/unplaced' }) }
+      : { label: 'Back to the library', go: () => void navigate({ to: '/' }) }
   return (
     <BookPage
       store={store}
       owner={owner}
       id={id}
-      onBack={() => void navigate({ to: '/' })}
+      onBack={back.go}
+      backLabel={back.label}
       onOpenShelf={(shelfId) => void navigate({ to: '/physical/shelf/$shelfId', params: { shelfId } })}
       onAddBookcase={() => void navigate({ to: '/physical/new' })}
     />
@@ -326,7 +334,7 @@ function ShelfRoute() {
           store={store}
           shelfId={shelfId}
           onBack={back}
-          onOpenBook={(id) => void navigate({ to: '/book/$id', params: { id } })}
+          onOpenBook={(id) => void navigate({ to: '/book/$id', params: { id }, search: { from: `shelf:${shelfId}` } })}
         />
       </Suspense>
     </PageBoundary>
@@ -342,7 +350,7 @@ function WithoutPlaceRoute() {
         <WithoutPlacePage
           store={store}
           onBack={() => void navigate({ to: '/physical' })}
-          onOpenBook={(id) => void navigate({ to: '/book/$id', params: { id } })}
+          onOpenBook={(id) => void navigate({ to: '/book/$id', params: { id }, search: { from: 'unplaced' } })}
         />
       </Suspense>
     </PageBoundary>
@@ -369,9 +377,16 @@ const libraryRoute = createRoute({
   beforeLoad: requireSession,
   component: LibraryRoute,
 })
+/** Where a book's Back returns to. Only these two kinds, so a link can't make it go anywhere else. */
+function bookSearch(search: Record<string, unknown>): { from?: string } {
+  const { from } = search
+  return typeof from === 'string' && (from === 'unplaced' || /^shelf:[A-Za-z0-9_-]{1,40}$/.test(from)) ? { from } : {}
+}
+
 const bookRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/book/$id',
+  validateSearch: bookSearch,
   beforeLoad: requireSession,
   component: BookRoute,
 })
