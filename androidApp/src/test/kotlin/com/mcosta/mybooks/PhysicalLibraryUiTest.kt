@@ -383,8 +383,9 @@ class PhysicalLibraryUiTest {
         addBook("Emma")
         val vm = vmWith(3)
         var picked: List<Long>? = null
+        val current = vm.state.value
         compose.setContent {
-            MyBooksTheme { PickBooksContent(vm.state.value.books, vm.state.value.bookcases, vm.state.value.ebookIds, "s1") { picked = it } }
+            MyBooksTheme { PickBooksContent(current.books, current.bookcases, current.ebookIds, "s1") { picked = it } }
         }
         compose.onNodeWithText("Search your books").performTextInput("stone")
         assertEquals(0, compose.onAllNodesWithText("Emma").fetchSemanticsNodes().size)
@@ -412,8 +413,9 @@ class PhysicalLibraryUiTest {
         saved(window)
         addBook("Stoner", "s2", 1.0)
         val vm = vmWith(1)
+        val current = vm.state.value
         compose.setContent {
-            MyBooksTheme { PickBooksContent(vm.state.value.books, vm.state.value.bookcases, vm.state.value.ebookIds, "s1") {} }
+            MyBooksTheme { PickBooksContent(current.books, current.bookcases, current.ebookIds, "s1") {} }
         }
         compose.onNodeWithText("Living room › By the window › Shelf A2", substring = true).assertExists()
     }
@@ -426,8 +428,9 @@ class PhysicalLibraryUiTest {
         val ebook = addBook("Ebook")
         val already = addBook("Already here", "s1", 1.0)
         val vm = vmWith(4)
+        val current = vm.state.value
         compose.setContent {
-            MyBooksTheme { PickBooksContent(vm.state.value.books, vm.state.value.bookcases, setOf(ebook), "s1") {} }
+            MyBooksTheme { PickBooksContent(current.books, current.bookcases, setOf(ebook), "s1") {} }
         }
         compose.onNodeWithText("Paper").assertExists()
         for (hidden in listOf("To buy", "Ebook", "Already here")) {
@@ -460,9 +463,10 @@ class PhysicalLibraryUiTest {
         onAddBookcase: () -> Unit = {},
     ) {
         val book = vm.state.value.books.first { it.id == id }
+        val current = vm.state.value
         compose.setContent {
             MyBooksTheme {
-                WhereItIsCard(book, vm.state.value.bookcases, vm::booksOn, onChoose, onTakeOff, onOpenShelf = {}, onAddBookcase = onAddBookcase)
+                WhereItIsCard(book, current.bookcases, vm::booksOn, onChoose, onTakeOff, onOpenShelf = {}, onAddBookcase = onAddBookcase)
             }
         }
     }
