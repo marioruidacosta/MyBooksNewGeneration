@@ -1169,3 +1169,6 @@ button.bookcase__shelf:hover:not(:disabled) { background: #2a1b10; }
 }
 
 .physical-search { margin: 1rem 0 0; }
+
+.found-list { list-style: none; margin: 1rem 0 0; padding: 0; display: grid; gap: 0.5rem; }
+.bookcase-row__text .found-where { color: var(--ink); font-size: 0.875rem; font-weight: 500; }

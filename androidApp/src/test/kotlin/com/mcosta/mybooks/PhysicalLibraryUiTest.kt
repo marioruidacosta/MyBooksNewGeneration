@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
@@ -115,7 +116,7 @@ class PhysicalLibraryUiTest {
     }
 
     private fun home(vm: PhysicalLibraryViewModel) = compose.setContent {
-        MyBooksTheme { PhysicalLibraryScreen(vm, onBack = {}, onOpenBookcase = {}, onAdd = {}, onOpenUnplaced = {}) }
+        MyBooksTheme { PhysicalLibraryScreen(vm, onBack = {}, onOpenBookcase = {}, onAdd = {}, onOpenUnplaced = {}, onOpenBook = {}) }
     }
 
     private fun editor(vm: PhysicalLibraryViewModel, id: String?, onDone: () -> Unit = {}) = compose.setContent {
@@ -151,7 +152,7 @@ class PhysicalLibraryUiTest {
         var shown by mutableStateOf(true)
         compose.setContent {
             MyBooksTheme {
-                if (shown) PhysicalLibraryScreen(vm, onBack = {}, onOpenBookcase = {}, onAdd = {}, onOpenUnplaced = {})
+                if (shown) PhysicalLibraryScreen(vm, onBack = {}, onOpenBookcase = {}, onAdd = {}, onOpenUnplaced = {}, onOpenBook = {})
             }
         }
         vm.takeOff(a)
@@ -176,6 +177,74 @@ class PhysicalLibraryUiTest {
         assertTrue(physical < news)
         compose.onNodeWithText("Physical library").performClick()
         assertTrue(opened)
+    }
+
+    private val findLabel = "Find a book by title or author"
+
+    private fun addBy(title: String, authors: String, shelf: String? = null, position: Double? = null): Long =
+        runBlocking { (repo.save(Book(title = title, authors = authors, status = ReadingStatus.READ, shelfId = shelf, shelfPosition = position)) as SaveResult.Saved).id }
+
+    @Test
+    fun findShowsWhereTheBookIs() {
+        saved(window)
+        addBy("Memorial do Convento", "José Saramago", "s2", 1.0)
+        addBy("Ensaio sobre a Cegueira", "José Saramago", "s2", 2.0)
+        addBy("Stoner", "John Williams", "s1", 1.0)
+        home(vmWith(3))
+        compose.onNodeWithText(findLabel).performTextInput("saramago cegueira")
+        compose.onNodeWithText("Ensaio sobre a Cegueira").assertExists()
+        compose.onNodeWithText("Living room › By the window › Shelf A2 · 2nd from the left").assertExists()
+        compose.onNodeWithText("Memorial do Convento").assertDoesNotExist()
+        compose.onNodeWithText("By the window").assertDoesNotExist()
+    }
+
+    @Test
+    fun findSaysWhenABookHasNoPlaceOrIsLent() {
+        saved(window)
+        addBy("Waiting", "Someone")
+        val lent = addBy("Away", "Someone", "s1", 1.0)
+        runBlocking { repo.lend(lent, "Ana", 1) }
+        val vm = PhysicalLibraryViewModel(repo, store)
+        until { vm.state.value.books.any { it.lentTo == "Ana" } }
+        home(vm)
+        compose.onNodeWithText(findLabel).performTextInput("someone")
+        compose.onNodeWithText("Without a place").assertExists()
+        compose.onNodeWithText("Living room › By the window › Shelf A1 · 1st from the left").assertExists()
+        compose.onNodeWithText("Lent to Ana", substring = true).assertExists()
+    }
+
+    @Test
+    fun findOpensTheBook() {
+        saved(window)
+        val id = addBy("Stoner", "John Williams", "s1", 1.0)
+        val vm = vmWith(1)
+        var opened: Long? = null
+        compose.setContent {
+            MyBooksTheme { PhysicalLibraryScreen(vm, onBack = {}, onOpenBookcase = {}, onAdd = {}, onOpenUnplaced = {}, onOpenBook = { opened = it }) }
+        }
+        compose.onNodeWithText(findLabel).performTextInput("stoner")
+        compose.onNodeWithText("Stoner").performClick()
+        assertEquals(id, opened)
+    }
+
+    @Test
+    fun clearingTheSearchBringsBackTheRooms() {
+        saved(window)
+        addBy("Stoner", "John Williams", "s1", 1.0)
+        home(vmWith(1))
+        compose.onNodeWithText(findLabel).performTextInput("stoner")
+        compose.onNodeWithText("By the window").assertDoesNotExist()
+        compose.onNodeWithText(findLabel).performTextClearance()
+        compose.onNodeWithText("By the window").assertExists()
+    }
+
+    @Test
+    fun findSaysWhenNothingMatches() {
+        saved(window)
+        addBy("Stoner", "John Williams", "s1", 1.0)
+        home(vmWith(1))
+        compose.onNodeWithText(findLabel).performTextInput("nothing like this")
+        compose.onNodeWithText("No books match your search.").assertExists()
     }
 
     @Test

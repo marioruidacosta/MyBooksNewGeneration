@@ -35,6 +35,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,9 +44,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.physical.Bookcase
+import com.mcosta.mybooks.physical.FoundBook
 import com.mcosta.mybooks.physical.MAX_BOOKCASE_NAME
+import com.mcosta.mybooks.physical.findInHome
 import com.mcosta.mybooks.physical.onShelf
 import com.mcosta.mybooks.physical.shelfIds
+import com.mcosta.mybooks.ui.library.lentText
 
 internal fun countText(count: Int, one: String, many: String) = if (count == 1) "1 $one" else "$count $many"
 
@@ -66,7 +70,7 @@ internal fun PhysicalMessages(state: PhysicalState, viewModel: PhysicalLibraryVi
     }
 }
 
-/** Your home: rooms, each with its bookcases. */
+/** Your home: rooms, each with its bookcases, and a search that says where a book is. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PhysicalLibraryScreen(
@@ -75,10 +79,14 @@ fun PhysicalLibraryScreen(
     onOpenBookcase: (String) -> Unit,
     onAdd: () -> Unit,
     onOpenUnplaced: () -> Unit,
+    onOpenBook: (Long) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var renaming by remember { mutableStateOf<String?>(null) }
+    // Saved: coming back from a book found here shows the same results.
+    var query by rememberSaveable { mutableStateOf("") }
+    val found = state.books.findInHome(state.bookcases, state.ebookIds, query)
     PhysicalMessages(state, viewModel, snackbar)
     Scaffold(
         topBar = {
@@ -90,6 +98,22 @@ fun PhysicalLibraryScreen(
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         LazyColumn(Modifier.padding(padding).fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (state.books.isNotEmpty()) {
+                item(key = "find") {
+                    OutlinedTextField(
+                        value = query, onValueChange = { query = it },
+                        label = { Text("Find a book by title or author") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            if (query.isNotBlank()) {
+                if (found.isEmpty()) {
+                    item { Text("No books match your search.", Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodyMedium) }
+                }
+                items(found, key = { "found:${it.book.id}" }) { result -> FoundRow(result) { onOpenBook(result.book.id) } }
+                return@LazyColumn
+            }
             if (state.bookcases.isEmpty()) {
                 item {
                     Text(
@@ -128,6 +152,25 @@ fun PhysicalLibraryScreen(
     }
     renaming?.let { room ->
         RenameRoomDialog(room, onRename = { viewModel.renameRoom(room, it); renaming = null }, onDismiss = { renaming = null })
+    }
+}
+
+/** A book found by the search, and where to go to get it. */
+@Composable
+private fun FoundRow(found: FoundBook, onClick: () -> Unit) {
+    val book = found.book
+    val where = found.place?.let { place ->
+        listOfNotNull(place.location, found.fromLeft?.let { "${ordinal(it)} from the left" }).joinToString(" · ")
+    } ?: "Without a place"
+    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(book.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (book.authors.isNotBlank()) {
+                Text(book.authors, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text(where, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            book.lentTo?.let { Text(lentText(it, book.lentOn), style = MaterialTheme.typography.bodySmall) }
+        }
     }
 }
 

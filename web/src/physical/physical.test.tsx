@@ -53,7 +53,7 @@ afterEach(async () => {
   await store.close()
 })
 
-const home = () => render(<PhysicalLibraryPage store={store} onOpenBookcase={() => {}} onAdd={() => {}} onOpenUnplaced={() => {}} />)
+const home = () => render(<PhysicalLibraryPage store={store} onOpenBook={() => {}} onOpenBookcase={() => {}} onAdd={() => {}} onOpenUnplaced={() => {}} />)
 
 describe('your home', () => {
   it('emptyHomeInvitesABookcase', () => {
@@ -546,5 +546,92 @@ describe('searching Without a place', () => {
     saved(windowCase)
     page()
     expect(screen.queryByLabelText('Search your books')).not.toBeInTheDocument()
+  })
+})
+
+describe('finding a book at home', () => {
+  const label = 'Find a book by title or author'
+  const page = (onOpenBook: (id: string) => void = () => {}) => render(
+    <PhysicalLibraryPage store={store} onOpenBook={onOpenBook} onOpenBookcase={() => {}} onAdd={() => {}} onOpenUnplaced={() => {}} />,
+  )
+
+  it('findShowsWhereTheBookIs', async () => {
+    const user = userEvent.setup()
+    saved(windowCase)
+    store.create(book('Memorial do Convento', { authors: 'José Saramago', shelfId: 's2', shelfPosition: 1 }))
+    store.create(book('Ensaio sobre a Cegueira', { authors: 'José Saramago', shelfId: 's2', shelfPosition: 2 }))
+    store.create(book('Stoner', { authors: 'John Williams', shelfId: 's1', shelfPosition: 1 }))
+    page()
+    await user.type(screen.getByLabelText(label), 'saramago cegueira')
+    expect(screen.getByText('Ensaio sobre a Cegueira')).toBeInTheDocument()
+    expect(screen.getByText('Living room › By the window › Shelf A2 · 2nd from the left')).toBeInTheDocument()
+    expect(screen.queryByText('Memorial do Convento')).not.toBeInTheDocument()
+    expect(screen.queryByText('By the window')).not.toBeInTheDocument()
+  })
+
+  it('findSaysWhenABookHasNoPlaceOrIsLent', async () => {
+    const user = userEvent.setup()
+    saved(windowCase)
+    store.create(book('Waiting'))
+    store.create(book('Away', { shelfId: 's1', shelfPosition: 1, lentTo: 'Ana', lentOn: 1 }))
+    page()
+    await user.type(screen.getByLabelText(label), 'someone')
+    expect(screen.getByText('Without a place')).toBeInTheDocument()
+    expect(screen.getByText('Living room › By the window › Shelf A1 · 1st from the left')).toBeInTheDocument()
+    expect(screen.getByText('Lent to Ana')).toBeInTheDocument()
+  })
+
+  it('findOpensTheBook', async () => {
+    const user = userEvent.setup()
+    saved(windowCase)
+    store.create(book('Stoner', { shelfId: 's1', shelfPosition: 1 }))
+    const open = vi.fn()
+    page(open)
+    await user.type(screen.getByLabelText(label), 'stoner')
+    await user.click(screen.getByRole('button', { name: /^Stoner/ }))
+    expect(open).toHaveBeenCalledWith('Stoner')
+  })
+
+  it('clearingTheSearchBringsBackTheRooms', async () => {
+    const user = userEvent.setup()
+    saved(windowCase)
+    store.create(book('Stoner', { shelfId: 's1', shelfPosition: 1 }))
+    page()
+    await user.type(screen.getByLabelText(label), 'stoner')
+    expect(screen.queryByRole('heading', { name: 'Living room' })).not.toBeInTheDocument()
+    await user.clear(screen.getByLabelText(label))
+    expect(screen.getByRole('heading', { name: 'Living room' })).toBeInTheDocument()
+  })
+
+  it('findSaysWhenNothingMatches', async () => {
+    const user = userEvent.setup()
+    saved(windowCase)
+    store.create(book('Stoner'))
+    page()
+    await user.type(screen.getByLabelText(label), 'nothing like this')
+    expect(screen.getByText('No books match your search.')).toBeInTheDocument()
+  })
+
+  it('theSearchComesBackAfterOpeningABook', async () => {
+    const user = userEvent.setup()
+    saved(windowCase)
+    store.create(book('Stoner', { shelfId: 's1', shelfPosition: 1 }))
+    const { unmount } = page()
+    await user.type(screen.getByLabelText(label), 'stoner')
+    await user.click(screen.getByRole('button', { name: /^Stoner/ }))
+    unmount()
+    page()
+    expect(screen.getByLabelText(label)).toHaveValue('stoner')
+  })
+
+  it('anOrdinaryVisitStartsWithAnEmptySearch', async () => {
+    const user = userEvent.setup()
+    saved(windowCase)
+    store.create(book('Stoner', { shelfId: 's1', shelfPosition: 1 }))
+    const { unmount } = page()
+    await user.type(screen.getByLabelText(label), 'stoner')
+    unmount()
+    page()
+    expect(screen.getByLabelText(label)).toHaveValue('')
   })
 })

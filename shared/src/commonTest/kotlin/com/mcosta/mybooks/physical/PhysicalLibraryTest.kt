@@ -157,4 +157,42 @@ class PhysicalLibraryTest {
         val shelf = listOf(book(1, "Zola", "s"), book(2, "Austen", "s"), book(3, "First", "s", 0.25)).onShelf("s")
         assertEquals(mapOf(3L to 1.0, 2L to 2.0, 1L to 3.0), renumbered(shelf))
     }
+
+    private fun by(id: Long, title: String, authors: String, shelf: String? = null, position: Double? = null) =
+        Book(id = id, title = title, authors = authors, shelfId = shelf, shelfPosition = position, status = ReadingStatus.READ)
+
+    @Test
+    fun findMatchesTitleAndAuthorTogether() {
+        val books = listOf(
+            by(1, "Ensaio sobre a Cegueira", "José Saramago"),
+            by(2, "Memorial do Convento", "José Saramago"),
+            by(3, "A Cegueira", "Outro"),
+        )
+        assertEquals(listOf(1L), books.findInHome(listOf(window), emptySet(), "saramago  CEGUEIRA").map { it.book.id })
+        assertEquals(listOf(1L, 2L), books.findInHome(listOf(window), emptySet(), "jose").map { it.book.id })
+        assertTrue(books.findInHome(listOf(window), emptySet(), "   ").isEmpty())
+    }
+
+    @Test
+    fun findSaysWhereTheBookIs() {
+        val books = listOf(by(1, "Alpha", "A", "s2", 1.0), by(2, "Target", "B", "s2", 2.0), by(3, "No order", "C", "s2"))
+        val found = books.findInHome(listOf(window), emptySet(), "target").single()
+        assertEquals("Living room › By the window › Shelf A2", found.place?.location)
+        assertEquals(2, found.fromLeft)
+        assertNull(books.findInHome(listOf(window), emptySet(), "no order").single().fromLeft)
+    }
+
+    @Test
+    fun findLeavesOutWhatHasNoPlaceToBe() {
+        val books = listOf(
+            by(1, "Paper", "Someone"),
+            by(2, "Ebook", "Someone"),
+            by(3, "Placed ebook", "Someone", "s1", 1.0),
+            by(4, "Gone", "Someone", "removed", 1.0),
+            by(5, "To buy", "Someone", "s1", 2.0).copy(status = ReadingStatus.WISHLIST),
+        )
+        val found = books.findInHome(listOf(window), setOf(2L, 3L), "someone")
+        assertEquals(listOf(4L, 1L, 3L), found.map { it.book.id })
+        assertEquals(listOf(null, null, "s1"), found.map { it.place?.shelfId })
+    }
 }

@@ -3,6 +3,7 @@ package com.mcosta.mybooks.physical
 import com.mcosta.mybooks.data.db.newUuid
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.domain.searchKey
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -143,6 +144,32 @@ fun List<Book>.onShelf(shelfId: String): List<Book> =
 fun List<Book>.withoutPlace(bookcases: List<Bookcase>, ebookIds: Set<Long>): List<Book> {
     val shelves = bookcases.flatMapTo(HashSet()) { it.shelfIds() }
     return filter { it.status != ReadingStatus.WISHLIST && it.id !in ebookIds && it.shelfId !in shelves }
+}
+
+/** A book found by [findInHome]: its shelf (null when it has none yet) and its place from the left, when it has an order. */
+data class FoundBook(val book: Book, val place: ShelfPlace?, val fromLeft: Int?)
+
+/**
+ * The books with every word of [query] in their title or author, and where each one is. To buy books have no place, and
+ * an ebook only appears once it was put on a shelf.
+ */
+fun List<Book>.findInHome(bookcases: List<Bookcase>, ebookIds: Set<Long>, query: String): List<FoundBook> {
+    val words = searchKey(query).split(Regex("\\s+")).filter { it.isNotEmpty() }
+    if (words.isEmpty()) return emptyList()
+    val shelves = mutableMapOf<String, List<Book>>()
+    return filter { book ->
+        val key = searchKey("${book.title}\n${book.authors}")
+        book.status != ReadingStatus.WISHLIST && words.all { it in key }
+    }.mapNotNull { book ->
+        val place = bookcases.findShelf(book.shelfId)
+        if (place == null && book.id in ebookIds) return@mapNotNull null
+        val fromLeft = if (place != null && book.shelfPosition != null) {
+            shelves.getOrPut(place.shelfId) { onShelf(place.shelfId) }.indexOfFirst { it.id == book.id } + 1
+        } else {
+            null
+        }
+        FoundBook(book, place, fromLeft)
+    }.sortedBy { it.book.title.lowercase() }
 }
 
 /** The position after every book on the shelf. */
