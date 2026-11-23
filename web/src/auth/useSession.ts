@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { isAuthRetryableFetchError, type Session } from '@supabase/supabase-js'
 import { supabase } from '../supabase'
 import { guardBlocks } from './guardedStorage'
-import { SIGNED_OUT_EVENT } from './signOut'
+import { isIdle, markUsed, noteExpired } from './idle'
+import { signOut, SIGNED_OUT_EVENT } from './signOut'
 import { storedSession } from './storedSession'
 
 /**
@@ -10,6 +11,20 @@ import { storedSession } from './storedSession'
  * of an expired token retries for about 25 s (twice over at start-up) before it gives up.
  */
 const WAIT_MS = 4000
+
+/** A use is written at most this often. */
+const MARK_EVERY_MS = 60_000
+/** How often a tab left open checks whether it has gone unused for too long. */
+const CHECK_EVERY_MS = 60 * 60 * 1000
+
+/** Ends this device's session when it has gone unused for too long (the library stays here); true when it did. */
+function endIfIdle(): boolean {
+  const stored = storedSession()
+  if (!stored || guardBlocks(stored.user.id) || !isIdle()) return false
+  noteExpired()
+  void signOut()
+  return true
+}
 
 /**
  * Who is signed in. An expired access token that could not be refreshed *because of the network* (offline, a server that
@@ -23,6 +38,8 @@ export function useSession(): { session: Session | null; loading: boolean } {
 
   useEffect(() => {
     let active = true
+    // First of all: a session past its limit must not open the library, even for a moment.
+    endIfIdle()
     /** Keeps the stored account (until supabase-js says otherwise); false when there is none. */
     const keepStored = (): boolean => {
       const stored = storedSession()
@@ -66,6 +83,36 @@ export function useSession(): { session: Session | null; loading: boolean } {
       data.subscription.unsubscribe()
     }
   }, [])
+
+  const userId = session?.user.id
+  useEffect(() => {
+    if (!userId) return
+    if (!endIfIdle()) markUsed()
+    let marked = Date.now()
+    // Coming back after the limit ends the session: the check always goes before counting this as use.
+    const used = () => {
+      if (endIfIdle()) return
+      const now = Date.now()
+      if (now - marked < MARK_EVERY_MS) return
+      marked = now
+      markUsed(now)
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') used()
+    }
+    window.addEventListener('pointerdown', used, { passive: true })
+    window.addEventListener('keydown', used)
+    window.addEventListener('pageshow', used)
+    document.addEventListener('visibilitychange', onVisible)
+    const timer = setInterval(endIfIdle, CHECK_EVERY_MS)
+    return () => {
+      window.removeEventListener('pointerdown', used)
+      window.removeEventListener('keydown', used)
+      window.removeEventListener('pageshow', used)
+      document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(timer)
+    }
+  }, [userId])
 
   return { session, loading }
 }

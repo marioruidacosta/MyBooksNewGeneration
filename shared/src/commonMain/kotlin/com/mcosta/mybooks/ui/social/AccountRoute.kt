@@ -7,6 +7,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mcosta.mybooks.library.Libraries
 import com.mcosta.mybooks.library.LibrarySessions
 import com.mcosta.mybooks.share.SharingStatus
+import com.mcosta.mybooks.social.IdleSession
 import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.sync.LibrarySync
 import com.mcosta.mybooks.sync.SyncStatus
@@ -21,8 +22,9 @@ fun AccountRoute(
     sync: LibrarySync? = null,
     sessions: LibrarySessions<*>? = null,
     libraries: Libraries<*>? = null,
+    idle: IdleSession? = null,
 ) {
-    val signIn = viewModel { SignInViewModel(services.auth, services.profiles, onProfileCreated = { sharing?.refresh() }) }
+    val signIn = viewModel { SignInViewModel(services.auth, services.profiles, onProfileCreated = { sharing?.refresh() }, beforeVerify = { idle?.signingIn() }) }
     val state by signIn.state.collectAsStateWithLifecycle()
     val syncStatus = sync?.status?.collectAsStateWithLifecycle()?.value
     if (state.step == SignInStep.DONE) {

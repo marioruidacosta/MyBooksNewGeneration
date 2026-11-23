@@ -33,7 +33,10 @@ import java.util.concurrent.TimeUnit
 /** Every hour or so (with a network), asks whether friends suggested new books, and says so. */
 class BookSuggestionWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val alerts = (applicationContext as MyBooksApp).container.suggestionAlerts ?: return Result.success()
+        val container = (applicationContext as MyBooksApp).container
+        // Background work isn't use: a phone left in a drawer doesn't stay signed in.
+        if (container.idleSession?.endIfIdle() == true) return Result.success()
+        val alerts = container.suggestionAlerts ?: return Result.success()
         val alert = try {
             alerts.check()
         } catch (e: CancellationException) {

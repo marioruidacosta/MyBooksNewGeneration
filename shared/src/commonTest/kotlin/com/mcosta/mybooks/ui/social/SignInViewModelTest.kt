@@ -33,6 +33,17 @@ class SignInViewModelTest : MainDispatcherTest() {
     }
 
     @Test
+    fun theClockRestartsBeforeTheCodeIsVerified() = runTest {
+        var restarted = false
+        val vm = SignInViewModel(fake.auth, fake.profileService, beforeVerify = { restarted = true })
+        vm.setEmail("ana@exemplo.pt")
+        vm.sendCode()
+        vm.setCode("123456")
+        vm.verify()
+        assertEquals(true, restarted)
+    }
+
+    @Test
     fun invalidEmailRejectedLocally() = runTest {
         val vm = vm()
         vm.setEmail("name@")

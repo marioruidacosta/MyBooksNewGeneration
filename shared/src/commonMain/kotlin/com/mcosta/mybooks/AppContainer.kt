@@ -28,12 +28,14 @@ import com.mcosta.mybooks.library.LibraryId
 import com.mcosta.mybooks.library.LibrarySessions
 import com.mcosta.mybooks.library.LibrarySpace
 import com.mcosta.mybooks.library.LibraryUpgrade
+import com.mcosta.mybooks.library.OnSignOut
 import com.mcosta.mybooks.library.UpgradeResult
 import com.mcosta.mybooks.share.ShareExclusions
 import com.mcosta.mybooks.share.Publisher
 import com.mcosta.mybooks.share.ShareLock
 import com.mcosta.mybooks.share.ShareTracker
 import com.mcosta.mybooks.share.SharingStatus
+import com.mcosta.mybooks.social.IdleSession
 import com.mcosta.mybooks.social.SocialConfig
 import com.mcosta.mybooks.social.SocialServices
 import com.mcosta.mybooks.social.model.SessionState
@@ -47,6 +49,7 @@ import com.mcosta.mybooks.sync.SyncStatus
 import com.russhwolf.settings.Settings
 import io.ktor.client.engine.HttpClientEngine
 import kotlin.time.Clock
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -196,6 +199,15 @@ class AppContainer(
         LibrarySessions(libraries, it.auth.session, applicationScope) { space -> libraries.offerPhoneBooks(space) }
     }
 
+    private val libraryOpened = CompletableDeferred<Unit>()
+
+    /** Ends this device's session after 7 days without use (its library stays for the next sign-in); null without the community. */
+    val idleSession: IdleSession? = social?.let { services ->
+        IdleSession(preferences, services.auth.session, applicationScope, clock, whenReady = { libraryOpened.await() }) {
+            sessions?.signOut(OnSignOut.KEEP) { services.auth.endSession() }
+        }
+    }
+
     /**
      * Upgrades an install from before libraries were separate (the first start only: it copies files, off the main
      * thread, and must finish before anything opens `mybooks.db`). Then picks the library active at the last launch, at
@@ -210,9 +222,15 @@ class AppContainer(
         if (upgraded is UpgradeResult.Failed) libraries.awaitUpgrade(upgraded.pending)
         libraries.start()
         applicationScope.launch {
-            libraries.openActive()
-            // A deleted account's books that couldn't move into this phone's library last time.
-            libraries.retryMovesToPhone()
+            try {
+                libraries.openActive()
+                // A deleted account's books that couldn't move into this phone's library last time.
+                libraries.retryMovesToPhone()
+            } finally {
+                libraryOpened.complete(Unit)
+            }
+            // Beside [follow], which must not wait for it. Any start counts: background work starts the app too.
+            idleSession?.let { idle -> applicationScope.launch { idle.endIfIdle() } }
             sessions?.follow()
         }
     }

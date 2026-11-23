@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { QuoteOfTheDay } from '../quotes/QuoteOfTheDay'
 import { supabase } from '../supabase'
+import { wasExpired } from './idle'
 import { verifyCode } from './verifyCode'
 
 const CODE_ERROR = "That code didn't work. Check it, or send a new one."
@@ -47,6 +48,7 @@ export function SignIn() {
   const [step, setStep] = useState<'email' | 'code'>(pending === null ? 'email' : 'code')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [expired] = useState(wasExpired)
 
   useEffect(() => {
     if (step !== 'code') return
@@ -100,6 +102,11 @@ export function SignIn() {
       <div className="spines" aria-hidden="true" />
       <h1>MyBooks</h1>
       <p className="sign-in__lede">Your library, wherever you read. Enter your email to sign in.</p>
+      {expired && (
+        <p className="sign-in__notice" role="status">
+          You were signed out after 7 days without use. Sign in to open your library again. It&apos;s still on this device.
+        </p>
+      )}
       {step === 'email' ? (
         <form onSubmit={sendCode}>
           <label>

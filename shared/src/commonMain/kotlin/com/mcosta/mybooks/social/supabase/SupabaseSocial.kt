@@ -36,6 +36,7 @@ import io.github.jan.supabase.auth.OtpType
 import com.russhwolf.settings.Settings
 import io.github.jan.supabase.auth.SettingsCodeVerifierCache
 import io.github.jan.supabase.auth.SettingsSessionManager
+import io.github.jan.supabase.auth.SignOutScope
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.exception.AuthRestException
 import io.github.jan.supabase.auth.providers.builtin.OTP
@@ -224,7 +225,19 @@ internal class SupabaseSocial(
             Unit
         }
 
-        override suspend fun signOut() = call { client.auth.signOut() }
+        // Only this device: the account's other devices keep their own sessions.
+        override suspend fun signOut() = call { client.auth.signOut(SignOutScope.LOCAL) }
+
+        override suspend fun endSession() {
+            try {
+                client.auth.signOut(SignOutScope.LOCAL)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Offline: it ends here now, and on the server with the nightly job.
+                client.auth.clearSession()
+            }
+        }
     }
 
     private val profiles = object : ProfileService {
