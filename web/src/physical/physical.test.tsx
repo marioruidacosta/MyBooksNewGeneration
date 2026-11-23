@@ -490,3 +490,61 @@ describe('where a book is', () => {
     expect(store.book('Target')).toMatchObject({ title: 'Renamed', shelfId: 's2', shelfPosition: 5 })
   })
 })
+
+describe('searching Without a place', () => {
+  const toast = { show: vi.fn() }
+  const page = () => render(
+    <ToastContext.Provider value={toast}>
+      <WithoutPlacePage store={store} onBack={() => {}} onOpenBook={() => {}} />
+    </ToastContext.Provider>,
+  )
+  const search = () => screen.getByLabelText('Search your books')
+
+  it('findsByTitleOrAuthorIgnoringAccentsAndCapitals', async () => {
+    const user = userEvent.setup()
+    saved(windowCase)
+    store.create(book('Memorial do Convento', { authors: 'José Saramago' }))
+    store.create(book('Stoner', { authors: 'John Williams' }))
+    page()
+    await user.type(search(), 'JOSE')
+    expect(screen.getByText('Memorial do Convento')).toBeInTheDocument()
+    expect(screen.queryByText('Stoner')).not.toBeInTheDocument()
+    await user.clear(search())
+    await user.type(search(), 'stoner')
+    expect(screen.getByText('Stoner')).toBeInTheDocument()
+    expect(screen.queryByText('Memorial do Convento')).not.toBeInTheDocument()
+  })
+
+  it('saysWhenNothingMatches', async () => {
+    const user = userEvent.setup()
+    saved(windowCase)
+    store.create(book('Stoner'))
+    page()
+    await user.type(search(), 'nothing like this')
+    expect(screen.getByText('No books match your search.')).toBeInTheDocument()
+    expect(screen.queryByText('Every physical book has a place.')).not.toBeInTheDocument()
+  })
+
+  it('keepsWhatIsSelectedAndClearsAfterPlacing', async () => {
+    const user = userEvent.setup()
+    saved(windowCase)
+    for (const t of ['Alpha', 'Beta', 'Gamma']) store.create(book(t))
+    page()
+    await user.click(screen.getByRole('checkbox', { name: 'Select Alpha' }))
+    await user.type(search(), 'beta')
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('checkbox', { name: 'Select Beta' }))
+    await user.click(screen.getByRole('button', { name: 'Put 2 on a shelf' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Living room › By the window › Shelf A2' }))
+    expect(store.book('Alpha')?.shelfId).toBe('s2')
+    expect(store.book('Beta')?.shelfId).toBe('s2')
+    expect(search()).toHaveValue('')
+    expect(screen.getByText('Gamma')).toBeInTheDocument()
+  })
+
+  it('noSearchWhenEveryBookHasAPlace', () => {
+    saved(windowCase)
+    page()
+    expect(screen.queryByLabelText('Search your books')).not.toBeInTheDocument()
+  })
+})
