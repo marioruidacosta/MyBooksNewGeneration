@@ -58,6 +58,27 @@ class EbookBackupTest {
         assertEquals("{\"p\":2}", other.quotes.forBook(newId).single().position)
     }
 
+    /** The backup Settings makes is the .zip: restoring it brings back quotes, the reading place and bookmarks. */
+    @Test
+    fun zipBackupKeepsQuotesEbookPlaceAndBookmarks() = runTest {
+        val mine = Library()
+        val repo = repo(mine)
+        val id = (repo.save(Book(title = "Os Maias", isbn = "9789722039994")) as SaveResult.Saved).id
+        mine.ebooks.upsert(EbookEntity(id, EbookFormat.EPUB, "os-maias.epub", 512_000, dateAdded = 7, position = "{\"p\":3}", lastOpened = 9))
+        mine.bookmarks.insert(BookmarkEntity(bookId = id, position = "{\"p\":1}", label = "Capítulo I", dateAdded = 1))
+        mine.quotes.insert(QuoteEntity(bookId = id, text = "O Ega…", page = 12, dateAdded = 3, position = "{\"p\":2}"))
+
+        val zip = repo.exportBackup()
+
+        val other = Library()
+        val restore = repo(other)
+        restore.importBackup(zip)
+        val newId = restore.findByIsbn("9789722039994")!!.id
+        assertEquals("{\"p\":3}", other.ebooks.get(newId)?.position)
+        assertEquals(listOf("Capítulo I"), other.bookmarks.forBook(newId).map { it.label })
+        assertEquals(listOf("O Ega…"), other.quotes.forBook(newId).map { it.text })
+    }
+
     /** A file already on this phone keeps its own place: restoring an older backup doesn't move it. */
     @Test
     fun anEbookAlreadyHereIsNotReplaced() = runTest {
