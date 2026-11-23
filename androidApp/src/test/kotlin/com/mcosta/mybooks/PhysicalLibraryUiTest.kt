@@ -439,6 +439,50 @@ class PhysicalLibraryUiTest {
         assertTrue(already > 0)
     }
 
+    private fun withoutPlace(vm: PhysicalLibraryViewModel) = compose.setContent {
+        MyBooksTheme { WithoutPlaceScreen(vm, onBack = {}, onOpenBook = {}) }
+    }
+
+    @Test
+    fun withoutPlaceSearchFindsByTitleOrAuthor() {
+        saved(window)
+        runBlocking {
+            repo.save(Book(title = "Memorial do Convento", authors = "José Saramago"))
+            repo.save(Book(title = "Stoner", authors = "John Williams"))
+        }
+        withoutPlace(vmWith(2))
+        compose.onNodeWithText("Search your books").performTextInput("jose")
+        compose.onNodeWithText("Memorial do Convento").assertExists()
+        compose.onNodeWithText("Stoner").assertDoesNotExist()
+    }
+
+    @Test
+    fun withoutPlaceSearchSaysWhenNothingMatches() {
+        saved(window)
+        addBook("Stoner")
+        withoutPlace(vmWith(1))
+        compose.onNodeWithText("Search your books").performTextInput("nothing like this")
+        compose.onNodeWithText("No books match your search.").assertExists()
+    }
+
+    @Test
+    fun withoutPlaceSearchKeepsWhatIsSelected() {
+        saved(window)
+        val a = addBook("Alpha")
+        val b = addBook("Beta")
+        addBook("Gamma")
+        withoutPlace(vmWith(3))
+        compose.onNodeWithContentDescription("Select Alpha").performClick()
+        compose.onNodeWithText("Search your books").performTextInput("beta")
+        compose.onNodeWithText("Alpha").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Select Beta").performClick()
+        compose.onNodeWithText("Put 2 on a shelf").performClick()
+        compose.onNodeWithText("Living room › By the window › Shelf A2").performClick()
+        until { shelfOf(a) == "s2" && shelfOf(b) == "s2" }
+        // The search is cleared for the next books.
+        compose.onNodeWithText("Gamma").assertExists()
+    }
+
     @Test
     fun withoutPlaceCanPlaceSeveral() {
         saved(window)

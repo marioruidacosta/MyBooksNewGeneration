@@ -1,12 +1,13 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useId, useState, useSyncExternalStore } from 'react'
 import type { LibraryStore } from '../sync/store'
+import { searchKey } from '../text/keys'
 import { useToast } from '../ui/toastContext'
 import { findShelf, withoutPlace } from './model'
 import { ShelfPicker } from './PickBooksDialog'
 import { placeAll } from './places'
 import { useBookcases } from './useBookcases'
 
-/** The physical books with no shelf yet: choose several and put them on one. */
+/** The physical books with no shelf yet: search, choose several (a search keeps them chosen) and put them on one. */
 export function WithoutPlacePage({
   store, onBack, onOpenBook,
 }: {
@@ -21,19 +22,30 @@ export function WithoutPlacePage({
   const [choosing, setChoosing] = useState(false)
   const books = withoutPlace(all, bookcases, store.ebookIds()).sort((a, b) => a.title.localeCompare(b.title))
   const selected = picked.filter((id) => books.some((b) => b.id === id))
+  const [query, setQuery] = useState('')
+  const searchId = useId()
+  const wanted = searchKey(query.trim())
+  const shown = books.filter((b) => wanted === '' || searchKey(`${b.title}\n${b.authors}`).includes(wanted))
   return (
     <main className="physical-page">
       <button type="button" className="quiet physical-back" onClick={onBack}>Back</button>
       <h1>Without a place</h1>
       {books.length === 0 && <p className="empty">Every physical book has a place.</p>}
       {books.length > 0 && bookcases.length === 0 && <p className="physical-lead">Add a bookcase first, then put these books on its shelves.</p>}
+      {books.length > 0 && (
+        <div className="dialog__field physical-search">
+          <label htmlFor={searchId}>Search your books</label>
+          <input id={searchId} value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+      )}
       {selected.length > 0 && bookcases.length > 0 && (
         <button type="button" className="primary physical-add" onClick={() => setChoosing(true)}>
           Put {selected.length} on a shelf
         </button>
       )}
+      {books.length > 0 && shown.length === 0 && <p className="empty">No books match your search.</p>}
       <ul className="place-list">
-        {books.map((b) => (
+        {shown.map((b) => (
           <li key={b.id} className="place-row">
             <label className="check-hit">
               <input
@@ -58,6 +70,7 @@ export function WithoutPlacePage({
             setChoosing(false)
             const undo = placeAll(store, selected, shelfId)
             setPicked([])
+            setQuery('')
             const label = findShelf(bookcases, shelfId)?.label ?? ''
             toast.show(`${selected.length === 1 ? 'Placed' : `${String(selected.length)} books placed`} on Shelf ${label}`, { label: 'Undo', run: undo })
           }}

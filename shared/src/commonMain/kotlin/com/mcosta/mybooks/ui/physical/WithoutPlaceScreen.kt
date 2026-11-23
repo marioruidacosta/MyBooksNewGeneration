@@ -16,6 +16,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -32,8 +33,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mcosta.mybooks.domain.searchKey
 
-/** The physical books with no shelf yet: choose several and put them on one. */
+/** The physical books with no shelf yet: search, choose several (a search keeps them chosen) and put them on one. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WithoutPlaceScreen(viewModel: PhysicalLibraryViewModel, onBack: () -> Unit, onOpenBook: (Long) -> Unit) {
@@ -41,9 +43,12 @@ fun WithoutPlaceScreen(viewModel: PhysicalLibraryViewModel, onBack: () -> Unit, 
     val snackbar = remember { SnackbarHostState() }
     var picked by remember { mutableStateOf(emptyList<Long>()) }
     var choosing by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
     PhysicalMessages(state, viewModel, snackbar)
     val books = state.withoutPlace.sortedBy { it.title.lowercase() }
     val selected = picked.filter { id -> books.any { it.id == id } }
+    val wanted = searchKey(query.trim())
+    val shown = books.filter { wanted.isEmpty() || wanted in searchKey("${it.title}\n${it.authors}") }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -63,10 +68,22 @@ fun WithoutPlaceScreen(viewModel: PhysicalLibraryViewModel, onBack: () -> Unit, 
         LazyColumn(Modifier.padding(padding).fillMaxSize()) {
             if (books.isEmpty()) {
                 item { Text("Every physical book has a place.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge) }
-            } else if (state.bookcases.isEmpty()) {
-                item { Text("Add a bookcase first, then put these books on its shelves.", Modifier.padding(16.dp)) }
+            } else {
+                if (state.bookcases.isEmpty()) {
+                    item { Text("Add a bookcase first, then put these books on its shelves.", Modifier.padding(16.dp)) }
+                }
+                item(key = "search") {
+                    OutlinedTextField(
+                        value = query, onValueChange = { query = it },
+                        label = { Text("Search your books") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+                if (shown.isEmpty()) {
+                    item { Text("No books match your search.", Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium) }
+                }
             }
-            items(books, key = { it.id }) { book ->
+            items(shown, key = { it.id }) { book ->
                 val checked = book.id in picked
                 ListItem(
                     headlineContent = { Text(book.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
@@ -91,6 +108,7 @@ fun WithoutPlaceScreen(viewModel: PhysicalLibraryViewModel, onBack: () -> Unit, 
                 choosing = false
                 viewModel.place(selected, shelf)
                 picked = emptyList()
+                query = ""
             },
             onDismiss = { choosing = false },
         )
