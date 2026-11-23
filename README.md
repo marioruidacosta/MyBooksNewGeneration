@@ -127,9 +127,9 @@ the device; changes made offline are sent when you are back online, and a short 
   you sign in again with the email code. The site says so in a one-time hint in Safari.
 - **Updates.** A new version waits quietly and shows "New version available. Reload" (held back while changes are still
   being saved); it also applies by itself the next time you open the app from cold. Nothing reloads under your hands.
-- **What is stored on the device:** the app itself (so it opens offline) and your library in the browser's database, as
-  before. Nothing from Supabase (rows, sign-in, covers) is cached by the service worker; the public book-news files are
-  kept for offline reading.
+- **What is stored on the device:** the app itself (so it opens offline), your library and your own cover photos in the
+  browser's database, per account. Nothing from Supabase (rows, sign-in, signed links) is cached by the service worker;
+  the public book-news files and the public covers of the book databases (for up to 30 days) are.
 - `npm run check:reproducible` (in `web/`) builds twice and checks that the service worker is byte for byte the same, so
   the 3-hourly news deploys are not offered as updates.
 
