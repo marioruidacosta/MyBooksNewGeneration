@@ -13,11 +13,16 @@ export class BackupFormatException extends Error {
 /** The reading goal of a year. */
 export type BackupChallenge = { year: number; goal: number }
 
+/** A bookcase of the physical library, as synced. */
+export type BackupBookcase = { id: string; value: string }
+
 export type Backup = {
   /** Each with a new id (a quote's `bookId` is its book's). */
   books: Book[]
   quotes: Quote[]
   challenges: BackupChallenge[]
+  /** The physical library's bookcases: each id and stored value. */
+  bookcases: BackupBookcase[]
   /** The cover photos of a ZIP, by file name (a book's `coverUrl` says `cover:<name>`). */
   covers: Map<string, Blob>
   exportedAt: number
@@ -133,6 +138,13 @@ function int(o: Obj, k: string): number | null {
   return v
 }
 
+function float(o: Obj, k: string): number | null {
+  const v = o[k]
+  if (v === undefined || v === null) return null
+  if (typeof v !== 'number' || !Number.isFinite(v)) throw bad()
+  return v
+}
+
 function list(o: Obj, k: string): unknown[] {
   const v = o[k]
   if (v === undefined || v === null) return []
@@ -212,6 +224,8 @@ export function parseBackup(fileBytes: Uint8Array, limits: BackupLimits = {}): B
       seriesNumber: text(o, 'seriesNumber'),
       lentTo: text(o, 'lentTo'),
       lentOn: int(o, 'lentOn'),
+      shelfId: text(o, 'shelfId'),
+      shelfPosition: float(o, 'shelfPosition'),
       deleted: false,
     })
     for (const rawQuote of list(o, 'quotes')) {
@@ -229,7 +243,13 @@ export function parseBackup(fileBytes: Uint8Array, limits: BackupLimits = {}): B
     if (year === null || goal === null) throw bad()
     return { year, goal }
   })
-  return { books, quotes, challenges, covers, exportedAt: int(file, 'exportedAt') ?? 0 }
+  const bookcases = list(file, 'bookcases').flatMap((raw) => {
+    const b = item(raw)
+    const id = text(b, 'id')
+    const value = text(b, 'value')
+    return id !== null && value !== null ? [{ id, value }] : []
+  })
+  return { books, quotes, challenges, bookcases, covers, exportedAt: int(file, 'exportedAt') ?? 0 }
 }
 
 /** What a backup is made of: the live rows, and each book's photo bytes by book id. */
@@ -237,6 +257,7 @@ export type BackupData = {
   books: Book[]
   quotes: Quote[]
   challenges: BackupChallenge[]
+  bookcases?: BackupBookcase[]
   covers: Map<string, Uint8Array>
 }
 
@@ -272,6 +293,8 @@ export function writeBackup(data: BackupData, exportedAt: number): Blob {
         currentPage: b.currentPage, progressPercent: b.progressPercent, review: b.review, shareId: null,
         shareExcluded: false, tags: b.tags, series: b.series, seriesNumber: b.seriesNumber, lentTo: b.lentTo,
         lentOn: b.lentOn,
+        shelfId: b.shelfId,
+        shelfPosition: b.shelfPosition,
         quotes: data.quotes
           .filter((q) => !q.deleted && q.bookId === b.id)
           .map((q) => ({ text: q.text, page: q.page, dateAdded: q.dateAdded, position: q.position })),
@@ -281,6 +304,7 @@ export function writeBackup(data: BackupData, exportedAt: number): Blob {
     }),
     challenges: data.challenges.map((c) => ({ year: c.year, goal: c.goal })),
     hiddenSuggestions: [] as string[],
+    bookcases: data.bookcases ?? [],
   }
   const files: Zippable = { [LIBRARY]: strToU8(JSON.stringify(library)), ...entries }
   return new Blob([zipSync(files) as BlobPart], { type: 'application/zip' })

@@ -36,12 +36,15 @@ object BackupSerializer {
         /** Ebooks and bookmarks keyed by [Book.id]: the reading place and file details, never the file. */
         ebooks: Map<Long, Ebook> = emptyMap(),
         bookmarks: Map<Long, List<Bookmark>> = emptyMap(),
+        /** Each bookcase's id and stored value. */
+        bookcases: List<Pair<String, String>> = emptyList(),
     ): String = json.encodeToString(
         BackupFile(
             VERSION, exportedAt,
             books.map { it.toBackup(shares[it.id], quotes[it.id].orEmpty(), ebooks[it.id], bookmarks[it.id].orEmpty()) },
             challenges.map { BackupChallenge(it.year, it.goal) },
             hiddenSuggestions.sorted(),
+            bookcases.map { BackupBookcase(it.first, it.second) },
         ),
     )
 
@@ -67,6 +70,9 @@ object BackupSerializer {
     /** Books marked "Not interested" in suggestions (none in older backups). Throws like [decode]. */
     fun decodeHiddenSuggestions(text: String): List<String> = file(text).hiddenSuggestions
 
+    /** The physical library's bookcases, as id and stored value (none in older backups). Throws like [decode]. */
+    fun decodeBookcases(text: String): List<Pair<String, String>> = file(text).bookcases.map { it.id to it.value }
+
     /** Each book's quotes, in the order of [decode]'s books (none in older backups); their bookId is 0. Throws like [decode]. */
     fun decodeQuotes(text: String): List<List<Quote>> =
         file(text).books.map { b -> b.quotes.map { Quote(bookId = 0, text = it.text, page = it.page, dateAdded = it.dateAdded, position = it.position) } }
@@ -90,7 +96,11 @@ object BackupSerializer {
         val books: List<BackupBook> = emptyList(),
         val challenges: List<BackupChallenge> = emptyList(),
         val hiddenSuggestions: List<String> = emptyList(),
+        val bookcases: List<BackupBookcase> = emptyList(),
     )
+
+    @Serializable
+    private data class BackupBookcase(val id: String, val value: String)
 
     @Serializable
     private data class BackupChallenge(val year: Int, val goal: Int)
@@ -137,6 +147,8 @@ object BackupSerializer {
         val seriesNumber: String? = null,
         val lentTo: String? = null,
         val lentOn: Long? = null,
+        val shelfId: String? = null,
+        val shelfPosition: Double? = null,
         val quotes: List<BackupQuote> = emptyList(),
         val ebook: BackupEbook? = null,
         val bookmarks: List<BackupBookmark> = emptyList(),
@@ -147,6 +159,7 @@ object BackupSerializer {
             rating = rating, notes = notes, dateAdded = dateAdded, dateRead = dateRead,
             dateStarted = dateStarted, currentPage = currentPage, progressPercent = progressPercent, review = review,
             tags = tags, series = series, seriesNumber = seriesNumber, lentTo = lentTo, lentOn = lentOn,
+            shelfId = shelfId, shelfPosition = shelfPosition,
         )
     }
 
@@ -160,5 +173,6 @@ object BackupSerializer {
         ebook = ebook?.let { BackupEbook(it.format, it.fileName, it.size, it.dateAdded, it.position, it.lastOpened) },
         bookmarks = bookmarks.map { BackupBookmark(it.position, it.label, it.dateAdded) },
         tags = tags, series = series, seriesNumber = seriesNumber, lentTo = lentTo, lentOn = lentOn,
+        shelfId = shelfId, shelfPosition = shelfPosition,
     )
 }

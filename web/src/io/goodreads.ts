@@ -205,7 +205,7 @@ export function parseGoodreads(csv: string): Book[] {
       series: series?.series ?? null,
       seriesNumber: series?.number ?? null,
       lentTo: null,
-      lentOn: null,
+      lentOn: null, shelfId: null, shelfPosition: null,
       deleted: false,
     }
   })

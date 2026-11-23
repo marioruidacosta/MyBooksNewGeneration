@@ -9,6 +9,7 @@ import com.mcosta.mybooks.data.db.QuoteEntity
 import com.mcosta.mybooks.data.ebooks.EbookFiles
 import com.mcosta.mybooks.domain.authorKey
 import com.mcosta.mybooks.domain.searchKey
+import com.mcosta.mybooks.physical.BookcaseStore
 import com.mcosta.mybooks.sync.SyncDatabase
 import com.mcosta.mybooks.sync.SyncRecorder
 import com.mcosta.mybooks.sync.SyncRow
@@ -21,6 +22,7 @@ import com.mcosta.mybooks.sync.parseTimes
 import com.mcosta.mybooks.sync.timesJson
 import com.mcosta.mybooks.sync.toBookEntity
 import com.mcosta.mybooks.sync.toRow
+import com.mcosta.mybooks.sync.withShelfPair
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -46,6 +48,8 @@ class LibraryContents(
     val coverStore: CoverStore,
     val ebookFiles: EbookFiles,
     val fileSystem: FileSystem,
+    /** Its bookcases: they go where its books go, or those books would lose their place. */
+    val bookcases: BookcaseStore? = null,
 )
 
 /**
@@ -70,6 +74,7 @@ class LibraryContents(
 class LibraryTransfer(private val io: CoroutineDispatcher = Dispatchers.IO) {
     /** Moves [from]'s live books and goals into [to]; returns how many books were moved. */
     suspend fun move(from: LibraryContents, to: LibraryContents): Int {
+        from.bookcases?.all()?.forEach { (id, value) -> to.bookcases?.adoptIfMissing(id, value) }
         val books = from.db.books.getAllAny().filter { !it.deleted }
         if (books.isNotEmpty()) {
             val quotes = from.db.quotes.getAllAny().filter { !it.deleted }.groupBy { it.bookId }
@@ -81,7 +86,18 @@ class LibraryTransfer(private val io: CoroutineDispatcher = Dispatchers.IO) {
             }
         }
         moveGoals(from, to)
+        letGoOfBookcases(from, to)
         return books.size
+    }
+
+    /**
+     * Last, so a move that stopped partway finds them again. Only those the target now holds: a value it couldn't read
+     * stays where it is. Left behind, an old copy would beat a newer layout when the books move back.
+     */
+    private suspend fun letGoOfBookcases(from: LibraryContents, to: LibraryContents) {
+        val source = from.bookcases ?: return
+        val target = to.bookcases ?: return
+        source.all().forEach { (id, _) -> if (target.holds(id)) source.letGo(id) }
     }
 
     private class Children(val quotes: List<QuoteEntity>, val bookmarks: List<BookmarkEntity>, val ebook: EbookEntity?)
@@ -170,6 +186,7 @@ class LibraryTransfer(private val io: CoroutineDispatcher = Dispatchers.IO) {
         val bookRow = book.toRow(from.coverStore).copy(id = held.uuid)
         var merged = valuesOverEmpty(mergeFields(heldRow, bookRow), heldRow, bookRow)
         for (field in listOf("notes", "review")) merged = keepBothTexts(merged, heldRow, bookRow, field)
+        merged = merged.withShelfPair(heldRow, bookRow)
         // A photo travels as a marker: the side whose cover won keeps its file (copied over already).
         val bookCover = merged.fields["cover_url"] != heldRow.fields["cover_url"] || merged.times["cover_url"] != heldRow.times["cover_url"]
         val cover = if (bookCover) book.coverUrl else held.coverUrl

@@ -443,6 +443,22 @@ export class LibraryStore {
     return out.sort((a, b) => a.year - b.year)
   }
 
+  /** The keys of the live synced preferences starting with [prefix]. */
+  prefKeys(prefix: string): string[] {
+    const out: string[] = []
+    for (const row of this.rows.values()) {
+      if (row.table === 'prefs' && !isDeleted(row) && row.id.startsWith(prefix)) out.push(row.id)
+    }
+    return out
+  }
+
+  /** The books a phone keeps an ebook record for. */
+  ebookIds(): Set<string> {
+    const out = new Set<string>()
+    for (const row of this.rows.values()) if (row.table === 'ebooks' && !isDeleted(row)) out.add(row.id)
+    return out
+  }
+
   /** A synced preference's value; null when it isn't set. */
   pref(key: string): string | null {
     const row = this.rows.get(rowKey('prefs', key))

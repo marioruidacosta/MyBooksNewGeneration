@@ -2,6 +2,7 @@ import { strFromU8 } from 'fflate'
 import { photoPath, signedUrl, type CoverStorage } from '../covers/storage'
 import type { LibraryStore } from '../sync/store'
 import { backupItems, goodreadsItems, type ImportSource } from './importPlan'
+import { storedBookcases } from '../physical/places'
 import { isZip, parseBackup, writeBackup } from './backup'
 import { GoodreadsFormatException, parseGoodreads, writeGoodreads } from './goodreads'
 import { blobBytes, stripBom } from './blobBytes'
@@ -73,7 +74,7 @@ export async function backupExport(
   }
   await Promise.all(Array.from({ length: Math.min(PHOTO_CONCURRENCY, photos.length) }, worker))
   const file = writeBackup(
-    { books, quotes: books.flatMap((b) => store.quotes(b.id)), challenges: store.goals(), covers },
+    { books, quotes: books.flatMap((b) => store.quotes(b.id)), challenges: store.goals(), bookcases: storedBookcases(store), covers },
     now,
   )
   const d = new Date(now)

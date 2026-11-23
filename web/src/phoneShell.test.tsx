@@ -58,6 +58,7 @@ describe('the phone layout', () => {
     expect(more).toHaveAttribute('aria-expanded', 'true')
     const menu = screen.getByRole('dialog', { name: 'More' })
     expect(within(menu).getByRole('link', { name: 'Year in books' }).getAttribute('href')).toBe('/MyBooksNewGeneration/app/year')
+    expect(within(menu).getByRole('link', { name: 'Physical library' }).getAttribute('href')).toBe('/MyBooksNewGeneration/app/physical')
     expect(within(menu).getByRole('link', { name: 'Book news' }).getAttribute('href')).toBe('/MyBooksNewGeneration/app/news')
     expect(within(menu).getByRole('link', { name: 'Import' }).getAttribute('href')).toBe('/MyBooksNewGeneration/app/import')
     expect(within(menu).getByRole('link', { name: 'Tidy up' }).getAttribute('href')).toBe('/MyBooksNewGeneration/app/tidy')
@@ -137,7 +138,7 @@ describe('the phone layout', () => {
     render(<App createApi={() => api} />)
     const pages = await screen.findByRole('navigation', { name: 'Pages' })
     expect(within(pages).getAllByRole('link').map((a) => a.textContent)).toEqual([
-      'Library', 'Add a book', 'Community', 'Challenges', 'Import', 'Tidy up', 'Year in books', 'Book news',
+      'Library', 'Add a book', 'Community', 'Challenges', 'Physical library', 'Import', 'Tidy up', 'Year in books', 'Book news',
     ])
     expect(screen.queryByRole('navigation', { name: 'Main' })).not.toBeInTheDocument()
     expect(screen.getByText(/Ctrl K|⌘ K/)).toBeInTheDocument()

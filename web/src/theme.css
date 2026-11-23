@@ -1064,3 +1064,106 @@ button.challenge-list__open:hover:not(:disabled) { background: none; color: var(
 }
 .bottom-bar a { position: relative; }
 .bottom-bar .nav-badge { position: absolute; top: 0.25rem; left: calc(50% + 0.25rem); margin-left: 0; }
+
+/* The physical library: the bookcases in your home */
+main.physical-page { max-width: 48rem; }
+.physical-lead { color: var(--ink-soft); }
+.physical-back { margin: 0 0 0.5rem -0.5rem; }
+.physical-room { margin-top: 1.5rem; }
+.physical-room__head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.physical-room__head h2 { margin: 0; font-size: 1.25rem; overflow-wrap: anywhere; }
+.bookcase-list { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.5rem; }
+.bookcase-row {
+  width: 100%; min-height: 3.5rem; display: flex; align-items: center; gap: 0.875rem; padding: 0.625rem;
+  text-align: left; background: var(--paper-low); border-color: var(--rule); border-radius: 0.625rem;
+}
+.bookcase-row--waiting { margin-top: 1.25rem; border-style: dashed; }
+.bookcase-row__drawing { flex: none; width: 3.5rem; }
+.bookcase-row__text { min-width: 0; display: grid; gap: 0.125rem; overflow-wrap: anywhere; }
+.bookcase-row__text span { color: var(--ink-soft); font-size: 0.8125rem; font-weight: 400; }
+.physical-add { width: 100%; margin-top: 1rem; min-height: 2.75rem; }
+.bookcase-form { display: grid; gap: 0.875rem; max-width: 34rem; }
+.bookcase-form > button { min-height: 2.75rem; }
+.stepper-row { display: flex; flex-wrap: wrap; gap: 1rem; }
+.stepper { flex: 1; min-width: 9rem; display: grid; gap: 0.25rem; color: var(--ink-soft); font-size: 0.875rem; }
+.stepper__row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; color: var(--ink); }
+.stepper__row button, .column-editor__row button { min-width: 2.75rem; min-height: 2.75rem; padding: 0; }
+.column-editor { display: grid; gap: 0.375rem; }
+.column-editor__row { display: flex; align-items: center; gap: 0.5rem; }
+.column-editor__row > span { flex: 1; min-width: 0; }
+.column-editor__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.column-editor__actions button { min-height: 2.75rem; }
+
+.bookcase {
+  --shelf: 4.5rem; --gap: 3px;
+  display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); gap: var(--gap); padding: 4px;
+  height: calc(var(--shelf) * var(--rows) + var(--gap) * (var(--rows) - 1) + 8px); box-sizing: border-box;
+  border-radius: 3px; background: linear-gradient(180deg, #5b3a22, #3a2517); box-shadow: 0 5px 12px rgb(0 0 0 / 0.35);
+}
+.bookcase--mini { --shelf: 0.625rem; --gap: 1px; padding: 2px; height: calc(var(--shelf) * var(--rows) + var(--gap) * (var(--rows) - 1) + 4px); }
+.bookcase__column { display: grid; grid-auto-rows: minmax(0, 1fr); gap: var(--gap); min-width: 0; }
+.bookcase__shelf {
+  position: relative; display: flex; align-items: flex-end; gap: 1px; min-width: 0; padding: 0 2px; overflow: hidden;
+  background: #1c120b; border: 0; border-bottom: 3px solid #84583a; border-radius: 0; color: #f7f1e6;
+}
+button.bookcase__shelf:hover:not(:disabled) { background: #2a1b10; }
+.bookcase--mini .bookcase__shelf { border-bottom-width: 1px; padding: 0 1px; }
+.bookcase__shelf--on { outline: 2px solid var(--gold); outline-offset: -2px; }
+.spine {
+  flex: none; display: flex; align-items: center; justify-content: center; overflow: hidden;
+  border-radius: 1px 1px 0 0; box-shadow: inset 1px 0 rgb(255 255 255 / 0.16), inset -1px 0 rgb(0 0 0 / 0.3);
+}
+.bookcase--mini .spine { width: 3px !important; }
+.spine__title { writing-mode: vertical-rl; white-space: nowrap; color: #f7f1e6; font: 600 7px/1 var(--serif); }
+.spine--away { opacity: 0.4; }
+.spine--found { background: #d9a54a; }
+.spine--found .spine__title { color: #1b1305; }
+.bookcase__more, .bookcase__label {
+  position: absolute; right: 2px; padding: 0 3px; background: rgb(0 0 0 / 0.62); color: #f7f1e6; font-size: 0.625rem; line-height: 0.875rem;
+}
+.bookcase__more { bottom: 0; font-weight: 700; }
+.bookcase__label { top: 1px; }
+
+.physical-hint { margin-top: 0.75rem; }
+.place-list { list-style: none; margin: 1rem 0 0; padding: 0; }
+.place-row {
+  display: flex; align-items: center; gap: 0.125rem; min-height: 3.25rem; padding: 0.125rem 0;
+  background: var(--paper); border-bottom: 1px solid var(--rule);
+}
+.place-row--dragging { position: relative; z-index: 2; box-shadow: 0 6px 16px rgb(0 0 0 / 0.35); }
+.place-row > .check-hit { flex: none; }
+.place-row > .check-hit input { width: 1.25rem; height: 1.25rem; margin: 0; }
+.place-row > button { flex: none; min-width: 2.75rem; min-height: 2.75rem; padding: 0; }
+.place-row > button.place-row__book { flex: 1; min-width: 0; display: grid; gap: 0.125rem; padding: 0.25rem 0.5rem; text-align: left; }
+.place-row__book strong, .place-row__book small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.place-row__book small { color: var(--ink-soft); font-weight: 400; }
+.place-row__handle {
+  flex: none; width: 2.5rem; min-height: 2.75rem; display: flex; align-items: center; justify-content: center;
+  color: var(--ink-soft); font-size: 1.25rem; cursor: grab; touch-action: none; user-select: none;
+}
+.pick-list, .shelf-picker { list-style: none; margin: 0 0 0.75rem; padding: 0; max-height: 18rem; overflow-y: auto; }
+.pick-list label { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 0.625rem; min-height: 2.75rem; text-align: left; cursor: pointer; }
+.pick-list input { flex: none; width: 1.25rem; height: 1.25rem; margin: 0; }
+.pick-list label > span { min-width: 0; display: grid; }
+.pick-list small { color: var(--ink-soft); overflow-wrap: anywhere; }
+.shelf-picker button { width: 100%; min-height: 2.75rem; text-align: left; overflow-wrap: anywhere; }
+
+.where-it-is { display: grid; gap: 0.375rem; padding-top: 0.75rem; border-top: 1px solid var(--rule); }
+.where-it-is h3 { margin: 0; font-size: 1rem; }
+.where-it-is p { margin: 0; color: var(--ink-soft); }
+.where-it-is__place { min-height: 2.75rem; padding: 0.25rem 0; text-align: left; overflow-wrap: anywhere; font-weight: 500; }
+.where-it-is__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+/* A shelf stays big enough to tap: a wide bookcase scrolls inside its own frame, never the page. */
+.bookcase:not(.bookcase--mini) { grid-template-columns: repeat(var(--columns), minmax(2.75rem, 1fr)); overflow-x: auto; }
+.physical-case__head { flex-wrap: wrap; }
+.physical-case__head h1 { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.physical-case__head button { flex: none; white-space: nowrap; }
+@media (max-width: 51.99rem) {
+  .physical-case__head h1 { flex-basis: 100%; }
+}
+/* Nine links stay on one line on a laptop. */
+@media (min-width: 52.0625rem) and (max-width: 86rem) {
+  .app-bar { column-gap: 1.25rem; }
+  .app-bar nav { column-gap: 1rem; }
+}

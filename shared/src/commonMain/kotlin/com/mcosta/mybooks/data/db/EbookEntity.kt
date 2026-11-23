@@ -70,6 +70,10 @@ interface EbookDao {
     @Query("SELECT * FROM ebooks WHERE deleted = 0 ORDER BY bookId")
     suspend fun getAll(): List<EbookEntity>
 
+    /** The books that have an ebook. */
+    @Query("SELECT bookId FROM ebooks WHERE deleted = 0")
+    fun observeBookIds(): Flow<List<Long>>
+
     /** Every row, deleted ones included: what sync reads. */
     @Query("SELECT * FROM ebooks ORDER BY bookId")
     suspend fun getAllAny(): List<EbookEntity>

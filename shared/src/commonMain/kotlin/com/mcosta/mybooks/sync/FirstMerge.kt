@@ -162,6 +162,7 @@ class FirstMerge(
         val holderRow = holder.toRow(coverStore)
         val extraRow = extra.toRow(coverStore).copy(id = holder.uuid)
         val merged = keepBothTexts(mergeFields(holderRow, extraRow), holderRow, extraRow, "notes", "review")
+            .withShelfPair(holderRow, extraRow)
         // A photo travels as a marker: keep the file of the side whose cover won, drop the other one.
         val extraCover = merged.fields["cover_url"] != holderRow.fields["cover_url"] ||
             merged.times["cover_url"] != holderRow.times["cover_url"]

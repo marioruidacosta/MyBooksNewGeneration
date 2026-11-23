@@ -5,6 +5,8 @@ import { statusDates } from '../book/status'
 import type { Book, Quote, SyncRow } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { BOOK_LIMITS } from '../sync/limits'
+import { BOOKCASE_PREFIX, parseBookcase } from '../physical/model'
+import { SHELF_FIELDS } from '../physical/places'
 import { combineRows, type FieldTimes } from '../sync/twin'
 import { catalogTitleKey, firstAuthorKey } from '../text/keys'
 import type { Backup, BackupChallenge } from './backup'
@@ -23,6 +25,8 @@ export type ImportSource = {
   items: Incoming[]
   quotes: Quote[]
   challenges: BackupChallenge[]
+  /** The physical library's bookcases, in a backup. */
+  bookcases?: { id: string; value: string }[]
   covers: Map<string, Blob>
   keepRead: boolean
 }
@@ -51,7 +55,7 @@ export function goodreadsItems(books: Book[], now: number): ImportSource {
 export function backupItems(backup: Backup): ImportSource {
   return {
     items: backup.books.map((book) => ({ book, times: allFields(book, backup.exportedAt) })),
-    quotes: backup.quotes, challenges: backup.challenges, covers: backup.covers, keepRead: false,
+    quotes: backup.quotes, challenges: backup.challenges, bookcases: backup.bookcases, covers: backup.covers, keepRead: false,
   }
 }
 
@@ -68,6 +72,8 @@ export type Plan = {
   goals: BackupChallenge[]
   /** Photos to upload once their books exist. */
   uploads: { bookId: string; blob: Blob }[]
+  /** Bookcases of the file: each replaces the one with its id. */
+  bookcases?: { id: string; value: string }[]
 }
 
 /** "N new · M already in your library (merged) · K skipped". */
@@ -209,7 +215,11 @@ export function planImport(source: ImportSource, store: Pick<LibraryStore, 'book
           currentPage: current.currentPage, progressPercent: current.progressPercent,
         })
       }
-      const combined = combineRows(keepRow, rowOf(incoming, times))
+      const twins = combineRows(keepRow, rowOf(incoming, times))
+      // A backup that says where the book is puts it there; one that doesn't leaves it where it is.
+      const combined = incoming.shelfId === null
+        ? twins
+        : { ...twins, fields: { ...twins.fields, shelf_id: incoming.shelfId, shelf_position: incoming.shelfPosition } }
       const merged = statusDates(rowToBook(combined), incoming.status, now)
       const row = rowOf(merged, combined.times)
       const before = bookToFields(original)
@@ -218,6 +228,8 @@ export function planImport(source: ImportSource, store: Pick<LibraryStore, 'book
       for (const f of Object.keys(after)) {
         if (f !== 'deleted' && after[f] !== before[f]) changes[f] = after[f]
       }
+      // The place's two fields are written and timed together, even when only one of them differs.
+      if (SHELF_FIELDS.some((f) => f in changes)) for (const f of SHELF_FIELDS) changes[f] = after[f]
       if (state) {
         state.merge.changes = changes
         state.row = row
@@ -246,6 +258,8 @@ export function planImport(source: ImportSource, store: Pick<LibraryStore, 'book
     target.set(raw.id, added.id)
     if (photo) plan.uploads.push({ bookId: added.id, blob: photo })
   }
+
+  plan.bookcases = (source.bookcases ?? []).filter((b) => parseBookcase(BOOKCASE_PREFIX + b.id, b.value) !== null)
 
   // Quotes go to their book's copy; one the book already has (the same text) is not added twice.
   const have = new Map<string, Set<string>>()
@@ -287,9 +301,14 @@ export type ApplyDeps = {
  */
 export async function applyPlan(plan: Plan, store: LibraryStore, deps: ApplyDeps): Promise<{ coverFailures: number }> {
   for (const book of plan.added) store.create(book, { origin: 'import' })
-  for (const m of plan.merged) if (Object.keys(m.changes).length > 0) store.edit('books', m.id, m.changes, { origin: 'import' })
+  for (const m of plan.merged) {
+    if (Object.keys(m.changes).length === 0) continue
+    const restamp = SHELF_FIELDS.some((f) => f in m.changes) ? SHELF_FIELDS : []
+    store.edit('books', m.id, m.changes, { origin: 'import', restamp })
+  }
   for (const q of plan.quotes) store.createQuote(q)
   for (const g of plan.goals) store.edit('challenges', String(g.year), { goal: g.goal })
+  for (const b of plan.bookcases ?? []) store.setPref(BOOKCASE_PREFIX + b.id, b.value)
 
   let coverFailures = 0
   for (const [i, { bookId, blob }] of plan.uploads.entries()) {

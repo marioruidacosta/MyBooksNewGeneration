@@ -36,6 +36,8 @@ import { useCommitOnHide } from './ui/useCommitOnHide'
 import { BottomBar } from './shell/BottomBar'
 import { createCommunityApi } from './community/api'
 import { CommunityProvider } from './community/CommunityProvider'
+import { shelfIds } from './physical/model'
+import { bookcasesOf } from './physical/places'
 import { FollowSuggestions, SuggestionBadge } from './community/SuggestionBadge'
 import type { CommunityNav } from './community/useCommunity'
 import { InstallHint } from './pwa/InstallHint'
@@ -50,6 +52,11 @@ const CommunityPage = lazy(() => import('./community/CommunityPage').then((m) =>
 const PeoplePage = lazy(() => import('./community/PeoplePage').then((m) => ({ default: m.PeoplePage })))
 const PersonPage = lazy(() => import('./community/PersonPage').then((m) => ({ default: m.PersonPage })))
 const AccountPage = lazy(() => import('./community/AccountPage').then((m) => ({ default: m.AccountPage })))
+const PhysicalLibraryPage = lazy(() => import('./physical/PhysicalLibraryPage').then((m) => ({ default: m.PhysicalLibraryPage })))
+const BookcaseEditPage = lazy(() => import('./physical/BookcaseEditPage').then((m) => ({ default: m.BookcaseEditPage })))
+const BookcasePage = lazy(() => import('./physical/BookcasePage').then((m) => ({ default: m.BookcasePage })))
+const ShelfPage = lazy(() => import('./physical/ShelfPage').then((m) => ({ default: m.ShelfPage })))
+const WithoutPlacePage = lazy(() => import('./physical/WithoutPlacePage').then((m) => ({ default: m.WithoutPlacePage })))
 
 const loadingPage = <p className="loading">Loading…</p>
 
@@ -107,6 +114,7 @@ function Shell() {
               <Link to="/add">Add a book</Link>
               <Link to="/community">Community<SuggestionBadge /></Link>
               <Link to="/challenges">Challenges</Link>
+              <Link to="/physical">Physical library</Link>
               <Link to="/import">Import</Link>
               <Link to="/tidy">Tidy up</Link>
               <Link to="/year">Year in books</Link>
@@ -236,7 +244,109 @@ function BookRoute() {
   const owner = useContext(CoverContext)?.owner
   if (!owner) throw new Error('BookRoute: no signed-in account')
   const navigate = useNavigate()
-  return <BookPage store={store} owner={owner} id={id} onBack={() => void navigate({ to: '/' })} />
+  return (
+    <BookPage
+      store={store}
+      owner={owner}
+      id={id}
+      onBack={() => void navigate({ to: '/' })}
+      onOpenShelf={(shelfId) => void navigate({ to: '/physical/shelf/$shelfId', params: { shelfId } })}
+      onAddBookcase={() => void navigate({ to: '/physical/new' })}
+    />
+  )
+}
+
+function PhysicalRoute() {
+  const store = useStore()
+  const navigate = useNavigate()
+  return (
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>
+        <PhysicalLibraryPage
+          store={store}
+          onOpenBookcase={(id) => void navigate({ to: '/physical/$id', params: { id } })}
+          onAdd={() => void navigate({ to: '/physical/new' })}
+          onOpenUnplaced={() => void navigate({ to: '/physical/unplaced' })}
+        />
+      </Suspense>
+    </PageBoundary>
+  )
+}
+
+function BookcaseEditRoute({ id }: { id: string | null }) {
+  const store = useStore()
+  const navigate = useNavigate()
+  return (
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>
+        <BookcaseEditPage
+          key={id ?? 'new'}
+          store={store}
+          id={id}
+          onDone={() => void (id === null ? navigate({ to: '/physical' }) : navigate({ to: '/physical/$id', params: { id }, replace: true }))}
+        />
+      </Suspense>
+    </PageBoundary>
+  )
+}
+
+function BookcaseRoute() {
+  const store = useStore()
+  const navigate = useNavigate()
+  const { id } = bookcaseRoute.useParams()
+  const back = useCallback(() => void navigate({ to: '/physical' }), [navigate])
+  return (
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>
+        <BookcasePage
+          store={store}
+          id={id}
+          onBack={back}
+          onEdit={() => void navigate({ to: '/physical/$id/edit', params: { id } })}
+          onOpenShelf={(shelfId) => void navigate({ to: '/physical/shelf/$shelfId', params: { shelfId } })}
+        />
+      </Suspense>
+    </PageBoundary>
+  )
+}
+
+function ShelfRoute() {
+  const store = useStore()
+  const navigate = useNavigate()
+  const { shelfId } = shelfRoute.useParams()
+  const back = useCallback(() => {
+    const owner = bookcasesOf(store).find((b) => shelfIds(b).includes(shelfId))
+    void (owner ? navigate({ to: '/physical/$id', params: { id: owner.id } }) : navigate({ to: '/physical' }))
+  }, [navigate, store, shelfId])
+  return (
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>
+        <ShelfPage
+          key={shelfId}
+          store={store}
+          shelfId={shelfId}
+          onBack={back}
+          onOpenBook={(id) => void navigate({ to: '/book/$id', params: { id } })}
+        />
+      </Suspense>
+    </PageBoundary>
+  )
+}
+
+function WithoutPlaceRoute() {
+  const store = useStore()
+  const navigate = useNavigate()
+  return (
+    <PageBoundary>
+      <Suspense fallback={loadingPage}>
+        <WithoutPlacePage
+          store={store}
+          onBack={() => void navigate({ to: '/physical' })}
+          onOpenBook={(id) => void navigate({ to: '/book/$id', params: { id } })}
+        />
+      </Suspense>
+    </PageBoundary>
+  )
 }
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: Shell })
@@ -332,6 +442,51 @@ const accountRoute = createRoute({
   component: () => <CommunityRoutePage><AccountPage /></CommunityRoutePage>,
 })
 
+const physicalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/physical',
+  beforeLoad: requireSession,
+  component: PhysicalRoute,
+})
+
+const newBookcaseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/physical/new',
+  beforeLoad: requireSession,
+  component: () => <BookcaseEditRoute id={null} />,
+})
+
+const unplacedRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/physical/unplaced',
+  beforeLoad: requireSession,
+  component: WithoutPlaceRoute,
+})
+
+const bookcaseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/physical/$id',
+  beforeLoad: requireSession,
+  component: BookcaseRoute,
+})
+
+const shelfRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/physical/shelf/$shelfId',
+  beforeLoad: requireSession,
+  component: ShelfRoute,
+})
+
+const editBookcaseRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/physical/$id/edit',
+  beforeLoad: requireSession,
+  component: function EditBookcase() {
+    const { id } = editBookcaseRoute.useParams()
+    return <BookcaseEditRoute id={id} />
+  },
+})
+
 const newsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/news',
@@ -339,7 +494,7 @@ const newsRoute = createRoute({
   component: NewsRoute,
 })
 
-const routeTree = rootRoute.addChildren([signInRoute, libraryRoute, bookRoute, addRoute, importRoute, tidyRoute, yearRoute, challengesRoute, communityRoute, peopleRoute, personRoute, accountRoute, newsRoute])
+const routeTree = rootRoute.addChildren([signInRoute, libraryRoute, bookRoute, addRoute, importRoute, tidyRoute, yearRoute, challengesRoute, communityRoute, peopleRoute, personRoute, accountRoute, newsRoute, physicalRoute, newBookcaseRoute, unplacedRoute, bookcaseRoute, shelfRoute, editBookcaseRoute])
 
 const router = createRouter({
   routeTree,

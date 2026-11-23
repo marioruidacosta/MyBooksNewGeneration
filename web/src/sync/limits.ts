@@ -15,6 +15,7 @@ export const BOOK_LIMITS = {
   series: 100,
   series_number: 100,
   lent_to: 100,
+  shelf_id: 40,
 } as const
 
 export const MAX_QUOTE_TEXT = 5000

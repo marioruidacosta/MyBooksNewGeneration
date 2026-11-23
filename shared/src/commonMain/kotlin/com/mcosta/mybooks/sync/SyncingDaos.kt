@@ -25,7 +25,7 @@ private fun ChallengeEntity.fields(): Map<String, JsonElement> = toRow().fields
 private fun oldTimes(json: String?): Map<String, Long> = json?.let(::parseTimes).orEmpty()
 
 private fun BookEntity.stampedFrom(old: BookEntity?, now: Long): BookEntity {
-    val times = stamp(old?.fields(), fields(), oldTimes(old?.fieldTimes), now).toMutableMap()
+    val times = stamp(old?.fields(), fields(), oldTimes(old?.fieldTimes), now, SHELF_FIELDS).toMutableMap()
     // Two different photos both travel as the "photo" marker, so a cover change is detected on the raw value.
     if (old != null && old.coverUrl != coverUrl) times["cover_url"] = now
     return copy(fieldTimes = timesJson(times))

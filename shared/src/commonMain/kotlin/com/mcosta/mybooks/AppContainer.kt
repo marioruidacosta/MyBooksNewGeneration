@@ -234,6 +234,9 @@ class AppContainer(
     /** Tags shown as rows on the home screen. */
     val pinnedTags get() = space.pinnedTags
 
+    /** The bookcases of the physical library. */
+    val bookcases get() = space.bookcases
+
     /** The monthly notification of New in Portugal books by your authors and publishers. */
     val releaseAlerts get() = space.releaseAlerts
 

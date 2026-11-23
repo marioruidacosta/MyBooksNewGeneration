@@ -10,6 +10,10 @@ import com.mcosta.mybooks.data.db.QuoteEntity
 import com.mcosta.mybooks.data.ebooks.EbookFiles
 import com.mcosta.mybooks.domain.EbookFormat
 import com.mcosta.mybooks.domain.ReadingStatus
+import com.mcosta.mybooks.physical.Bookcase
+import com.mcosta.mybooks.physical.BookcaseColumn
+import com.mcosta.mybooks.physical.BookcaseStore
+import com.mcosta.mybooks.physical.findShelf
 import com.mcosta.mybooks.sync.SyncDatabase
 import com.mcosta.mybooks.sync.SyncRecorder
 import com.mcosta.mybooks.sync.SyncTable
@@ -35,9 +39,12 @@ class LibraryTransferTest {
         private val db = store.db.let {
             SyncDatabase(books(store.books), it.quotes, it.ebooks, it.bookmarks, it.challenges, it.queue, it.state)
         }
+        val prefs = MemoryPreferences()
+        val changed = mutableListOf<String>()
+        val bookcases = BookcaseStore(prefs, { prefs.values.keys }, { changed += it })
         val contents = LibraryContents(
             db, SyncRecorder(store.queue, { 9_000L }, { records }, { it() }),
-            CoverStore(fs, files.coversDir(id)), EbookFiles(fs, files.ebooksDir(id)), fs,
+            CoverStore(fs, files.coversDir(id)), EbookFiles(fs, files.ebooksDir(id)), fs, bookcases,
         )
 
         fun queued(table: SyncTable): Set<String> =
@@ -51,6 +58,108 @@ class LibraryTransferTest {
     )
 
     private val phone = Lib(LibraryId.Local, records = false)
+
+    private val shelfCase = Bookcase("case", "By the window", "Living room", listOf(BookcaseColumn("c", listOf("s1"))))
+
+    @Test
+    fun movingToThePhoneBringsTheBookcases() = runTest(timeout = 30.seconds) {
+        val account = Lib(LibraryId.Account("ana"), records = true)
+        account.bookcases.save(shelfCase)
+        account.store.books.insert(book("Os Maias", "9789720049575").copy(shelfId = "s1", shelfPosition = 2.0))
+
+        transfer.move(account.contents, phone.contents)
+
+        val moved = phone.store.live().single()
+        assertEquals("s1", moved.shelfId)
+        assertEquals(2.0, moved.shelfPosition)
+        assertEquals("A1", phone.bookcases.bookcases.value.findShelf(moved.shelfId)?.label)
+    }
+
+    @Test
+    fun aLayoutWithNoBooksStillMoves() = runTest(timeout = 30.seconds) {
+        val account = Lib(LibraryId.Account("ana"), records = true)
+        account.bookcases.save(shelfCase)
+        transfer.move(account.contents, phone.contents)
+        assertEquals(listOf(shelfCase), phone.bookcases.bookcases.value)
+    }
+
+    @Test
+    fun movingKeepsATargetBookcaseWithTheSameId() = runTest(timeout = 30.seconds) {
+        val account = Lib(LibraryId.Account("ana"), records = true)
+        account.bookcases.save(shelfCase.copy(name = "From the account"))
+        phone.bookcases.save(shelfCase.copy(name = "On the phone"))
+        transfer.move(account.contents, phone.contents)
+        assertEquals("On the phone", phone.bookcases.bookcases.value.single().name)
+    }
+
+    @Test
+    fun movingBackBringsTheNewerLayout() = runTest(timeout = 30.seconds) {
+        val account = Lib(LibraryId.Account("ana"), records = true)
+        phone.bookcases.save(shelfCase)
+        transfer.move(phone.contents, account.contents)
+        val grown = shelfCase.copy(columns = listOf(BookcaseColumn("c", listOf("s1", "s2"))))
+        account.bookcases.save(grown)
+        account.store.books.insert(book("Os Maias", "9789720049575").copy(shelfId = "s2", shelfPosition = 1.0))
+
+        transfer.move(account.contents, phone.contents)
+
+        assertEquals(listOf(grown), phone.bookcases.bookcases.value)
+        assertEquals("A2", phone.bookcases.bookcases.value.findShelf(phone.store.live().single().shelfId)?.label)
+    }
+
+    @Test
+    fun aBookcaseRemovedInTheAccountDoesNotComeBack() = runTest(timeout = 30.seconds) {
+        val account = Lib(LibraryId.Account("ana"), records = true)
+        phone.bookcases.save(shelfCase)
+        transfer.move(phone.contents, account.contents)
+        account.bookcases.remove(shelfCase.id)
+
+        transfer.move(account.contents, phone.contents)
+        assertTrue(phone.bookcases.bookcases.value.isEmpty())
+
+        transfer.move(phone.contents, account.contents)
+        assertTrue(account.bookcases.bookcases.value.isEmpty())
+    }
+
+    @Test
+    fun theSourceLetsGoWithoutAskingTheCloudToRemove() = runTest(timeout = 30.seconds) {
+        val account = Lib(LibraryId.Account("ana"), records = true)
+        account.bookcases.save(shelfCase)
+        account.changed.clear()
+
+        transfer.move(account.contents, phone.contents)
+
+        assertTrue(account.bookcases.bookcases.value.isEmpty())
+        assertTrue(account.changed.isEmpty())
+    }
+
+    @Test
+    fun anInterruptedMoveKeepsTheBookcasesForTheRetry() = runTest(timeout = 30.seconds) {
+        val account = Lib(LibraryId.Account("ana"), records = true) { raw ->
+            object : BookDao by raw {
+                override suspend fun insert(book: BookEntity): Long = error("disk full")
+            }
+        }
+        phone.bookcases.save(shelfCase)
+        phone.store.books.insert(book("Os Maias", "9789720049575"))
+
+        assertFailsWith<IllegalStateException> { transfer.move(phone.contents, account.contents) }
+
+        assertEquals(listOf(shelfCase), phone.bookcases.bookcases.value)
+    }
+
+    @Test
+    fun aMatchedBookKeepsOnePlaceWhole() = runTest(timeout = 30.seconds) {
+        val account = Lib(LibraryId.Account("ana"), records = true)
+        account.store.books.insert(book("Os Maias", "9789720049575", times = mapOf("title" to 5L)))
+        phone.store.books.insert(
+            book("Os Maias", "9789720049575", times = mapOf("shelf_id" to 3L, "shelf_position" to 3L)).copy(shelfId = "s1", shelfPosition = 4.0),
+        )
+        transfer.move(phone.contents, account.contents)
+        val merged = account.store.live().single()
+        assertEquals("s1", merged.shelfId)
+        assertEquals(4.0, merged.shelfPosition)
+    }
 
     @Test
     fun addingPhoneBooksMergesSameIsbn() = runTest(timeout = 30.seconds) {

@@ -76,7 +76,40 @@ export function combineRows(keep: SyncRow, other: SyncRow): SyncRow {
       takeKeep()
     }
   }
-  return { table: keep.table, id: keep.id, fields, times, seq: keep.seq }
+  return withShelfPair({ table: keep.table, id: keep.id, fields, times, seq: keep.seq }, keep, other)
+}
+
+const SHELF_FIELDS = ['shelf_id', 'shelf_position']
+const shelfOf = (row: SyncRow) => (typeof row.fields.shelf_id === 'string' ? row.fields.shelf_id : null)
+const shelfTime = (row: SyncRow) => Math.max(...SHELF_FIELDS.map((f) => row.times[f] ?? 0))
+
+/**
+ * [merged], the merge of [kept] and [other], with the place of one of them whole: the copy on a real shelf, or [kept]
+ * when both are. The time makes that choice win wherever the other copy's place is stored.
+ */
+export function withShelfPair(
+  merged: SyncRow,
+  kept: SyncRow,
+  other: SyncRow,
+  isValid: (shelfId: string) => boolean = () => true,
+): SyncRow {
+  if (SHELF_FIELDS.every((f) => (kept.fields[f] ?? null) === (other.fields[f] ?? null))) return merged
+  const keptShelf = shelfOf(kept)
+  const otherShelf = shelfOf(other)
+  const keepIt = (keptShelf !== null && isValid(keptShelf)) || otherShelf === null || !isValid(otherShelf)
+  const chosen = keepIt ? kept : other
+  const rejected = keepIt ? other : kept
+  const chosenTime = shelfTime(chosen)
+  const rejectedTime = shelfTime(rejected)
+  const wins = chosenTime > rejectedTime || (keepIt && chosenTime === rejectedTime)
+  const time = wins ? chosenTime : rejectedTime + 1
+  const fields = { ...merged.fields }
+  const times = { ...merged.times }
+  for (const f of SHELF_FIELDS) {
+    fields[f] = chosen.fields[f] ?? null
+    times[f] = time
+  }
+  return { ...merged, fields, times }
 }
 
 /** [combineRows] for books. [times] are the books' field times, by server field name (none: every field ties). */

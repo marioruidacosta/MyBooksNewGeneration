@@ -26,7 +26,7 @@ const book = (id: string, over: Partial<Book> = {}): Book => ({
   id, isbn: null, title: `Book ${id}`, authors: 'Author', publisher: null, publishedYear: null, pageCount: null,
   coverUrl: null, description: null, status: 'TO_READ', rating: null, notes: '', dateAdded: 7, dateRead: null,
   dateStarted: null, currentPage: null, progressPercent: null, review: '', tags: [], series: null, seriesNumber: null,
-  lentTo: null, lentOn: null, deleted: false, ...over,
+  lentTo: null, lentOn: null, shelfId: null, shelfPosition: null, deleted: false, ...over,
 })
 
 const stores: LibraryStore[] = []
@@ -105,6 +105,20 @@ describe('planImport', () => {
     await applyPlan(plan, store, {})
     // The edit is newer than the backup; the page count was empty here.
     expect(store.book('a')).toMatchObject({ publisher: 'Edited today', pageCount: 688 })
+  })
+
+  it('aBackupChangingOnlyThePositionWritesTheWholePlace', async () => {
+    const store = await open([book('a', { isbn: '9780441013593', title: 'Dune', authors: 'Frank Herbert', shelfId: 's1', shelfPosition: 2 })])
+    await new Promise((r) => setTimeout(r, 3))
+    const backup = parseBackup(strToU8(JSON.stringify({
+      version: 1, exportedAt: 1_000,
+      books: [{ isbn: '9780441013593', title: 'Dune', authors: 'Frank Herbert', shelfId: 's1', shelfPosition: 7 }],
+    })))
+    const plan = planImport(backupItems(backup), store, NOW)
+    expect(plan.merged[0].changes).toMatchObject({ shelf_id: 's1', shelf_position: 7 })
+    await applyPlan(plan, store, {})
+    const times = store.bookTimes('a')
+    expect(times.shelf_id).toBe(times.shelf_position)
   })
 
   it('restoresQuotesOnceAndGoals', async () => {

@@ -42,7 +42,7 @@ export function addBook(store: LibraryStore, found: Found, now = Date.now(), sta
     coverUrl: found.coverUrl !== null && found.coverUrl.length > BOOK_LIMITS.cover_url ? null : found.coverUrl,
     description: found.description === null ? null : found.description.slice(0, BOOK_LIMITS.description),
     status, rating: null, notes: '', dateAdded: now, dateRead: null, dateStarted: null, currentPage: null,
-    progressPercent: null, review: '', tags: [], series: null, seriesNumber: null, lentTo: null, lentOn: null,
+    progressPercent: null, review: '', tags: [], series: null, seriesNumber: null, lentTo: null, lentOn: null, shelfId: null, shelfPosition: null,
     deleted: false,
   })
   return { id, added: true }

@@ -23,6 +23,7 @@ import com.mcosta.mybooks.data.suggestions.SubjectSearch
 import com.mcosta.mybooks.data.suggestions.SuggestionEngine
 import com.mcosta.mybooks.domain.ReadingSummary
 import com.mcosta.mybooks.domain.readingSummary
+import com.mcosta.mybooks.physical.BookcaseStore
 import com.mcosta.mybooks.share.ShareExclusions
 import com.mcosta.mybooks.share.SharingStatus
 import com.mcosta.mybooks.sharingFor
@@ -116,7 +117,7 @@ class LibrarySpace(
                 queue = database.syncQueueDao(),
                 state = database.syncStateDao(),
             ),
-            syncRecorder, coverStore, ebookFiles, files.fileSystem,
+            syncRecorder, coverStore, ebookFiles, files.fileSystem, bookcases,
         )
     }
 
@@ -139,6 +140,12 @@ class LibrarySpace(
      * [LibraryUpgrade] moved them out of the device settings).
      */
     private val libraryPrefs = DbPreferences(database.syncStateDao(), spaceScope)
+
+    /** The bookcases of the physical library. */
+    val bookcases = BookcaseStore(
+        libraryPrefs, libraryPrefs::keys, prefChanged,
+        persist = { key, value -> storeLibraryPreference(database.syncStateDao(), key, value) },
+    )
 
     private val sharing: Sharing? = sharingFor(
         id, device.social, database.shareStateDao(), spaceScope,
@@ -174,6 +181,7 @@ class LibrarySpace(
         challenges = challenges,
         events = device.events,
         hiddenSuggestions = hiddenSuggestions,
+        bookcases = bookcases,
         quotes = SyncingQuoteDao(database.quoteDao(), syncRecorder),
         ebooks = SyncingEbookDao(database.ebookDao(), database.bookDao(), syncRecorder),
         bookmarks = SyncingBookmarkDao(database.bookmarkDao(), syncRecorder),
@@ -231,7 +239,7 @@ class LibrarySpace(
             challenges = database.challengeDao(),
             queue = database.syncQueueDao(),
             state = database.syncStateDao(),
-            prefs = LibraryPrefs(pinnedTags, hiddenSuggestions, sharing?.tracker),
+            prefs = LibraryPrefs(pinnedTags, hiddenSuggestions, sharing?.tracker, bookcases),
             shareState = database.shareStateDao(),
         ),
         syncRecorder, spaceScope, device.clock, sharing?.tracker, coverStore, ebookFiles,
@@ -242,6 +250,7 @@ class LibrarySpace(
         libraryPrefs.load()
         pinnedTags.reload()
         hiddenSuggestions.reload()
+        bookcases.reload()
         // "Don't share this book" used to stay on the phone: upload what was set before it synced.
         try {
             sharing?.tracker?.carryExclusionsOver()
