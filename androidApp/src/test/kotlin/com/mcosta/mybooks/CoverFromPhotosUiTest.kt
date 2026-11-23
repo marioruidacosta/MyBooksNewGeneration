@@ -6,6 +6,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.covers.CoverStore
@@ -29,7 +31,9 @@ import com.mcosta.mybooks.ui.edit.EditBookViewModel
 import com.mcosta.mybooks.ui.theme.MyBooksTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
@@ -60,6 +64,12 @@ class CoverFromPhotosUiTest {
     private var cameraOpened = 0
     private var pickerOpened = 0
 
+    /** Where the screens' saves run, and all the work they started: it has to end before the database closes. */
+    private val saves = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val work = mutableListOf<Job>(saves.coroutineContext.job)
+
+    private fun <T : ViewModel> T.tracked(): T = apply { work += viewModelScope.coroutineContext.job }
+
     private fun services(withPicker: Boolean) = PlatformServices(
         scanner = object : IsbnScanner { override suspend fun scan() = ScanOutcome.Cancelled },
         camera = object : CoverCamera {
@@ -77,6 +87,9 @@ class CoverFromPhotosUiTest {
 
     @After
     fun tearDown() {
+        // A saved row is visible a moment before its transaction ends: closing the database then fails the test.
+        work.forEach { it.cancel() }
+        idleUntil { work.all { it.isCompleted } }
         db.close()
         context.deleteDatabase(dbName)
     }
@@ -100,7 +113,7 @@ class CoverFromPhotosUiTest {
 
     private fun bookPage(withPicker: Boolean): Long {
         val id = bookWithoutCover()
-        val vm = BookDetailViewModel(repo, id, CoroutineScope(SupervisorJob() + Dispatchers.Default))
+        val vm = BookDetailViewModel(repo, id, saves).tracked()
         show(withPicker) { BookDetailScreen(vm, onBack = {}, onEdit = {}, onRead = {}, onAddEbookFile = {}) }
         idleUntil { vm.book.value != null }
         return id
@@ -127,7 +140,7 @@ class CoverFromPhotosUiTest {
     @Test
     fun theEditFormOffersChoosePhoto() {
         val id = bookWithoutCover()
-        val vm = EditBookViewModel(repo, id, null)
+        val vm = EditBookViewModel(repo, id, null).tracked()
         show(withPicker = true) { EditBookScreen(vm, isNew = false, onBack = {}, onSaved = {}) }
         idleUntil { vm.state.value.form.title.isNotEmpty() }
         compose.onNodeWithText("Choose photo").assertExists()
@@ -136,7 +149,7 @@ class CoverFromPhotosUiTest {
     @Test
     fun theEditFormHidesChoosePhotoWithoutAPicker() {
         val id = bookWithoutCover()
-        val vm = EditBookViewModel(repo, id, null)
+        val vm = EditBookViewModel(repo, id, null).tracked()
         show(withPicker = false) { EditBookScreen(vm, isNew = false, onBack = {}, onSaved = {}) }
         idleUntil { vm.state.value.form.title.isNotEmpty() }
         compose.onNodeWithText("Take photo").assertExists()
