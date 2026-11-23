@@ -328,8 +328,7 @@ class BookRepository(
             val bytes = coverStore.read(ref) ?: return@mapNotNull null
             (BACKUP_COVERS + name) to bytes
         }
-        val library = BackupSerializer.encode(books, clock(), shares(), challenges?.all().orEmpty(), hiddenSuggestions?.keys?.value.orEmpty(), bookcases = bookcases?.all().orEmpty())
-        return Zip.write(listOf(BACKUP_LIBRARY to library.encodeToByteArray()) + photos)
+        return Zip.write(listOf(BACKUP_LIBRARY to exportJson().encodeToByteArray()) + photos)
     }
 
     /** Restores a .zip backup (with cover photos) or an older plain .json backup. */
