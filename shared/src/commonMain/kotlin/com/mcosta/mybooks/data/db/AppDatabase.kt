@@ -13,7 +13,7 @@ import com.mcosta.mybooks.domain.splitSeries
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 
-@Database(entities = [BookEntity::class, ShareStateEntity::class, ChallengeEntity::class, QuoteEntity::class, EbookEntity::class, BookmarkEntity::class, SyncQueueEntity::class, SyncStateEntity::class], version = 8, exportSchema = true)
+@Database(entities = [BookEntity::class, ShareStateEntity::class, ChallengeEntity::class, QuoteEntity::class, EbookEntity::class, BookmarkEntity::class, SyncQueueEntity::class, SyncStateEntity::class], version = 9, exportSchema = true)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
@@ -35,7 +35,7 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
 /** Finishes a platform's database builder: migrations, SQLite driver and IO dispatcher. */
 fun createDatabase(builder: RoomDatabase.Builder<AppDatabase>, driver: SQLiteDriver): AppDatabase =
     builder
-        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+        .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
         .setDriver(driver)
         .setQueryCoroutineContext(Dispatchers.IO)
         .build()
@@ -169,5 +169,13 @@ val MIGRATION_7_8 = object : Migration(7, 8) {
         )
         connection.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_sync_queue_table_rowId` ON `sync_queue` (`table`, `rowId`)")
         connection.execSQL("CREATE TABLE IF NOT EXISTS `sync_state` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))")
+    }
+}
+
+/** v9: a book's place on a physical shelf. */
+val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE books ADD COLUMN shelfId TEXT")
+        connection.execSQL("ALTER TABLE books ADD COLUMN shelfPosition REAL")
     }
 }

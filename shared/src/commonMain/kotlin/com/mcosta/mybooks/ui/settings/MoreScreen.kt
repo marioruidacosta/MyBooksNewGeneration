@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Newspaper
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -21,9 +22,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 /** The bottom bar's last tab: what doesn't need a tab of its own. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MoreScreen(onOpenNews: () -> Unit, onOpenSettings: () -> Unit) {
+fun MoreScreen(onOpenPhysical: () -> Unit, onOpenNews: () -> Unit, onOpenSettings: () -> Unit) {
     Scaffold(topBar = { TopAppBar(title = { Text("More") }) }) { padding ->
         Column(Modifier.padding(padding)) {
+            MoreRow(Icons.AutoMirrored.Filled.MenuBook, "Physical library", "Your bookcases, and where each book is", onOpenPhysical)
+            HorizontalDivider()
             MoreRow(Icons.Filled.Newspaper, "Book news", "Stories and events from the book world", onOpenNews)
             HorizontalDivider()
             MoreRow(Icons.Filled.Settings, "Settings", "Account, appearance, notifications and backup", onOpenSettings)

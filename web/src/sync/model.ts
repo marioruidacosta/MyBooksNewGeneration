@@ -43,6 +43,9 @@ export type Book = {
   seriesNumber: string | null
   lentTo: string | null
   lentOn: number | null
+  /** The physical shelf it sits on, and its order there; null when it has no place. Private: never shared. */
+  shelfId: string | null
+  shelfPosition: number | null
   deleted: boolean
 }
 

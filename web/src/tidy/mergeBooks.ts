@@ -3,7 +3,9 @@ import { bookToFields, rowToBook } from '../sync/codec'
 import type { Book, SyncRow } from '../sync/model'
 import { SHARE_EXCLUDED_PREFIX } from '../share/publisher'
 import type { LibraryStore } from '../sync/store'
-import { combineRows } from '../sync/twin'
+import { bookcasesOf, SHELF_FIELDS } from '../physical/places'
+import { shelfIds } from '../physical/model'
+import { combineRows, withShelfPair } from '../sync/twin'
 import { statusDates } from '../book/status'
 
 /** Supabase Storage as merging needs it: the cover bucket's copy (the real `supabase.storage` fits). */
@@ -19,7 +21,8 @@ const LABELS: Record<string, string> = {
   page_count: 'pages', cover_url: 'cover', description: 'description', status: 'status', rating: 'rating',
   notes: 'notes', date_added: 'date added', date_read: 'date read', date_started: 'date started',
   current_page: 'current page', progress_percent: 'progress', review: 'review', tags: 'tags', series: 'series',
-  series_number: 'series number', lent_to: 'lent to', lent_on: 'lent on',
+  series_number: 'series number', lent_to: 'lent to', lent_on: 'lent on', shelf_id: 'shelf',
+  shelf_position: 'place on the shelf',
 }
 
 export type MergePlan = {
@@ -48,7 +51,9 @@ export function planMerge(store: LibraryStore, keep: Book, drop: Book, now = Dat
   const keepRow = rowOf(store, keep)
   const dropRow = rowOf(store, drop)
   // The dates a status goes with, as on import: a To-read book keeps no read date, a Read one has its date.
-  const merged = statusDates(rowToBook(combineRows(keepRow, dropRow)), keep.status, now)
+  const shelves = new Set(bookcasesOf(store).flatMap(shelfIds))
+  const twins = withShelfPair(combineRows(keepRow, dropRow), keepRow, dropRow, (id) => shelves.has(id))
+  const merged = statusDates(rowToBook(twins), keep.status, now)
   const before = bookToFields(keep)
   const after = bookToFields(merged)
   const fields = Object.keys(after).filter((f) => f !== 'deleted' && after[f] !== before[f])
@@ -97,6 +102,13 @@ export async function mergeBooks(
 
   let coverKept = false
   const restamp: string[] = []
+  // The place's two fields are timed together, even when only one of them differs.
+  if (SHELF_FIELDS.some((f) => f in changes)) {
+    for (const f of SHELF_FIELDS) {
+      changes[f] = after[f]
+      restamp.push(f)
+    }
+  }
   if (plan.photoFromDrop) {
     let copied = false
     if (photos) {
@@ -147,8 +159,11 @@ export async function mergeBooks(
       const current = bookToFields(now)
       const was = bookToFields(keepBefore)
       const back: Record<string, unknown> = {}
-      for (const [f, v] of Object.entries(wrote)) if (current[f] === v) back[f] = was[f]
-      if (Object.keys(back).length > 0) store.edit('books', keep.id, back, { origin: 'bulk' })
+      for (const [f, v] of Object.entries(wrote)) if (!SHELF_FIELDS.includes(f) && current[f] === v) back[f] = was[f]
+      // The place goes back whole, and only if neither of its fields changed since.
+      const place = SHELF_FIELDS.every((f) => f in wrote && current[f] === wrote[f]) ? SHELF_FIELDS : []
+      for (const f of place) back[f] = was[f]
+      if (Object.keys(back).length > 0) store.edit('books', keep.id, back, { origin: 'bulk', restamp: place })
     }
     store.restoreBook(dropBefore, dropTimes)
     const onKeep = new Set(store.quotes(keep.id).map((q) => q.id))

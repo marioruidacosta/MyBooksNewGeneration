@@ -108,6 +108,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.mcosta.mybooks.social.SuggestionInbox
+import com.mcosta.mybooks.ui.physical.BookcaseEditScreen
+import com.mcosta.mybooks.ui.physical.BookcaseScreen
+import com.mcosta.mybooks.ui.physical.PhysicalLibraryScreen
+import com.mcosta.mybooks.ui.physical.PhysicalLibraryViewModel
+import com.mcosta.mybooks.ui.physical.ShelfScreen
+import com.mcosta.mybooks.ui.physical.WithoutPlaceScreen
 import kotlinx.coroutines.flow.MutableStateFlow
 
 object Routes {
@@ -136,10 +142,21 @@ object Routes {
     const val READ_YEAR = "reading-activity/{year}"
     /** A year of reading as a shareable review. */
     const val YEAR_REVIEW = "year-review/{year}"
-    const val ADD = "add?isbn={isbn}"
+    const val ADD = "add?isbn={isbn}&shelf={shelf}"
     const val EDIT = "edit/{id}"
     const val BOOK = "book/{id}"
     const val MORE = "more"
+    /** The physical library: the bookcases in your home and where each book is. */
+    const val PHYSICAL = "physical"
+    const val BOOKCASE = "physical/case/{id}"
+    const val BOOKCASE_EDIT = "physical/edit?id={id}"
+    const val PHYSICAL_SHELF = "physical/shelf/{id}"
+    const val UNPLACED = "physical/unplaced"
+    const val SHELF_SCAN = "physical/shelf/{id}/scan"
+    fun shelfScan(id: String) = "physical/shelf/$id/scan"
+    fun bookcase(id: String) = "physical/case/$id"
+    fun bookcaseEdit(id: String? = null) = if (id == null) "physical/edit" else "physical/edit?id=$id"
+    fun physicalShelf(id: String) = "physical/shelf/$id"
     const val SETTINGS = "settings"
     const val FRIENDS = "friends?tab={tab}"
     const val ACTIVITY = "activity"
@@ -161,7 +178,11 @@ object Routes {
     fun yearReview(year: Int) = "year-review/$year"
     const val ALL_SHELF = "ALL"
     const val UNDATED = "undated"
-    fun add(isbn: String? = null) = if (isbn == null) "add" else "add?isbn=$isbn"
+    fun add(isbn: String? = null, shelf: String? = null) = when {
+        isbn == null -> "add"
+        shelf == null -> "add?isbn=$isbn"
+        else -> "add?isbn=$isbn&shelf=$shelf"
+    }
     fun edit(id: Long) = "edit/$id"
     fun book(id: Long) = "book/$id"
     /** A tag's or a series' books; the name is URL-encoded. */
@@ -479,15 +500,20 @@ fun MyBooksNavHost(
             }
             screen(
                 Routes.ADD,
-                arguments = listOf(navArgument("isbn") { type = NavType.StringType; nullable = true; defaultValue = null }),
+                arguments = listOf(
+                    navArgument("isbn") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("shelf") { type = NavType.StringType; nullable = true; defaultValue = null },
+                ),
             ) { entry ->
                 val isbn = entry.savedStateHandle.get<String>("isbn")
+                val shelf = entry.savedStateHandle.get<String>("shelf")
                 EditBookScreen(
-                    viewModel = viewModel { EditBookViewModel(container.repository, bookId = null, isbn = isbn) },
+                    viewModel = viewModel { EditBookViewModel(container.repository, bookId = null, isbn = isbn, placeOnShelf = shelf) },
                     isNew = true,
                     onBack = { nav.popBackStack() },
                     onSaved = { id ->
-                        nav.navigate(Routes.book(id)) { popUpTo(Routes.LIBRARY) }
+                        // Added by hand while scanning a shelf: back to the scanner.
+                        if (shelf != null) nav.popBackStack() else nav.navigate(Routes.book(id)) { popUpTo(Routes.LIBRARY) }
                     },
                     showReview = sharing.hasProfile,
                 )
@@ -510,6 +536,9 @@ fun MyBooksNavHost(
                     onOpenSeries = { nav.navigate(Routes.series(it)) },
                     onOpenCatalogBook = { nav.navigate("catalog/${container.catalogBooks.put(it)}") },
                     suggestServices = social,
+                    physical = viewModel { PhysicalLibraryViewModel(container.repository, container.bookcases, container.writes) },
+                    onOpenShelf = { nav.navigate(Routes.physicalShelf(it)) },
+                    onAddBookcase = { nav.navigate(Routes.bookcaseEdit()) },
                 )
             }
             screen(Routes.CATALOG_BOOK, arguments = listOf(navArgument("key") { type = NavType.StringType })) { entry ->
@@ -596,8 +625,64 @@ fun MyBooksNavHost(
             }
             screen(Routes.MORE) {
                 MoreScreen(
+                    onOpenPhysical = { nav.navigate(Routes.PHYSICAL) },
                     onOpenNews = { nav.navigate(Routes.NEWS) },
                     onOpenSettings = { nav.navigate(Routes.SETTINGS) },
+                )
+            }
+            screen(Routes.PHYSICAL) {
+                PhysicalLibraryScreen(
+                    viewModel = viewModel { PhysicalLibraryViewModel(container.repository, container.bookcases, container.writes) },
+                    onBack = { nav.popBackStack() },
+                    onOpenBookcase = { nav.navigate(Routes.bookcase(it)) },
+                    onAdd = { nav.navigate(Routes.bookcaseEdit()) },
+                    onOpenUnplaced = { nav.navigate(Routes.UNPLACED) },
+                )
+            }
+            screen(Routes.BOOKCASE, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                val id = entry.savedStateHandle.get<String>("id").orEmpty()
+                BookcaseScreen(
+                    viewModel = viewModel { PhysicalLibraryViewModel(container.repository, container.bookcases, container.writes) },
+                    bookcaseId = id,
+                    onBack = { nav.popBackStack() },
+                    onEdit = { nav.navigate(Routes.bookcaseEdit(id)) },
+                    onOpenShelf = { nav.navigate(Routes.physicalShelf(it)) },
+                )
+            }
+            screen(Routes.PHYSICAL_SHELF, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                val shelfId = entry.savedStateHandle.get<String>("id").orEmpty()
+                ShelfScreen(
+                    viewModel = viewModel { PhysicalLibraryViewModel(container.repository, container.bookcases, container.writes) },
+                    shelfId = shelfId,
+                    onBack = { nav.popBackStack() },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
+                    onScan = { nav.navigate(Routes.shelfScan(shelfId)) },
+                )
+            }
+            screen(Routes.SHELF_SCAN, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                val shelfId = entry.savedStateHandle.get<String>("id").orEmpty()
+                BatchScanScreen(
+                    viewModel = viewModel { BatchScanViewModel(container.repository, shelfId) },
+                    onBack = { nav.popBackStack() },
+                    onAddManually = { nav.navigate(Routes.add(it, shelfId)) },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
+                )
+            }
+            screen(Routes.UNPLACED) {
+                WithoutPlaceScreen(
+                    viewModel = viewModel { PhysicalLibraryViewModel(container.repository, container.bookcases, container.writes) },
+                    onBack = { nav.popBackStack() },
+                    onOpenBook = { nav.navigate(Routes.book(it)) },
+                )
+            }
+            screen(
+                Routes.BOOKCASE_EDIT,
+                arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null }),
+            ) { entry ->
+                BookcaseEditScreen(
+                    viewModel = viewModel { PhysicalLibraryViewModel(container.repository, container.bookcases, container.writes) },
+                    bookcaseId = entry.savedStateHandle.get<String>("id"),
+                    onDone = { nav.popBackStack() },
                 )
             }
             screen(Routes.SETTINGS) {

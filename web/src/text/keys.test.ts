@@ -6,7 +6,7 @@ const book = (over: Partial<Book>): Book => ({
   id: 'x', isbn: null, title: '', authors: '', publisher: null, publishedYear: null, pageCount: null,
   coverUrl: null, description: null, status: 'TO_READ', rating: null, notes: '', dateAdded: 0, dateRead: null,
   dateStarted: null, currentPage: null, progressPercent: null, review: '', tags: [], series: null,
-  seriesNumber: null, lentTo: null, lentOn: null, deleted: false, ...over,
+  seriesNumber: null, lentTo: null, lentOn: null, shelfId: null, shelfPosition: null, deleted: false, ...over,
 })
 
 describe('keys', () => {

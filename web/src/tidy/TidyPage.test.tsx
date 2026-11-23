@@ -31,7 +31,7 @@ function book(over: Partial<Book> = {}): Book {
     id: '1', isbn: '9780156007757', title: 'Blindness', authors: 'José Saramago', publisher: null, publishedYear: null,
     pageCount: 300, coverUrl: 'https://x.example/c.jpg', description: null, status: 'TO_READ', rating: null, notes: '',
     dateAdded: 7, dateRead: null, dateStarted: null, currentPage: null, progressPercent: null, review: '', tags: [],
-    series: null, seriesNumber: null, lentTo: null, lentOn: null, deleted: false, ...over,
+    series: null, seriesNumber: null, lentTo: null, lentOn: null, shelfId: null, shelfPosition: null, deleted: false, ...over,
   }
 }
 

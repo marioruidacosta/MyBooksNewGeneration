@@ -48,6 +48,8 @@ class EditBookViewModel(
     private val repo: BookRepository,
     private val bookId: Long?,
     isbn: String?,
+    /** A new book goes at the end of this physical shelf once saved. */
+    private val placeOnShelf: String? = null,
 ) : ViewModel() {
     private val _state = MutableStateFlow(EditState())
     val state: StateFlow<EditState> = _state.asStateFlow()
@@ -119,6 +121,7 @@ class EditBookViewModel(
             // Only what the form changed is saved: a change synced in while it was open stays.
             val error = when (val r = repo.save(book, base = original)) {
                 is SaveResult.Saved -> {
+                    if (placeOnShelf != null && original == null) repo.placeAtEnd(r.id, placeOnShelf)
                     _state.update { it.copy(savedId = r.id, error = null, saving = false) }
                     return@launch
                 }

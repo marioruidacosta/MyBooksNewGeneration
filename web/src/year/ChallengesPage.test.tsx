@@ -19,7 +19,7 @@ function book(id: string, over: Partial<Book> = {}): Book {
     id, isbn: null, title: id, authors: 'Someone', publisher: null, publishedYear: null, pageCount: null, coverUrl: null,
     description: null, status: 'READ', rating: null, notes: '', dateAdded: 0, dateRead: null, dateStarted: null,
     currentPage: null, progressPercent: null, review: '', tags: [], series: null, seriesNumber: null, lentTo: null,
-    lentOn: null, deleted: false, ...over,
+    lentOn: null, shelfId: null, shelfPosition: null, deleted: false, ...over,
   }
 }
 const day = (y: number, m: number, d: number) => new Date(y, m - 1, d, 12).getTime()

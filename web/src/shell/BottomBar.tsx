@@ -48,7 +48,7 @@ const icons = {
 }
 
 /** The pages under More: the bar holds the four used most. */
-const MORE_PATHS = ['/year', '/news', '/import', '/tidy']
+const MORE_PATHS = ['/year', '/physical', '/news', '/import', '/tidy']
 
 /**
  * The phone's main navigation, fixed at the bottom where a thumb reaches (the installed app has no browser Back button):
@@ -143,6 +143,9 @@ export function BottomBar({ onSignOut }: { onSignOut: () => void }) {
           >
             <Link to="/year" onClick={() => choose('/year')}>
               Year in books
+            </Link>
+            <Link to="/physical" onClick={() => choose('/physical')}>
+              Physical library
             </Link>
             <Link to="/news" onClick={() => choose('/news')}>
               Book news

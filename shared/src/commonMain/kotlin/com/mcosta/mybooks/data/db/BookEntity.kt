@@ -38,6 +38,8 @@ data class BookEntity(
     val seriesNumber: String? = null,
     val lentTo: String? = null,
     val lentOn: Long? = null,
+    val shelfId: String? = null,
+    val shelfPosition: Double? = null,
     /** The book's id on every device (and on the server). */
     @ColumnInfo(defaultValue = "")
     val uuid: String = newUuid(),
@@ -55,7 +57,7 @@ fun BookEntity.toBook() = Book(
     status = status, rating = rating, notes = notes, dateAdded = dateAdded, dateRead = dateRead,
     dateStarted = dateStarted, currentPage = currentPage, progressPercent = progressPercent, review = review,
     tags = tags.split(TAG_SEPARATOR).filter { it.isNotEmpty() }, series = series, seriesNumber = seriesNumber,
-    lentTo = lentTo, lentOn = lentOn,
+    lentTo = lentTo, lentOn = lentOn, shelfId = shelfId, shelfPosition = shelfPosition,
 )
 
 fun Book.toEntity() = BookEntity(
@@ -66,6 +68,7 @@ fun Book.toEntity() = BookEntity(
     searchText = searchKey("$title\n$authors"),
     dateStarted = dateStarted, currentPage = currentPage, progressPercent = progressPercent, review = review,
     tags = tags.joinToString(TAG_SEPARATOR), series = series, seriesNumber = seriesNumber, lentTo = lentTo, lentOn = lentOn,
+    shelfId = shelfId, shelfPosition = shelfPosition,
 )
 
 private const val TAG_SEPARATOR = "\n"

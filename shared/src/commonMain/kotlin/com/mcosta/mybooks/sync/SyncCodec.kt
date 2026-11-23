@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 
@@ -25,10 +26,18 @@ private const val PHOTO = "photo"
 private fun s(v: String?): JsonElement = if (v == null) JsonNull else JsonPrimitive(v)
 private fun n(v: Number?): JsonElement = if (v == null) JsonNull else JsonPrimitive(v)
 
+/** As the server writes a double: a whole number has no ".0", so the same value compares equal after a pull. */
+private fun d(v: Double?): JsonElement = when {
+    v == null -> JsonNull
+    v == kotlin.math.floor(v) && kotlin.math.abs(v) < 9.0e15 -> JsonPrimitive(v.toLong())
+    else -> JsonPrimitive(v)
+}
+
 private fun Map<String, JsonElement>.prim(k: String): JsonPrimitive? = (this[k] as? JsonPrimitive)?.takeIf { it !is JsonNull }
 private fun Map<String, JsonElement>.str(k: String): String? = prim(k)?.contentOrNull
 private fun Map<String, JsonElement>.int(k: String): Int? = prim(k)?.intOrNull
 private fun Map<String, JsonElement>.long(k: String): Long? = prim(k)?.longOrNull
+private fun Map<String, JsonElement>.double(k: String): Double? = prim(k)?.doubleOrNull
 private fun Map<String, JsonElement>.isDeleted(): Boolean = prim("deleted")?.booleanOrNull ?: false
 
 private fun row(table: SyncTable, id: String, fields: Map<String, JsonElement>, fieldTimes: String, deleted: Boolean): SyncRow =
@@ -49,7 +58,7 @@ fun BookEntity.toRow(coverStore: CoverStore?): SyncRow = row(
         "date_added" to n(dateAdded), "date_read" to n(dateRead), "date_started" to n(dateStarted),
         "current_page" to n(currentPage), "progress_percent" to n(progressPercent), "review" to s(review),
         "tags" to s(tags), "series" to s(series), "series_number" to s(seriesNumber), "lent_to" to s(lentTo),
-        "lent_on" to n(lentOn),
+        "lent_on" to n(lentOn), "shelf_id" to s(shelfId), "shelf_position" to d(shelfPosition),
     ),
     fieldTimes, deleted,
 )
@@ -77,6 +86,7 @@ fun SyncRow.toBookEntity(base: BookEntity?, coverStore: CoverStore?): BookEntity
         progressPercent = f.int("progress_percent"), review = f.str("review") ?: "", tags = f.str("tags") ?: "",
         series = f.str("series"), seriesNumber = f.str("series_number"),
         lentTo = f.str("lent_to"), lentOn = f.long("lent_on"),
+        shelfId = f.str("shelf_id"), shelfPosition = f.double("shelf_position"),
         uuid = id, fieldTimes = timesJson(times), deleted = f.isDeleted(),
     )
 }

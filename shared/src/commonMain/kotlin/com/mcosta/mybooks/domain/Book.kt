@@ -40,4 +40,7 @@ data class Book(
     /** Who has the book, and since when; null when it is at home. */
     val lentTo: String? = null,
     val lentOn: Long? = null,
+    /** The physical shelf it sits on, and its order there; null when it has no place. Private: never shared. */
+    val shelfId: String? = null,
+    val shelfPosition: Double? = null,
 )

@@ -8,7 +8,7 @@ function book(id: string, over: Partial<Book> = {}): Book {
     id, isbn: null, title: 'Dune', authors: 'Frank Herbert', publisher: null, publishedYear: null, pageCount: null,
     coverUrl: null, description: null, status: 'TO_READ', rating: null, notes: '', dateAdded: 100, dateRead: null,
     dateStarted: null, currentPage: null, progressPercent: null, review: '', tags: [], series: null,
-    seriesNumber: null, lentTo: null, lentOn: null, deleted: false, ...over,
+    seriesNumber: null, lentTo: null, lentOn: null, shelfId: null, shelfPosition: null, deleted: false, ...over,
   }
 }
 

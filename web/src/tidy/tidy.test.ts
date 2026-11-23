@@ -6,6 +6,7 @@ import type { Book, Quote } from '../sync/model'
 import { LibraryStore } from '../sync/store'
 import { duplicateGroups, missingCover, missingIsbn, missingPages } from './duplicates'
 import { fillEmpty } from './fillEmpty'
+import { setPlace } from '../physical/places'
 import { mergeBooks, planMerge, type PhotoStorage } from './mergeBooks'
 
 function book(over: Partial<Book> = {}): Book {
@@ -13,7 +14,7 @@ function book(over: Partial<Book> = {}): Book {
     id: '1', isbn: null, title: 'Blindness', authors: 'José Saramago', publisher: null, publishedYear: null,
     pageCount: null, coverUrl: null, description: null, status: 'TO_READ', rating: null, notes: '', dateAdded: 7,
     dateRead: null, dateStarted: null, currentPage: null, progressPercent: null, review: '', tags: [], series: null,
-    seriesNumber: null, lentTo: null, lentOn: null, deleted: false, ...over,
+    seriesNumber: null, lentTo: null, lentOn: null, shelfId: null, shelfPosition: null, deleted: false, ...over,
   }
 }
 
@@ -117,6 +118,39 @@ describe('fillEmpty', () => {
 })
 
 describe('mergeBooks', () => {
+  const addCase = (store: LibraryStore) =>
+    store.setPref('bookcase.w', JSON.stringify({ v: 1, name: 'W', room: 'R', columns: [{ id: 'c', shelves: ['s1', 's2'] }] }))
+
+  it('undoPutsThePlaceBackWhole', async () => {
+    const store = await open()
+    addCase(store)
+    store.create(book({ id: 'keep', shelfId: 'gone', shelfPosition: 3 }))
+    clock = 2000
+    store.create(book({ id: 'drop', shelfId: 's1', shelfPosition: 3 }))
+    clock = 3000
+    const { undo } = await mergeBooks(store, store.book('keep') as Book, store.book('drop') as Book)
+    expect(store.book('keep')).toMatchObject({ shelfId: 's1', shelfPosition: 3 })
+    clock = 4000
+    undo()
+    expect(store.book('keep')).toMatchObject({ shelfId: 'gone', shelfPosition: 3 })
+    expect(store.bookTimes('keep')).toMatchObject({ shelf_id: 4000, shelf_position: 4000 })
+  })
+
+  it('undoLeavesAPlaceChangedSinceTheMerge', async () => {
+    const store = await open()
+    addCase(store)
+    store.create(book({ id: 'keep' }))
+    clock = 2000
+    store.create(book({ id: 'drop', shelfId: 's1', shelfPosition: 3 }))
+    clock = 3000
+    const { undo } = await mergeBooks(store, store.book('keep') as Book, store.book('drop') as Book)
+    clock = 4000
+    setPlace(store, 'keep', 's1', 9)
+    clock = 5000
+    undo()
+    expect(store.book('keep')).toMatchObject({ shelfId: 's1', shelfPosition: 9 })
+  })
+
   it('mergeKeepsNewestFieldsJoinsNotesMovesQuotesAndDeletesTheOther', async () => {
     const store = await open()
     store.create(book({ id: 'keep', publisher: 'Old House', notes: 'Kept note', tags: ['a'], pageCount: null }))

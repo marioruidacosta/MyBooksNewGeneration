@@ -32,6 +32,11 @@ import com.mcosta.mybooks.data.db.toBookmark
 import com.mcosta.mybooks.domain.Bookmark
 import com.mcosta.mybooks.domain.Ebook
 import com.mcosta.mybooks.data.db.toQuote
+import com.mcosta.mybooks.physical.BookcaseStore
+import com.mcosta.mybooks.physical.endPosition
+import com.mcosta.mybooks.physical.onShelf
+import com.mcosta.mybooks.physical.positionBetween
+import com.mcosta.mybooks.physical.renumbered
 import com.mcosta.mybooks.share.ShareTracker
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -81,6 +86,8 @@ class BookRepository(
     private val events: ReadingEvents? = null,
     /** Suggestions marked "Not interested", kept in backups; null in tests that don't involve them. */
     private val hiddenSuggestions: HiddenSuggestions? = null,
+    /** The physical library's bookcases, kept in backups; null in tests that don't involve them. */
+    private val bookcases: BookcaseStore? = null,
     /** Quotes, removed with their book and kept in backups; null in tests that don't involve them. */
     private val quotes: QuoteDao? = null,
     /** Ebook files and bookmarks, removed with their book; null in tests that don't involve them. */
@@ -215,6 +222,71 @@ class BookRepository(
     /** The lent book is back home. */
     suspend fun returned(id: Long) = modify(id) { it.copy(lentTo = null, lentOn = null) }
 
+    // ---- the physical library ----
+
+    /** The book's shelf and order there, written together; no shelf means no order. */
+    suspend fun setPlace(id: Long, shelfId: String?, position: Double?) =
+        modify(id) { it.copy(shelfId = shelfId, shelfPosition = position.takeIf { shelfId != null }) }
+
+    private suspend fun shelfBooks(shelfId: String, without: Long): List<Book> =
+        dao.getAll().map { it.toBook() }.onShelf(shelfId).filter { it.id != without }
+
+    /** Whole positions for these books, in this order, writing only the ones that change. */
+    private suspend fun renumber(shelfId: String, books: List<Book>) {
+        for ((id, position) in renumbered(books)) {
+            if (books.first { it.id == id }.let { it.shelfId != shelfId || it.shelfPosition != position }) {
+                setPlace(id, shelfId, position)
+            }
+        }
+    }
+
+    /** After every book on the shelf. Books there with no order get one first, or this one would sort before them. */
+    suspend fun placeAtEnd(id: Long, shelfId: String) = transactionRunner {
+        var others = shelfBooks(shelfId, id)
+        if (others.any { it.shelfPosition == null }) {
+            renumber(shelfId, others)
+            others = shelfBooks(shelfId, id)
+        }
+        setPlace(id, shelfId, endPosition(others))
+    }
+
+    /** Between two neighbours on the shelf: only this book changes, unless the shelf has to be renumbered. */
+    suspend fun moveOnShelf(id: Long, shelfId: String, beforeId: Long?, afterId: Long?) = transactionRunner {
+        val book = dao.getById(id)?.toBook() ?: return@transactionRunner
+        val others = shelfBooks(shelfId, id)
+        val before = others.firstOrNull { it.id == beforeId }
+        val after = others.firstOrNull { it.id == afterId }
+        val position = if (others.any { it.shelfPosition == null }) null else positionBetween(before?.shelfPosition, after?.shelfPosition)
+        if (position != null) {
+            setPlace(id, shelfId, position)
+        } else {
+            val index = when {
+                after != null -> others.indexOf(after)
+                before != null -> others.indexOf(before) + 1
+                else -> others.size
+            }
+            renumber(shelfId, others.take(index) + book + others.drop(index))
+        }
+    }
+
+    /** Takes every book off these shelves (To buy ones too); returns how many. */
+    suspend fun clearPlaces(shelfIds: Set<String>): Int {
+        var cleared = 0
+        transactionRunner {
+            for (book in dao.getAll().map { it.toBook() }) {
+                if (book.shelfId in shelfIds) {
+                    setPlace(book.id, null, null)
+                    cleared++
+                }
+            }
+        }
+        return cleared
+    }
+
+    /** The books with an ebook: they don't count as waiting for a place on a shelf. */
+    fun observeEbookBookIds(): Flow<Set<Long>> =
+        ebooks?.observeBookIds()?.map { it.toSet() } ?: flowOf(emptySet())
+
     /** Every tag in the library with how many books have it, most used first, then A to Z. */
     fun observeTags(): Flow<List<TagCount>> = observeBooks(null, "").map { books ->
         books.flatMap { it.tags }.groupBy { it.lowercase() }
@@ -256,7 +328,7 @@ class BookRepository(
             val bytes = coverStore.read(ref) ?: return@mapNotNull null
             (BACKUP_COVERS + name) to bytes
         }
-        val library = BackupSerializer.encode(books, clock(), shares(), challenges?.all().orEmpty(), hiddenSuggestions?.keys?.value.orEmpty())
+        val library = BackupSerializer.encode(books, clock(), shares(), challenges?.all().orEmpty(), hiddenSuggestions?.keys?.value.orEmpty(), bookcases = bookcases?.all().orEmpty())
         return Zip.write(listOf(BACKUP_LIBRARY to library.encodeToByteArray()) + photos)
     }
 
@@ -279,6 +351,7 @@ class BookRepository(
         quotes?.getAll().orEmpty().map { it.toQuote() }.groupBy { it.bookId },
         ebooks?.getAll().orEmpty().associate { it.bookId to it.toEbook() },
         bookmarks?.getAll().orEmpty().map { it.toBookmark() }.groupBy { it.bookId },
+        bookcases?.all().orEmpty(),
     )
 
     private suspend fun shares() = shareTracker?.exportShares() ?: emptyMap()
@@ -314,7 +387,9 @@ class BookRepository(
                     dao.findWithoutIsbn(book.title, book.authors.trim())
                 }
                 if (existing != null) {
-                    dao.update(withStatusDates(book.copy(id = existing.id, dateAdded = existing.dateAdded), book.status).toEntity())
+                    // A backup that doesn't say where the book is leaves it where it is.
+                    val placed = if (book.shelfId != null) book else book.copy(shelfId = existing.shelfId, shelfPosition = existing.shelfPosition)
+                    dao.update(withStatusDates(placed.copy(id = existing.id, dateAdded = existing.dateAdded), book.status).toEntity())
                     if (share != null) shareTracker?.restored(existing.id, share)
                     restoreQuotes(existing.id, bookQuotes.getOrNull(index).orEmpty())
                     restoreEbook(existing.id, bookEbooks.getOrNull(index))
@@ -331,6 +406,7 @@ class BookRepository(
         }
         for (goal in goals) challenges?.setGoal(goal.year, goal.goal)
         hiddenSuggestions?.addAll(hidden)
+        for ((id, value) in BackupSerializer.decodeBookcases(json)) bookcases?.restore(id, value)
         return ImportSummary(added, updated, failed)
     }
 
@@ -498,7 +574,11 @@ class BookRepository(
     /** This (stored) book with each field [edited] changed from [base]; every other field stays as stored. */
     private fun Book.withEdits(base: Book, edited: Book): Book {
         fun <T> pick(field: (Book) -> T): T = if (field(edited) != field(base)) field(edited) else field(this)
+        // The place is one value: its two fields never come from different versions.
+        val placeEdited = edited.shelfId != base.shelfId || edited.shelfPosition != base.shelfPosition
         return copy(
+            shelfId = if (placeEdited) edited.shelfId else shelfId,
+            shelfPosition = if (placeEdited) edited.shelfPosition else shelfPosition,
             isbn = pick { it.isbn },
             title = pick { it.title },
             authors = pick { it.authors },

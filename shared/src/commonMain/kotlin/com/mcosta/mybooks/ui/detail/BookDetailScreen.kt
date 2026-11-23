@@ -83,6 +83,9 @@ import com.mcosta.mybooks.ui.components.RatingStars
 import com.mcosta.mybooks.ui.components.StatusSelector
 import com.mcosta.mybooks.ui.ebooks.EbookCard
 import com.mcosta.mybooks.ui.ebooks.ReadButton
+import com.mcosta.mybooks.ui.physical.PhysicalLibraryViewModel
+import com.mcosta.mybooks.ui.physical.PhysicalMessages
+import com.mcosta.mybooks.ui.physical.WhereItIsCard
 import com.mcosta.mybooks.ui.social.toSuggestedBook
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,6 +115,10 @@ fun BookDetailScreen(
     ebookElsewhere: Boolean = false,
     /** Where "Suggest to a friend" sends from; null hides it (it also needs a community profile). */
     suggestServices: com.mcosta.mybooks.social.SocialServices? = null,
+    /** The physical library: where this book is; null hides it. */
+    physical: PhysicalLibraryViewModel? = null,
+    onOpenShelf: (String) -> Unit = {},
+    onAddBookcase: () -> Unit = {},
 ) {
     var suggesting by remember { mutableStateOf(false) }
     val community by (extras?.community ?: remember { MutableStateFlow<CommunityState>(CommunityState.Hidden) }).collectAsStateWithLifecycle()
@@ -132,6 +139,8 @@ fun BookDetailScreen(
 
     LaunchedEffect(deleted) { if (deleted) onBack() }
     val snackbar = remember { SnackbarHostState() }
+    val physicalState = physical?.state?.collectAsStateWithLifecycle()?.value
+    if (physical != null && physicalState != null) PhysicalMessages(physicalState, physical, snackbar)
     val scope = rememberCoroutineScope()
     val takePhoto = rememberCoverPhotoTaker(
         onPhoto = viewModel::setCover,
@@ -177,6 +186,15 @@ fun BookDetailScreen(
             BookHeader(b.coverUrl, b.title, b.authors, bookDetails(b), author, onAuthorShown = viewModel::loadAuthor, onOpenBook = onOpenBook, onAddPhoto = takePhoto, onChoosePhoto = choosePhoto, shareKey = "book-${b.id}")
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatusSelector(b.status, viewModel::setStatus, Modifier.fillMaxWidth())
+                if (physical != null && physicalState != null) {
+                    WhereItIsCard(
+                        b, physicalState.bookcases, physical::booksOn,
+                        onChoose = { physical.place(listOf(b.id), it) },
+                        onTakeOff = { physical.takeOff(b.id) },
+                        onOpenShelf = onOpenShelf,
+                        onAddBookcase = onAddBookcase,
+                    )
+                }
                 if (ebook?.fileOnPhone == true && onRead != null) ReadButton(onRead)
                 if (suggestServices != null && sharing.hasProfile) {
                     OutlinedButton(onClick = { suggesting = true }, modifier = Modifier.fillMaxWidth()) { Text("Suggest to a friend") }

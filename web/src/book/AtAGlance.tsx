@@ -8,6 +8,8 @@ type Props = {
   book: Book
   /** "Suggest to a friend", after the dates. */
   suggest?: ReactNode
+  /** Where the book is on the real shelves, right after suggesting it. */
+  whereItIs?: ReactNode
   /** The ebook line ("file.epub, EPUB, 120 KB"), when the phone has one. */
   ebook: string | null
   onMarkRead: () => void
@@ -23,10 +25,10 @@ function progressText(book: Book, percent: number): string {
 }
 
 /**
- * The summary beside the cover (under the hero on a small screen): progress, dates, suggesting it to a friend, who has
- * the book, the ebook, the two quick actions, and the tags.
+ * The summary beside the cover (under the hero on a small screen): progress, dates, suggesting it to a friend, where it
+ * is at home, who has the book, the ebook, the two quick actions, and the tags.
  */
-export function AtAGlance({ book, suggest, ebook, onMarkRead, onProgress }: Props) {
+export function AtAGlance({ book, suggest, whereItIs, ebook, onMarkRead, onProgress }: Props) {
   const [editing, setEditing] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   // Set when the editor closes from the keyboard: the button (disabled while it was open) takes focus back.
@@ -74,6 +76,7 @@ export function AtAGlance({ book, suggest, ebook, onMarkRead, onProgress }: Prop
         )}
       </dl>
       {suggest}
+      {whereItIs}
       {book.lentTo !== null && (
         <p>{book.lentOn !== null ? `Lent to ${book.lentTo} on ${formatDay(book.lentOn)}` : `Lent to ${book.lentTo}`}</p>
       )}

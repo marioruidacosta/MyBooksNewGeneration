@@ -9,6 +9,8 @@ type Fields = Record<string, unknown>
 const str = (f: Fields, k: string): string | null => (typeof f[k] === 'string' ? (f[k] as string) : null)
 const num = (f: Fields, k: string): number | null =>
   typeof f[k] === 'number' && Number.isFinite(f[k]) ? Math.trunc(f[k] as number) : null
+const float = (f: Fields, k: string): number | null =>
+  typeof f[k] === 'number' && Number.isFinite(f[k]) ? (f[k] as number) : null
 const isDeleted = (f: Fields): boolean => f.deleted === true
 
 function splitTags(text: string): string[] {
@@ -42,6 +44,8 @@ export function rowToBook(row: SyncRow): Book {
     seriesNumber: str(f, 'series_number'),
     lentTo: str(f, 'lent_to'),
     lentOn: num(f, 'lent_on'),
+    shelfId: str(f, 'shelf_id'),
+    shelfPosition: float(f, 'shelf_position'),
     deleted: isDeleted(f),
   }
 }
@@ -55,7 +59,7 @@ export function bookToFields(b: Book): Fields {
     date_added: b.dateAdded, date_read: b.dateRead, date_started: b.dateStarted,
     current_page: b.currentPage, progress_percent: b.progressPercent, review: b.review,
     tags: b.tags.join(TAG_SEPARATOR), series: b.series, series_number: b.seriesNumber,
-    lent_to: b.lentTo, lent_on: b.lentOn, deleted: b.deleted,
+    lent_to: b.lentTo, lent_on: b.lentOn, shelf_id: b.shelfId, shelf_position: b.shelfPosition, deleted: b.deleted,
   }
 }
 

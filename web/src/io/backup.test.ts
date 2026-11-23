@@ -12,7 +12,7 @@ const book = (id: string, over: Partial<Book> = {}): Book => ({
   id, isbn: null, title: 'T', authors: 'A', publisher: null, publishedYear: null, pageCount: null, coverUrl: null,
   description: null, status: 'TO_READ', rating: null, notes: '', dateAdded: 5, dateRead: null, dateStarted: null,
   currentPage: null, progressPercent: null, review: '', tags: [], series: null, seriesNumber: null, lentTo: null,
-  lentOn: null, deleted: false, ...over,
+  lentOn: null, shelfId: null, shelfPosition: null, deleted: false, ...over,
 })
 
 describe('parseBackup', () => {
@@ -84,14 +84,14 @@ describe('writeBackup', () => {
     expect([...entries['covers/b1.jpg']]).toEqual([7, 8])
     const file = JSON.parse(strFromU8(entries['library.json'])) as Record<string, unknown>
     // The app's BackupFile, in its order.
-    expect(Object.keys(file)).toEqual(['version', 'exportedAt', 'books', 'challenges', 'hiddenSuggestions'])
+    expect(Object.keys(file)).toEqual(['version', 'exportedAt', 'books', 'challenges', 'hiddenSuggestions', 'bookcases'])
     expect(file).toMatchObject({ version: 1, exportedAt: 1_700_000_000_000, challenges: [{ year: 2025, goal: 20 }], hiddenSuggestions: [] })
     const written = file.books as Record<string, unknown>[]
     // The app's BackupBook, in its order (the id is not part of it).
     expect(Object.keys(written[0])).toEqual([
       'isbn', 'title', 'authors', 'publisher', 'publishedYear', 'pageCount', 'coverUrl', 'description', 'status', 'rating',
       'notes', 'dateAdded', 'dateRead', 'dateStarted', 'currentPage', 'progressPercent', 'review', 'shareId',
-      'shareExcluded', 'tags', 'series', 'seriesNumber', 'lentTo', 'lentOn', 'quotes', 'ebook', 'bookmarks',
+      'shareExcluded', 'tags', 'series', 'seriesNumber', 'lentTo', 'lentOn', 'shelfId', 'shelfPosition', 'quotes', 'ebook', 'bookmarks',
     ])
     expect(written[0]).toMatchObject({
       coverUrl: 'cover:b1.jpg', status: 'READ', rating: 4, tags: ['a'], shareId: null, shareExcluded: false, ebook: null,

@@ -15,6 +15,7 @@ class FakeEbookDao : EbookDao {
     override fun observe(bookId: Long): Flow<EbookEntity?> = rows.map { it[bookId]?.takeIf { e -> !e.deleted } }
     override suspend fun get(bookId: Long) = rows.value[bookId]?.takeIf { !it.deleted }
     override suspend fun getAll() = rows.value.values.filter { !it.deleted }.sortedBy { it.bookId }
+    override fun observeBookIds(): Flow<List<Long>> = rows.map { m -> m.values.filter { !it.deleted }.map { it.bookId } }
     override suspend fun getAllAny() = rows.value.values.sortedBy { it.bookId }
     override suspend fun getByUuid(uuid: String) = rows.value.values.firstOrNull { it.uuid == uuid }
     /** Makes the next saves fail, like a database error. */

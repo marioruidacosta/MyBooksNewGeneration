@@ -7,6 +7,7 @@ import { allTags, STATUS_LABELS } from '../library/filters'
 import { supabase } from '../supabase'
 import { BookCommunity, SuggestToFriend } from '../community/BookCommunity'
 import { SharingSection } from '../community/SharingSection'
+import { WhereItIs } from '../physical/WhereItIs'
 import { useIsShared } from '../share/SharingContext'
 import { STATUSES, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
@@ -27,6 +28,8 @@ type Props = {
   owner: string
   id: string
   onBack?: () => void
+  onOpenShelf?: (shelfId: string) => void
+  onAddBookcase?: () => void
   /** Where cover photos go; the real storage unless a test brings its own. */
   storage?: CoverStorage
   /** Makes a picture fit the bucket; the browser's canvas unless a test brings its own. */
@@ -59,7 +62,7 @@ const ebookLine = (e: Ebook) =>
   [e.fileName, e.format, e.size !== null ? `${String(Math.max(1, Math.round(e.size / 1024)))} KB` : null].filter(Boolean).join(', ') || 'Yes'
 
 /** One book: every field saved as focus leaves it, status and score, quotes and the cover. */
-export function BookPage({ store, owner, id, onBack, storage = supabase.storage, shrink = shrinkToJpeg }: Props) {
+export function BookPage({ store, owner, id, onBack, onOpenShelf, onAddBookcase, storage = supabase.storage, shrink = shrinkToJpeg }: Props) {
   const book = useSyncExternalStore(store.subscribe, () => store.book(id))
   const [coverLink, setCoverLink] = useState('')
   const [coverError, setCoverError] = useState<string | null>(null)
@@ -217,6 +220,7 @@ export function BookPage({ store, owner, id, onBack, storage = supabase.storage,
           <AtAGlance
             book={book}
             suggest={<SuggestToFriend key={id} book={book} />}
+            whereItIs={<WhereItIs key={id} store={store} book={book} onOpenShelf={onOpenShelf} onAddBookcase={onAddBookcase} />}
             ebook={ebook ? ebookLine(ebook) : null}
             onMarkRead={() => edit(statusChange(book, 'READ', Date.now()))}
             onProgress={(input) => edit(progressChange(book, input))}

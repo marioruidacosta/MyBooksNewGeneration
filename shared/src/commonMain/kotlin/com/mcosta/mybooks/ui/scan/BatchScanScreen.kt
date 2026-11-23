@@ -97,7 +97,7 @@ fun BatchScanScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Scan several") },
+                title = { Text(if (viewModel.scanningOntoShelf) "Scan onto this shelf" else "Scan several") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
             )
         },
@@ -105,16 +105,20 @@ fun BatchScanScreen(
         LazyColumn(Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
             item {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Add the books to", style = MaterialTheme.typography.labelLarge)
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        val shelves = listOf(ReadingStatus.TO_READ, ReadingStatus.WISHLIST)
-                        for ((i, shelf) in shelves.withIndex()) {
-                            SegmentedButton(
-                                selected = state.status == shelf,
-                                onClick = { viewModel.setStatus(shelf) },
-                                shape = SegmentedButtonDefaults.itemShape(i, shelves.size),
-                                label = { Text(shelf.label()) },
-                            )
+                    if (viewModel.scanningOntoShelf) {
+                        Text("Scan the books from left to right.", style = MaterialTheme.typography.bodyLarge)
+                    } else {
+                        Text("Add the books to", style = MaterialTheme.typography.labelLarge)
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            val shelves = listOf(ReadingStatus.TO_READ, ReadingStatus.WISHLIST)
+                            for ((i, shelf) in shelves.withIndex()) {
+                                SegmentedButton(
+                                    selected = state.status == shelf,
+                                    onClick = { viewModel.setStatus(shelf) },
+                                    shape = SegmentedButtonDefaults.itemShape(i, shelves.size),
+                                    label = { Text(shelf.label()) },
+                                )
+                            }
                         }
                     }
                     Button(onClick = { scanning = true }, enabled = !scanning, modifier = Modifier.fillMaxWidth()) {
@@ -124,6 +128,8 @@ fun BatchScanScreen(
                     Text(
                         when {
                             state.items.isEmpty() -> "The scanner opens again after each book. Press Back in the scanner to stop."
+                            viewModel.scanningOntoShelf && state.placed == 1 -> "1 book placed"
+                            viewModel.scanningOntoShelf -> "${state.placed} books placed"
                             state.added == 1 -> "1 book added"
                             else -> "${state.added} books added"
                         },
@@ -153,11 +159,13 @@ private fun ScanRow(item: ScanItem, onUndo: () -> Unit, onRetry: () -> Unit, onA
         is ScanResult.Added -> result.book
         is ScanResult.AlreadyHave -> result.book
         is ScanResult.Undone -> result.book
+        is ScanResult.Placed -> result.book
+        is ScanResult.AlreadyOnShelf -> result.book
         else -> null
     }
     Row(
         Modifier.fillMaxWidth()
-            .clickable(enabled = result is ScanResult.Added || result is ScanResult.AlreadyHave) { book?.let { onOpenBook(it.id) } }
+            .clickable(enabled = result is ScanResult.Added || result is ScanResult.AlreadyHave || result is ScanResult.Placed || result is ScanResult.AlreadyOnShelf) { book?.let { onOpenBook(it.id) } }
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -175,11 +183,13 @@ private fun ScanRow(item: ScanItem, onUndo: () -> Unit, onRetry: () -> Unit, onA
                     is ScanResult.AlreadyHave -> "Already in ${result.book.status.label()}"
                     ScanResult.NotFound -> "Not found in the book databases"
                     is ScanResult.Failed -> "Couldn't look it up (${result.reason})"
-                    is ScanResult.Undone -> "Not added"
+                    is ScanResult.Undone -> "Undone"
+                    is ScanResult.Placed -> "On this shelf"
+                    is ScanResult.AlreadyOnShelf -> "Already on this shelf"
                 },
                 style = MaterialTheme.typography.labelMedium,
                 color = when (result) {
-                    is ScanResult.Added -> MaterialTheme.colorScheme.primary
+                    is ScanResult.Added, is ScanResult.Placed -> MaterialTheme.colorScheme.primary
                     ScanResult.NotFound, is ScanResult.Failed -> MaterialTheme.colorScheme.error
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
@@ -187,7 +197,7 @@ private fun ScanRow(item: ScanItem, onUndo: () -> Unit, onRetry: () -> Unit, onA
         }
         when (result) {
             ScanResult.Looking -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            is ScanResult.Added -> TextButton(onClick = onUndo) { Text("Undo") }
+            is ScanResult.Added, is ScanResult.Placed -> TextButton(onClick = onUndo) { Text("Undo") }
             ScanResult.NotFound -> TextButton(onClick = onAddManually) { Text("Add by hand") }
             is ScanResult.Failed -> TextButton(onClick = onRetry) { Text("Retry") }
             else -> Unit

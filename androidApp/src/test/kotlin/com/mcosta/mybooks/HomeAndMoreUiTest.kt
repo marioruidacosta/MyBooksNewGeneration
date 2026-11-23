@@ -78,7 +78,7 @@ class HomeAndMoreUiTest {
     fun moreOpensBookNewsAndSettings() {
         val opened = mutableListOf<String>()
         compose.setContent {
-            MyBooksTheme { MoreScreen(onOpenNews = { opened += "news" }, onOpenSettings = { opened += "settings" }) }
+            MyBooksTheme { MoreScreen(onOpenPhysical = {}, onOpenNews = { opened += "news" }, onOpenSettings = { opened += "settings" }) }
         }
         compose.onNodeWithText("Book news").performClick()
         compose.onNodeWithText("Settings").performClick()

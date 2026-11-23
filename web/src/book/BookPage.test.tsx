@@ -27,7 +27,7 @@ function book(over: Partial<Book> = {}): Book {
     id: '1', isbn: null, title: 'Blindness', authors: 'José Saramago', publisher: null, publishedYear: null,
     pageCount: null, coverUrl: null, description: null, status: 'TO_READ', rating: null, notes: '', dateAdded: 7,
     dateRead: null, dateStarted: null, currentPage: null, progressPercent: null, review: '', tags: [], series: null,
-    seriesNumber: null, lentTo: null, lentOn: null, deleted: false, ...over,
+    seriesNumber: null, lentTo: null, lentOn: null, shelfId: null, shelfPosition: null, deleted: false, ...over,
   }
 }
 
@@ -550,6 +550,29 @@ describe('BookPage', () => {
     expect(within(glance).getByRole('button', { name: "I'm on page…" })).toBeInTheDocument()
     expect(within(glance).getByRole('button', { name: 'Mark as read' })).toBeInTheDocument()
   }, T)
+
+  it('atAGlanceKeepsItsOrder', () => {
+    render(
+      <AtAGlance
+        book={book({ status: 'READING', dateStarted: new Date(2026, 9, 27).getTime(), tags: ['nobel'] })}
+        suggest={<button type="button">Suggest to a friend</button>}
+        whereItIs={<button type="button">Where it is</button>}
+        ebook={null}
+        onMarkRead={() => {}}
+        onProgress={() => {}}
+      />,
+    )
+    const inOrder = [
+      screen.getByText('Started'),
+      screen.getByRole('button', { name: 'Suggest to a friend' }),
+      screen.getByRole('button', { name: 'Where it is' }),
+      screen.getByRole('button', { name: "I'm on page…" }),
+      screen.getByRole('list', { name: 'Book tags' }),
+    ]
+    for (let i = 1; i < inOrder.length; i++) {
+      expect(inOrder[i - 1].compareDocumentPosition(inOrder[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
+  })
 
   it('atAGlanceGoesDatesThenSuggestThenPageThenTags', () => {
     render(
