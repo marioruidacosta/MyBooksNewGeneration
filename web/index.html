@@ -16,10 +16,14 @@
       // The chosen look before the first paint, so a Night page never flashes light (src/appearance.ts keeps the rule,
       // and the colours of themeColor() there).
       try {
-        var paper = localStorage.getItem('mybooks.theme') === 'paper'
-        document.documentElement.dataset.theme = paper ? 'paper' : 'night'
+        var look = localStorage.getItem('mybooks.theme')
+        var papers = { night: '#0f1c18', sepia: '#f3e9d2', midnight: '#0e1522', sage: '#eef1e6', bordeaux: '#1c0f13' }
+        if (look !== 'paper' && !Object.prototype.hasOwnProperty.call(papers, look)) look = 'night'
+        var palette = look === 'midnight' || look === 'bordeaux'
+        document.documentElement.dataset.theme = palette ? 'night' : look
+        if (palette) document.documentElement.dataset.palette = look
         var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-        document.querySelector('meta[name="theme-color"]').setAttribute('content', paper ? (dark ? '#16130f' : '#fbf7f0') : '#0f1c18')
+        document.querySelector('meta[name="theme-color"]').setAttribute('content', papers[look] || (dark ? '#16130f' : '#fbf7f0'))
       } catch (e) {
         document.documentElement.dataset.theme = 'night'
       }

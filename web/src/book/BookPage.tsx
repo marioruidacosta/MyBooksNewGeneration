@@ -13,7 +13,9 @@ import { STATUSES, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { BOOK_LIMITS, tooLongMessage } from '../sync/limits'
 import { formatDay } from '../text/dates'
+import { usePhone } from '../ui/usePhone'
 import { AtAGlance } from './AtAGlance'
+import { CoverSlider } from './CoverSlider'
 import { DateField } from './DateField'
 import { Field } from './Field'
 import { parseWhole } from './parse'
@@ -32,6 +34,8 @@ type Props = {
   backLabel?: string
   onOpenShelf?: (shelfId: string) => void
   onAddBookcase?: () => void
+  /** Opens another book: the author's, from the phone's cover slider. */
+  onOpenBook?: (id: string) => void
   /** Where cover photos go; the real storage unless a test brings its own. */
   storage?: CoverStorage
   /** Makes a picture fit the bucket; the browser's canvas unless a test brings its own. */
@@ -64,8 +68,10 @@ const ebookLine = (e: Ebook) =>
   [e.fileName, e.format, e.size !== null ? `${String(Math.max(1, Math.round(e.size / 1024)))} KB` : null].filter(Boolean).join(', ') || 'Yes'
 
 /** One book: every field saved as focus leaves it, status and score, quotes and the cover. */
-export function BookPage({ store, owner, id, onBack, backLabel = 'Back to the library', onOpenShelf, onAddBookcase, storage = supabase.storage, shrink = shrinkToJpeg }: Props) {
+export function BookPage({ store, owner, id, onBack, backLabel = 'Back to the library', onOpenShelf, onAddBookcase, onOpenBook, storage = supabase.storage, shrink = shrinkToJpeg }: Props) {
   const book = useSyncExternalStore(store.subscribe, () => store.book(id))
+  const books = useSyncExternalStore(store.subscribe, () => store.books())
+  const phone = usePhone()
   const [coverLink, setCoverLink] = useState('')
   const [coverError, setCoverError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -180,7 +186,11 @@ export function BookPage({ store, owner, id, onBack, backLabel = 'Back to the li
                 {backLabel}
               </button>
             )}
-            <CoverImage book={book} className="cover-large" />
+            {phone ? (
+              <CoverSlider key={book.id} book={book} books={books} onOpenBook={onOpenBook} />
+            ) : (
+              <CoverImage book={book} className="cover-large" />
+            )}
             <div className="book-hero__text">
               <h1>{book.title}</h1>
               {book.authors !== '' && <p className="book-hero__author">{book.authors}</p>}

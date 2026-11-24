@@ -270,6 +270,7 @@ function BookRoute() {
       backLabel={back.label}
       onOpenShelf={(shelfId) => void navigate({ to: '/physical/shelf/$shelfId', params: { shelfId } })}
       onAddBookcase={() => void navigate({ to: '/physical/new' })}
+      onOpenBook={(other) => void navigate({ to: '/book/$id', params: { id: other }, search: from ? { from } : {} })}
     />
   )
 }

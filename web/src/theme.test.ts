@@ -103,6 +103,15 @@ describe('phone layout rules', () => {
     expect(rule('.toolbar .toolbar__clear')).toMatch(/order: 1; grid-column: 1 \/ -1/)
   })
 
+  it('onAPhoneTheBookHeaderStacksAsInTheApp', () => {
+    // The cover slider on top, then the title and author centred under it.
+    const block = css.slice(css.lastIndexOf('@media (max-width: 52rem) {'))
+    const rule = (s: string) => block.slice(block.indexOf(`${s} {`), block.indexOf('}', block.indexOf(`${s} {`)))
+    expect(rule('.book-hero__inner')).toMatch(/grid-template-columns: minmax\(0, 1fr\)/)
+    expect(rule('.book-hero__text')).toMatch(/text-align: center/)
+    expect(rule('.book-hero__state')).toMatch(/justify-content: center/)
+  })
+
   it('onAPhoneTheBookCoverAlignsWithTheTopOfTheText', () => {
     const block = css.slice(css.lastIndexOf('@media (max-width: 52rem) {'))
     const rule = block.slice(block.indexOf('.book-hero__inner'), block.indexOf('}', block.indexOf('.book-hero__inner')))
@@ -125,6 +134,52 @@ describe('phone layout rules', () => {
     expect(css).not.toMatch(/\.shelf-progress--edit::after/)
   })
 })
+
+describe('the four extra looks', () => {
+  const looks = {
+    sepia: tokens(":root[data-theme='sepia'] {"),
+    sage: tokens(":root[data-theme='sage'] {"),
+    midnight: tokens(":root[data-theme='night'][data-palette='midnight'] {"),
+    bordeaux: tokens(":root[data-theme='night'][data-palette='bordeaux'] {"),
+  }
+
+  it('everyLookIsReadable', () => {
+    for (const [name, t] of Object.entries(looks)) {
+      for (const bg of ['--paper', '--paper-low', '--paper-deep']) {
+        expect(contrast(t['--ink'], t[bg]), `${name} ink on ${bg}`).toBeGreaterThanOrEqual(7)
+        expect(contrast(t['--ink-soft'], t[bg]), `${name} soft ink on ${bg}`).toBeGreaterThanOrEqual(4.5)
+        expect(contrast(t['--star-empty'], t[bg]), `${name} empty star on ${bg}`).toBeGreaterThanOrEqual(3)
+      }
+      expect(contrast(t['--rule-strong'], t['--paper']), `${name} field border`).toBeGreaterThanOrEqual(3)
+      expect(contrast(t['--on-teal'], t['--teal']), `${name} button text`).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(t['--on-teal-soft'], t['--teal-soft']), `${name} chosen item`).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(t['--teal'], t['--paper']), `${name} link`).toBeGreaterThanOrEqual(4.5)
+    }
+  })
+
+  it('sepiaAndSageStayLightWhateverTheSystemSays', () => {
+    expect(css).toMatch(/:root\[data-theme='sepia'\] \{\s*color-scheme: light;/)
+    expect(css).toMatch(/:root\[data-theme='sage'\] \{\s*color-scheme: light;/)
+  })
+
+  it('sepiaAndSageGetTheDarkStatusStripInTheInstalledApp', () => {
+    // Always light, so the white status text always needs it (Paper only when the system is light).
+    for (const look of ['sepia', 'sage']) {
+      const strip = inMediaOf('@media (display-mode: standalone) {', `[data-theme='${look}'] body::before`)
+      expect(strip, look).toMatch(/height:\s*env\(safe-area-inset-top\)/)
+    }
+  })
+})
+
+/** The declarations of the first rule naming [selector] inside the media block that starts with [media]. */
+function inMediaOf(media: string, selector: string): string {
+  const start = css.indexOf(media)
+  expect(start, media).toBeGreaterThanOrEqual(0)
+  const block = css.slice(start, css.indexOf('\n}\n', start))
+  const at = block.indexOf(selector)
+  expect(at, selector).toBeGreaterThanOrEqual(0)
+  return block.slice(block.indexOf('{', at) + 1, block.indexOf('}', at))
+}
 
 describe('the book page side column', () => {
   const declarations = (selector: string) => new RegExp(`(?:^|\\n)${selector.replace(/\./g, '\\.')} \\{([^}]*)\\}`).exec(css)?.[1] ?? ''

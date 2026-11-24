@@ -189,15 +189,21 @@ main.library-page { max-width: 90rem; }
 .library-title h1 { font-size: 2.75rem; }
 .counts { margin: 0.375rem 0 0; color: var(--ink-soft); font-size: 0.9375rem; }
 
-.goal-panel { display: grid; grid-template-columns: auto 12rem; align-items: center; gap: 0.375rem 1rem; }
-.goal { flex-direction: row; align-items: center; gap: 0.5rem; grid-row: span 2; }
+/* As the app's challenge card: title, "22 of 25 books" with the per cent, the bar, the pace; then the goal itself. */
+.goal-panel { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.375rem 1rem; width: min(100%, 22rem); }
+.goal-title { margin: 0; font-size: 1.125rem; }
+.goal-count { display: flex; justify-content: space-between; gap: 1rem; margin: 0; }
+.goal-count > :last-child { color: var(--ink-soft); font-size: 0.875rem; }
+.goal-pace { margin: 0; color: var(--ink-soft); font-size: 0.875rem; }
+.goal-count, .goal-panel .goal-bar, .goal-pace { grid-column: 1 / -1; }
+/* The goal itself sits on the title's row, keeping the panel short. */
+.goal { grid-column: 2; grid-row: 1; flex-direction: row; align-items: center; gap: 0.5rem; }
 .goal > span { white-space: nowrap; }
 .goal input { width: 4.5rem; }
 .goal-bar, .shelf-progress {
   display: block; height: 0.375rem; border-radius: 999px; overflow: hidden; background: var(--paper-deeper);
 }
 .goal-bar > span, .shelf-progress > span { display: block; height: 100%; background: var(--teal); border-radius: inherit; }
-.read-count { color: var(--ink-soft); font-size: 0.8125rem; grid-column: 2; }
 
 /* Reading now: the covers stand on a shelf, as in the phone's widget. */
 .shelf { margin: 2.25rem 0 0.5rem; }
@@ -365,6 +371,45 @@ main.book-page { max-width: none; padding: 0; --cloth: #3e4a5c; }
 .book-hero .back:hover:not(:disabled) { background: rgb(255 255 255 / 0.1); }
 .cover-large { display: flex; width: 13rem; height: 19.5rem; box-shadow: 0 2px 2px rgb(0 0 0 / 0.25), 6px 18px 36px -12px rgb(0 0 0 / 0.7); }
 .book-hero .cover-large { margin-bottom: -4.5rem; position: relative; z-index: 1; animation: settle 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+/* The phone's cover slider: cover, details, author, swiped sideways (the browser's own swipe), three dots under it. */
+.cover-slider { display: grid; gap: 0.125rem; min-width: 0; }
+.cover-slider__track {
+  display: flex; overflow-x: auto; scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none;
+}
+.cover-slider__track::-webkit-scrollbar { display: none; }
+.cover-slider__panel {
+  flex: 0 0 100%; min-width: 0; height: 14.0625rem; scroll-snap-align: center;
+  display: flex; justify-content: center; align-items: center; overflow-y: auto;
+}
+.cover-slider__panel--top { align-items: flex-start; }
+.cover-details { display: grid; gap: 0.375rem; width: min(100%, 19rem); margin: 0; font-size: 0.9375rem; text-align: left; }
+.cover-details > div { display: grid; grid-template-columns: 5.25rem minmax(0, 1fr); gap: 0.75rem; }
+.cover-details dt { opacity: 0.75; }
+.cover-details dd { margin: 0; overflow-wrap: anywhere; }
+.author-panel { display: grid; gap: 0.375rem; width: min(100%, 20rem); font-size: 0.875rem; text-align: left; }
+.author-panel p { margin: 0; }
+.author-panel__head { display: flex; align-items: center; gap: 0.75rem; }
+.author-panel__head img { width: 3.5rem; height: 3.5rem; flex: none; border-radius: 50%; object-fit: cover; }
+.author-panel__head strong { display: block; font-family: var(--serif); font-size: 1.0625rem; }
+.author-panel__head span, .author-panel__wait { opacity: 0.75; }
+.author-panel a { color: inherit; font-size: 0.8125rem; justify-self: start; }
+.author-panel__library { font-weight: 600; margin-top: 0.25rem !important; }
+.author-panel ul { list-style: none; margin: 0; padding: 0; }
+.author-panel li button {
+  display: flex; justify-content: space-between; gap: 0.5rem; width: 100%; padding: 0.375rem 0;
+  border: 0; border-radius: 0; background: none; color: inherit; font: inherit; text-align: left;
+}
+.author-panel li button > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.author-panel li button > :last-child { flex: none; opacity: 0.75; }
+.author-panel li button:hover:not(:disabled) { background: none; text-decoration: underline; }
+.cover-dots { display: flex; justify-content: center; }
+.cover-dots button {
+  display: grid; place-items: center; width: 2.75rem; height: 1.75rem; padding: 0; border: 0; background: none; color: inherit;
+}
+.cover-dots button::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.35; }
+.cover-dots button[aria-selected='true']::before { opacity: 1; }
+.cover-dots button:hover:not(:disabled) { background: none; }
 @keyframes settle {
   from { opacity: 0; transform: translateY(10px) rotate(-1.5deg); }
   to { opacity: 1; transform: none; }
@@ -622,6 +667,82 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
 [data-theme='night'] .spines { box-shadow: var(--book-shadow), 0 -30px 60px -20px rgb(255 196 110 / 0.25); }
 [data-theme='night'] .import-preview { border-left-color: var(--teal); }
 
+/* ---------- Four more looks ---------- */
+
+/* Sepia (a printed page under a lamp) and Sage (a garden reading room): light whatever the system says. */
+:root[data-theme='sepia'] {
+  color-scheme: light;
+  --paper: #f3e9d2; --paper-low: #ede1c6; --paper-deep: #e8dabd; --paper-deeper: #dfcfae; --field: #fbf5e6;
+  --ink: #3a2a1c; --ink-soft: #6b5843; --rule: #cdbb98; --rule-strong: #8a7558; --star-empty: #8a7558;
+  --teal: #8b2e2a; --on-teal: #fff7ec; --teal-soft: #e9d3a6; --on-teal-soft: #3a2612;
+  --gold: #a07c1c; --error: #a3241c;
+  --status-reading: #2f5d50; --status-to-read: #8a5a1c; --status-read: #33506b; --status-wishlist: #5b4a6e;
+  --book-shadow: 0 1px 1px rgb(58 42 28 / 0.25), 3px 8px 18px -8px rgb(58 42 28 / 0.6);
+}
+:root[data-theme='sage'] {
+  color-scheme: light;
+  --paper: #eef1e6; --paper-low: #e8ecdf; --paper-deep: #e4e9d9; --paper-deeper: #d9e0cb; --field: #f8faf3;
+  --ink: #22302a; --ink-soft: #56645b; --rule: #c3cdb6; --rule-strong: #77846f; --star-empty: #77846f;
+  --teal: #a44a26; --on-teal: #fff8f2; --teal-soft: #d3e0c6; --on-teal-soft: #1f3326;
+  --gold: #8c7a2b; --error: #a3241c;
+  --status-reading: #2f5d50; --status-to-read: #8a5a1c; --status-read: #33506b; --status-wishlist: #5b4a6e;
+  --book-shadow: 0 1px 1px rgb(34 48 42 / 0.22), 3px 8px 18px -8px rgb(34 48 42 / 0.5);
+}
+[data-theme='sepia'] body {
+  background: radial-gradient(70rem 40rem at 10% -10rem, rgb(255 236 190 / 0.7), transparent 70%), var(--paper);
+  background-attachment: fixed;
+}
+[data-theme='sage'] body {
+  background: radial-gradient(70rem 40rem at 10% -10rem, rgb(255 255 240 / 0.8), transparent 70%), var(--paper);
+  background-attachment: fixed;
+}
+[data-theme='sepia'] :is(.wordmark, .book-section legend, .book-section h2, .glance h2, .where-it-is h3) { color: #6e2420; }
+[data-theme='sage'] :is(.wordmark, .book-section legend, .book-section h2, .glance h2, .where-it-is h3) { color: #2f4a3c; }
+[data-theme='sepia'] button.star.star--on { color: #b8892e; }
+[data-theme='sage'] button.star.star--on { color: #8c7a2b; }
+
+/* Midnight (ink blue) and Bordeaux (wine): Night's room in other colours. data-theme stays night, so every Night rule
+ * applies; data-palette brings the colours, and these replace the few that Night writes out. */
+:root[data-theme='night'][data-palette='midnight'] {
+  --paper: #0e1522; --paper-low: #121b2b; --paper-deep: #172236; --paper-deeper: #1d2a42; --field: #0a101b;
+  --ink: #e9ecf2; --ink-soft: #a3aec0; --rule: #24314a; --rule-strong: #5a6782; --star-empty: #7d8aa3;
+  --teal: #d9a54a; --on-teal: #1b1305; --teal-soft: #2b3448; --on-teal-soft: #f0d9a0; --gold: #e8c06a;
+  --status-reading: #7fc4c0; --status-to-read: #d9a54a; --status-read: #9db8e0; --status-wishlist: #c3a6dd;
+}
+:root[data-theme='night'][data-palette='bordeaux'] {
+  --paper: #1c0f13; --paper-low: #22131a; --paper-deep: #27151b; --paper-deeper: #321b23; --field: #150a0e;
+  --ink: #f3e6e2; --ink-soft: #bfa6a6; --rule: #3a222a; --rule-strong: #7a5a63; --star-empty: #8f7178;
+  --teal: #d6a757; --on-teal: #1c0f05; --teal-soft: #46291f; --on-teal-soft: #ebc9a8; --gold: #e2b866;
+  --status-reading: #8cc7a8; --status-to-read: #d6a757; --status-read: #a9bde0; --status-wishlist: #d4a8d8;
+}
+[data-theme='night'][data-palette='midnight'] body {
+  background: radial-gradient(70rem 40rem at 12% -12rem, rgb(150 175 230 / 0.1), transparent 70%), var(--paper);
+  background-attachment: fixed;
+}
+[data-theme='night'][data-palette='bordeaux'] body {
+  background: radial-gradient(70rem 40rem at 12% -12rem, rgb(214 120 110 / 0.1), transparent 70%), var(--paper);
+  background-attachment: fixed;
+}
+[data-theme='night'][data-palette='midnight'] :is(
+  .wordmark, .app-bar nav a[aria-current='page'], .app-bar nav a[data-status='active'], .book-section legend,
+  .book-section h2, .glance h2, .where-it-is h3, .quote-day blockquote, .news-title a:hover,
+  .bottom-bar button[data-current='true'], .bottom-bar button[aria-expanded='true']
+) { color: #f0d9a0; }
+[data-theme='night'][data-palette='bordeaux'] :is(
+  .wordmark, .app-bar nav a[aria-current='page'], .app-bar nav a[data-status='active'], .book-section legend,
+  .book-section h2, .glance h2, .where-it-is h3, .quote-day blockquote, .news-title a:hover,
+  .bottom-bar button[data-current='true'], .bottom-bar button[aria-expanded='true']
+) { color: #ebc9a8; }
+[data-theme='night'][data-palette='midnight'] :is(h1, .book-hero h1) { color: #f1f3f8; text-shadow: 0 0 40px rgb(150 175 230 / 0.18); }
+[data-theme='night'][data-palette='bordeaux'] :is(h1, .book-hero h1) { color: #fbefea; text-shadow: 0 0 40px rgb(214 120 110 / 0.2); }
+[data-theme='night'][data-palette] :is(input, select, textarea) { border-color: var(--rule-strong); }
+[data-theme='night'][data-palette] .field textarea { background: var(--field); }
+[data-theme='night'][data-palette] :is(button.chip, .tag-chip, .news-calendar) { background: var(--paper-low); border-color: var(--rule); }
+[data-theme='night'][data-palette] :is(.goal-bar, .shelf-progress) { background: var(--paper-deeper); }
+[data-theme='night'][data-palette] .library-table th { color: var(--ink-soft); }
+[data-theme='night'][data-palette] .library-table td { border-bottom-color: var(--rule); }
+[data-theme='night'][data-palette] :is(.library-table td a, .news-title a) { color: var(--ink); }
+
 /* ---------- The quote of the day ---------- */
 
 /* Behind the text, never in the way: it takes no clicks (but its credit) and sits under every line of text. */
@@ -649,8 +770,8 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
 /* Library: the empty right-hand side of the band that holds the header and the shelf, and no further. */
 @media (min-width: 52rem) {
   .library-band { overflow: hidden; min-height: 17rem; margin-inline: -0.5rem; padding-inline: 0.5rem; padding-bottom: 0.5rem; }
-  /* Below the header's goal panel (the top 6rem of the band), so the portrait never sits under it. */
-  .quote-day--library { position: absolute; top: 6rem; right: 1rem; width: 34rem; height: calc(100% - 6rem); z-index: -1; display: flex; flex-direction: column; justify-content: center; padding-right: 1rem; }
+  /* Below the header's reading challenge (the top 7.5rem of the band), so the portrait never sits under it. */
+  .quote-day--library { position: absolute; top: 7.5rem; right: 1rem; width: 34rem; height: calc(100% - 7.5rem); z-index: -1; display: flex; flex-direction: column; justify-content: center; padding-right: 1rem; }
   .quote-day--library .quote-day__portrait { right: -1rem; }
   .quote-day--library blockquote, .quote-day--library figcaption { max-width: 20rem; }
 }
@@ -791,8 +912,11 @@ button.chip[aria-pressed='true'], [data-theme='night'] button.chip[aria-pressed=
   .app-bar { padding: calc(0.625rem + env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 0.625rem max(1rem, env(safe-area-inset-left)); gap: 1rem; flex-wrap: wrap; }
   .app-bar nav { order: 3; flex-basis: 100%; gap: 1.25rem; overflow-x: auto; }
   .library-title h1 { font-size: 2.25rem; }
-  .book-hero__inner { align-items: start; grid-template-columns: 8rem 1fr; column-gap: 1.25rem; padding: 1rem max(1rem, env(safe-area-inset-right)) 2rem max(1rem, env(safe-area-inset-left)); }
-  .cover-large { width: 8rem; height: 12rem; }
+  /* As the app: the cover slider on top, then the title and author centred under it. */
+  .book-hero__inner { align-items: start; grid-template-columns: minmax(0, 1fr); row-gap: 0.75rem; padding: 1rem max(1rem, env(safe-area-inset-right)) 2rem max(1rem, env(safe-area-inset-left)); }
+  .book-hero__text { text-align: center; }
+  .book-hero__state { justify-content: center; }
+  .cover-large { width: 9.375rem; height: 14.0625rem; }
   .book-hero .cover-large { margin-bottom: 0; }
   .book-body { padding: 1.5rem max(1rem, env(safe-area-inset-right)) 3rem max(1rem, env(safe-area-inset-left)); grid-template-columns: minmax(0, 1fr); row-gap: 2.75rem; }
   .glance { position: static; margin-top: 0; max-height: none; overflow: visible; }
@@ -918,6 +1042,13 @@ html, body { overscroll-behavior-y: none; }
  * white on cream: a dark strip, as tall as the status bar, sits behind it. Night and dark Paper are dark already. */
 @media (display-mode: standalone) and (prefers-color-scheme: light) {
   :root[data-theme='paper'] body::before {
+    content: ''; position: fixed; z-index: 30; top: 0; left: 0; right: 0; height: env(safe-area-inset-top);
+    background: #1e1b16; pointer-events: none;
+  }
+}
+/* Sepia and Sage are light whatever the system says, so they always need the strip. */
+@media (display-mode: standalone) {
+  :root[data-theme='sepia'] body::before, :root[data-theme='sage'] body::before {
     content: ''; position: fixed; z-index: 30; top: 0; left: 0; right: 0; height: env(safe-area-inset-top);
     background: #1e1b16; pointer-events: none;
   }
