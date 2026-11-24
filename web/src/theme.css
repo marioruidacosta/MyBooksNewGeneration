@@ -402,7 +402,7 @@ button.star.star--on { color: #f0d27a; }
   font-size: 0.875rem; color: var(--ink-soft);
   max-height: calc(100vh - 4.5rem); max-height: calc(100dvh - 4.5rem); overflow: auto;
 }
-.glance h2 { margin: 0; font-size: 1.125rem; }
+.glance h2 { margin: 0; font-size: 1.375rem; line-height: 1.5; }
 .glance p { margin: 0; }
 .glance__progress { display: grid; gap: 0.375rem; }
 .glance__facts { margin: 0; display: grid; gap: 0.25rem; }
@@ -606,7 +606,7 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
 [data-theme='night'] .book-hero h1 { color: #fbf3e2; text-shadow: 0 2px 30px rgb(255 196 110 / 0.25); }
 [data-theme='night'] .book-hero select { background: rgb(0 0 0 / 0.25); border-color: rgb(240 197 110 / 0.45); }
 [data-theme='night'] button.star.star--on { color: #f0c56e; text-shadow: 0 0 12px rgb(240 197 110 / 0.55); }
-[data-theme='night'] .book-section legend, [data-theme='night'] .book-section h2 { color: #f3dca6; }
+[data-theme='night'] .book-section legend, [data-theme='night'] .book-section h2, [data-theme='night'] .glance h2, [data-theme='night'] .where-it-is h3 { color: #f3dca6; }
 [data-theme='night'] .field textarea { background: #0c1714; }
 
 [data-theme='night'] .spines { box-shadow: var(--book-shadow), 0 -30px 60px -20px rgb(255 196 110 / 0.25); }
@@ -1150,7 +1150,7 @@ button.bookcase__shelf:hover:not(:disabled) { background: #2a1b10; }
 .shelf-picker button { width: 100%; min-height: 2.75rem; text-align: left; overflow-wrap: anywhere; }
 
 .where-it-is { display: grid; gap: 0.375rem; padding-top: 0.75rem; border-top: 1px solid var(--rule); }
-.where-it-is h3 { margin: 0; font-size: 1rem; }
+.where-it-is h3 { margin: 0; font-size: 1.375rem; line-height: 1.5; }
 .where-it-is p { margin: 0; color: var(--ink-soft); }
 .where-it-is__place { min-height: 2.75rem; padding: 0.25rem 0; text-align: left; overflow-wrap: anywhere; font-weight: 500; }
 .where-it-is__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
