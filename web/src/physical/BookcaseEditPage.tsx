@@ -138,7 +138,7 @@ export function BookcaseEditPage({ store, id, onDone }: { store: LibraryStore; i
           </div>
         )}
 
-        <BookcaseDrawing bookcase={draft} books={books} labels />
+        <BookcaseDrawing bookcase={draft} books={books} labels size="edit" />
 
         {!readOnly && (
           <button

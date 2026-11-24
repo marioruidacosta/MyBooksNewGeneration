@@ -121,10 +121,14 @@ describe('BookPage', () => {
     ]
     for (const [label, typed, field, value] of cases) {
       edit.mockClear()
+      // The percentage already holds what the current page set just before.
+      if (field === 'progress_percent') await user.clear(screen.getByLabelText(label))
       await user.type(screen.getByLabelText(label), typed)
       await user.tab()
       expect(edit, label).toHaveBeenCalledTimes(1)
-      expect(edit.mock.calls[0][2], label).toEqual({ [field]: value })
+      // The page also sets the percentage that follows from the 310 pages typed above.
+      const expected = field === 'current_page' ? { current_page: 12, progress_percent: 3 } : { [field]: value }
+      expect(edit.mock.calls[0][2], label).toEqual(expected)
     }
     const saved = store.book('1')!
     expect(saved.title).toBe('Blindness Ensaio')
@@ -536,7 +540,7 @@ describe('BookPage', () => {
 
   it('atAGlanceShowsProgressAndDates', async () => {
     const store = await open(book({
-      status: 'READING', pageCount: 248, currentPage: 132, progressPercent: 53, tags: ['nobel'],
+      status: 'READING', pageCount: 248, currentPage: 132, progressPercent: 53,
       dateStarted: new Date(2026, 9, 27).getTime(), lentTo: 'Carla', lentOn: new Date(2026, 2, 3).getTime(),
     }))
     show(store)
@@ -545,54 +549,43 @@ describe('BookPage', () => {
     expect(within(glance).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '53')
     expect(glance).toHaveTextContent('Page 132 of 248')
     expect(glance).toHaveTextContent('Started27 Oct 2026')
-    expect(glance).toHaveTextContent('nobel')
     expect(glance).toHaveTextContent('Lent to Carla on 3 Mar 2026')
-    expect(within(glance).getByRole('button', { name: "I'm on page…" })).toBeInTheDocument()
-    expect(within(glance).getByRole('button', { name: 'Mark as read' })).toBeInTheDocument()
+  }, T)
+
+  it('atAGlanceHasNoPageButtonTagsOrMarkAsRead', async () => {
+    const store = await open(book({ status: 'READING', pageCount: 200, tags: ['nobel'] }))
+    show(store)
+    const glance = screen.getByRole('complementary', { name: 'At a glance' })
+    expect(within(glance).queryByRole('button', { name: /on page/ })).not.toBeInTheDocument()
+    expect(within(glance).queryByRole('button', { name: 'Mark as read' })).not.toBeInTheDocument()
+    expect(within(glance).queryByRole('list', { name: 'Book tags' })).not.toBeInTheDocument()
+    expect(glance).not.toHaveTextContent('nobel')
   }, T)
 
   it('atAGlanceKeepsItsOrder', () => {
     render(
       <AtAGlance
-        book={book({ status: 'READING', dateStarted: new Date(2026, 9, 27).getTime(), tags: ['nobel'] })}
+        book={book({ status: 'READING', dateStarted: new Date(2026, 9, 27).getTime() })}
         suggest={<button type="button">Suggest to a friend</button>}
         whereItIs={<button type="button">Where it is</button>}
         ebook={null}
-        onMarkRead={() => {}}
-        onProgress={() => {}}
       />,
     )
     const inOrder = [
       screen.getByText('Started'),
       screen.getByRole('button', { name: 'Suggest to a friend' }),
       screen.getByRole('button', { name: 'Where it is' }),
-      screen.getByRole('button', { name: "I'm on page…" }),
-      screen.getByRole('list', { name: 'Book tags' }),
     ]
     for (let i = 1; i < inOrder.length; i++) {
       expect(inOrder[i - 1].compareDocumentPosition(inOrder[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     }
   })
 
-  it('atAGlanceGoesDatesThenSuggestThenPageThenTags', () => {
-    render(
-      <AtAGlance
-        book={book({ status: 'READING', dateStarted: new Date(2026, 9, 27).getTime(), tags: ['nobel'] })}
-        suggest={<button type="button">Suggest to a friend</button>}
-        ebook={null}
-        onMarkRead={() => {}}
-        onProgress={() => {}}
-      />,
-    )
-    const inOrder = [
-      screen.getByText('Started'),
-      screen.getByRole('button', { name: 'Suggest to a friend' }),
-      screen.getByRole('button', { name: "I'm on page…" }),
-      screen.getByRole('list', { name: 'Book tags' }),
-    ]
-    for (let i = 1; i < inOrder.length; i++) {
-      expect(inOrder[i - 1].compareDocumentPosition(inOrder[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    }
+  it('markAsReadIsInTheReadingSection', async () => {
+    const store = await open(book({ status: 'READING' }))
+    show(store)
+    const reading = screen.getByRole('group', { name: 'Reading' })
+    expect(within(reading).getByRole('button', { name: 'Mark as read' })).toBeInTheDocument()
   }, T)
 
   it('markAsReadSetsTheStatusAndDate', async () => {
@@ -605,32 +598,40 @@ describe('BookPage', () => {
 
     expect(store.book('1')).toMatchObject({ status: 'READ', dateStarted: 100, dateRead: 9_000_000 })
     expect(screen.queryByRole('button', { name: 'Mark as read' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: "I'm on page…" })).not.toBeInTheDocument()
   }, T)
 
-  it('imOnPageSavesTheProgress', async () => {
-    const store = await open(book({ status: 'READING', pageCount: 200 }))
-    const edit = vi.spyOn(store, 'edit')
-    const user = userEvent.setup({ delay: null })
-    show(store)
-
-    await user.click(screen.getByRole('button', { name: "I'm on page…" }))
-    await user.type(screen.getByLabelText('Current page of Blindness'), '50{Enter}')
-
-    // As the app's quick progress: the page, and the percentage that follows from the page count.
-    expect(edit).toHaveBeenCalledTimes(1)
-    expect(edit).toHaveBeenCalledWith('books', '1', { current_page: 50, progress_percent: 25 })
-    expect(screen.queryByLabelText('Current page of Blindness')).not.toBeInTheDocument()
-  }, T)
-
-  it('closingTheProgressEditorReturnsFocusToItsButton', async () => {
+  it('theCurrentPageAlsoSetsThePercentage', async () => {
     const store = await open(book({ status: 'READING', pageCount: 200 }))
     const user = userEvent.setup({ delay: null })
     show(store)
 
-    await user.click(screen.getByRole('button', { name: "I'm on page…" }))
-    await user.keyboard('50{Enter}')
-    expect(screen.getByRole('button', { name: "I'm on page…" })).toHaveFocus()
+    await user.type(screen.getByLabelText('Current page'), '50')
+    await user.tab()
+
+    expect(store.book('1')).toMatchObject({ currentPage: 50, progressPercent: 25 })
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '25')
+  }, T)
+
+  it('withoutAPageCountThePercentageIsKept', async () => {
+    const store = await open(book({ status: 'READING', progressPercent: 30 }))
+    const user = userEvent.setup({ delay: null })
+    show(store)
+
+    await user.type(screen.getByLabelText('Current page'), '50')
+    await user.tab()
+
+    expect(store.book('1')).toMatchObject({ currentPage: 50, progressPercent: 30 })
+  }, T)
+
+  it('clearingTheCurrentPageKeepsThePercentage', async () => {
+    const store = await open(book({ status: 'READING', pageCount: 200, currentPage: 50, progressPercent: 25 }))
+    const user = userEvent.setup({ delay: null })
+    show(store)
+
+    await user.clear(screen.getByLabelText('Current page'))
+    await user.tab()
+
+    expect(store.book('1')).toMatchObject({ currentPage: null, progressPercent: 25 })
   }, T)
 
   it('aCommittedFieldShowsSaved', async () => {
@@ -776,26 +777,5 @@ describe('BookPage', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Remove tag a' }))
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  }, T)
-
-  it('markAsReadWorksWhileThePageEditorIsOpen', async () => {
-    const store = await open(book({ status: 'READING', pageCount: 200 }))
-    const user = userEvent.setup({ delay: null })
-    show(store)
-
-    await user.click(screen.getByRole('button', { name: "I'm on page…" }))
-    const editor = screen.getByLabelText('Current page of Blindness')
-    const mark = screen.getByRole('button', { name: 'Mark as read' })
-    // The editor sits after the buttons, so closing it on blur moves nothing under the pointer.
-    expect(mark.compareDocumentPosition(editor) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    await user.click(mark)
-
-    expect(store.book('1')?.status).toBe('READ')
-    expect(screen.queryByLabelText('Current page of Blindness')).not.toBeInTheDocument()
-
-    // Leaving READING by the status box closes an open editor too.
-    await user.selectOptions(screen.getByLabelText('Status'), 'READING')
-    expect(screen.queryByLabelText('Current page of Blindness')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: "I'm on page…" })).toBeInTheDocument()
   }, T)
 })

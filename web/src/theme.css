@@ -409,8 +409,6 @@ button.star.star--on { color: #f0d27a; }
 .glance__facts > div { display: flex; justify-content: space-between; gap: 0.75rem; }
 .glance__facts dt { color: var(--ink-soft); }
 .glance__facts dd { margin: 0; color: var(--ink); font-weight: 500; }
-.glance__tags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.25rem; }
-.glance__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .glance__suggest button { width: 100%; }
 .book-form { display: grid; gap: 2.75rem; }
 fieldset.book-section { border: 0; margin: 0; padding: 0; min-width: 0; }
@@ -1007,6 +1005,8 @@ button.friends-reading__open { display: block; width: 100%; padding: 0; border: 
 .account-danger { padding-top: 1rem; border-top: 1px solid var(--rule); }
 
 .book-community { margin-top: 2rem; }
+.book-community:empty { display: none; }
+.reading-done { margin-top: 0.875rem; }
 .book-community__part { margin-top: 1.5rem; }
 .book-community h3 { font-size: 1.1875rem; margin: 0 0 0.625rem; }
 .book-community__quote { display: block; font-family: var(--serif); margin-top: 0.125rem; }
@@ -1097,33 +1097,33 @@ main.physical-page { max-width: 48rem; }
 
 .bookcase {
   --shelf: 4.5rem; --gap: 3px;
-  display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); gap: var(--gap); padding: 4px;
+  display: grid; grid-template-columns: repeat(var(--columns), minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr); gap: var(--gap); padding: 4px;
   height: calc(var(--shelf) * var(--rows) + var(--gap) * (var(--rows) - 1) + 8px); box-sizing: border-box;
-  border-radius: 3px; background: linear-gradient(180deg, #5b3a22, #3a2517); box-shadow: 0 5px 12px rgb(0 0 0 / 0.35);
+  border-radius: 3px; background: linear-gradient(180deg, #5b3a22, #3a2517);
 }
-.bookcase--mini { --shelf: 0.625rem; --gap: 1px; padding: 2px; height: calc(var(--shelf) * var(--rows) + var(--gap) * (var(--rows) - 1) + 4px); }
+.bookcase--card { --shelf: 2rem; }
+.bookcase--edit { --shelf: 2.75rem; }
+.bookcase--mini { --shelf: 0.75rem; --gap: 1px; padding: 2px; height: calc(var(--shelf) * var(--rows) + var(--gap) * (var(--rows) - 1) + 4px); }
 .bookcase__column { display: grid; grid-auto-rows: minmax(0, 1fr); gap: var(--gap); min-width: 0; }
 .bookcase__shelf {
   position: relative; display: flex; align-items: flex-end; gap: 1px; min-width: 0; padding: 0 2px; overflow: hidden;
-  background: #1c120b; border: 0; border-bottom: 3px solid #84583a; border-radius: 0; color: #f7f1e6;
+  background: #1c120b; border: 0; border-radius: 0; color: #f7f1e6;
 }
 button.bookcase__shelf:hover:not(:disabled) { background: #2a1b10; }
-.bookcase--mini .bookcase__shelf { border-bottom-width: 1px; padding: 0 1px; }
-.bookcase__shelf--on { outline: 2px solid var(--gold); outline-offset: -2px; }
+.bookcase__shelf--on { outline: 2px solid #d9a54a; outline-offset: -2px; }
 .spine {
   flex: none; display: flex; align-items: center; justify-content: center; overflow: hidden;
-  border-radius: 1px 1px 0 0; box-shadow: inset 1px 0 rgb(255 255 255 / 0.16), inset -1px 0 rgb(0 0 0 / 0.3);
+  border-radius: 1px 1px 0 0;
 }
-.bookcase--mini .spine { width: 3px !important; }
-.spine__title { writing-mode: vertical-rl; white-space: nowrap; color: #f7f1e6; font: 600 7px/1 var(--serif); }
+.spine__title { writing-mode: vertical-rl; white-space: nowrap; max-height: 100%; overflow: hidden; color: #f7f1e6; font: 400 6px/1 var(--sans); }
 .spine--away { opacity: 0.4; }
 .spine--found { background: #d9a54a; }
 .spine--found .spine__title { color: #1b1305; }
 .bookcase__more, .bookcase__label {
-  position: absolute; right: 2px; padding: 0 3px; background: rgb(0 0 0 / 0.62); color: #f7f1e6; font-size: 0.625rem; line-height: 0.875rem;
+  position: absolute; right: 0; background: rgb(0 0 0 / 0.6); color: #f7f1e6; font-size: 9px; line-height: 12px;
 }
-.bookcase__more { bottom: 0; font-weight: 700; }
-.bookcase__label { top: 1px; }
+.bookcase__more { bottom: 0; padding: 0 2px; font-weight: 700; }
+.bookcase__label { top: 0; padding: 0 3px; }
 
 .physical-hint { margin-top: 0.75rem; }
 .place-list { list-style: none; margin: 1rem 0 0; padding: 0; }
@@ -1156,7 +1156,7 @@ button.bookcase__shelf:hover:not(:disabled) { background: #2a1b10; }
 .where-it-is__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 
 /* A shelf stays big enough to tap: a wide bookcase scrolls inside its own frame, never the page. */
-.bookcase:not(.bookcase--mini) { grid-template-columns: repeat(var(--columns), minmax(2.75rem, 1fr)); overflow-x: auto; }
+.bookcase--full { grid-template-columns: repeat(var(--columns), minmax(2.75rem, 1fr)); overflow-x: auto; }
 .physical-case__head { flex-wrap: wrap; }
 .physical-case__head h1 { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .physical-case__head button { flex: none; white-space: nowrap; }

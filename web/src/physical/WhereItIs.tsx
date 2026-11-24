@@ -35,12 +35,11 @@ export function WhereItIs({
             {place.location}
           </button>
           {index >= 0 && <p>{ordinal(index + 1)} from the left</p>}
-          <BookcaseDrawing bookcase={place.bookcase} books={books} size="mini" highlightShelf={place.shelfId} highlightBook={book.id} />
+          <BookcaseDrawing bookcase={place.bookcase} books={books} size="card" highlightShelf={place.shelfId} highlightBook={book.id} />
           <div className="where-it-is__actions">
             <button type="button" onClick={() => setChoosing(true)}>Move</button>
             <button
               type="button"
-              className="quiet"
               onClick={() => {
                 const { shelfId, shelfPosition } = book
                 setPlace(store, book.id, null, null)

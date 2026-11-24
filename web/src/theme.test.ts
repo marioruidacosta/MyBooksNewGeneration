@@ -113,3 +113,21 @@ describe('phone layout rules', () => {
     expect(css).not.toMatch(/\.shelf-progress--edit::after/)
   })
 })
+
+describe('the bookcase drawing', () => {
+  const rule = (selector: string) => new RegExp(`(?:^|\\n)${selector.replace(/\./g, '\\.')} \\{([^}]*)\\}`).exec(css.replace(/\r/g, ''))?.[1] ?? ''
+
+  it('isDrawnAsInTheAndroidApp', () => {
+    expect(rule('.bookcase')).toMatch(/--shelf: 4\.5rem/)
+    expect(rule('.bookcase')).not.toMatch(/box-shadow/)
+    // Long titles on the spines must not stretch the shelves out of the frame.
+    expect(rule('.bookcase')).toMatch(/grid-template-rows: minmax\(0, 1fr\)/)
+    expect(rule('.bookcase--card')).toMatch(/--shelf: 2rem/)
+    expect(rule('.bookcase--edit')).toMatch(/--shelf: 2\.75rem/)
+    expect(rule('.bookcase--mini')).toMatch(/--shelf: 0\.75rem/)
+    expect(rule('.bookcase__shelf')).toMatch(/background: #1c120b/)
+    expect(rule('.bookcase__shelf')).not.toMatch(/border-bottom/)
+    expect(rule('.spine')).not.toMatch(/box-shadow/)
+    expect(rule('.spine__title')).toMatch(/400 6px/)
+  })
+})

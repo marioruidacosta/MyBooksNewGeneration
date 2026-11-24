@@ -5,7 +5,7 @@ import { shrinkToJpeg, uploadCover } from '../covers/coverUpload'
 import { CoverContext, type CoverStorage } from '../covers/storage'
 import { allTags, STATUS_LABELS } from '../library/filters'
 import { supabase } from '../supabase'
-import { BookCommunity, SuggestToFriend } from '../community/BookCommunity'
+import { BookFriends, BookReviews, SuggestToFriend } from '../community/BookCommunity'
 import { SharingSection } from '../community/SharingSection'
 import { WhereItIs } from '../physical/WhereItIs'
 import { useIsShared } from '../share/SharingContext'
@@ -105,6 +105,13 @@ export function BookPage({ store, owner, id, onBack, backLabel = 'Back to the li
     const next = parseWhole(text)
     if (next === undefined || next === current) return false
     edit({ [field]: next })
+    return true
+  }
+  /** The page also sets the percentage that follows from the page count; without a count the percentage stays. */
+  const currentPage = (text: string) => {
+    const next = parseWhole(text)
+    if (next === undefined || next === book.currentPage) return false
+    edit(next !== null && book.pageCount !== null && book.pageCount > 0 ? progressChange(book, { page: next }) : { current_page: next })
     return true
   }
   const day = (field: string) => (next: number | null) => {
@@ -224,8 +231,6 @@ export function BookPage({ store, owner, id, onBack, backLabel = 'Back to the li
             suggest={<SuggestToFriend key={id} book={book} />}
             whereItIs={<WhereItIs key={id} store={store} book={book} onOpenShelf={onOpenShelf} onAddBookcase={onAddBookcase} />}
             ebook={ebook ? ebookLine(ebook) : null}
-            onMarkRead={() => edit(statusChange(book, 'READ', Date.now()))}
-            onProgress={(input) => edit(progressChange(book, input))}
           />
           <div className="book-main">
           <form className="book-form" onSubmit={(e) => e.preventDefault()}>
@@ -234,9 +239,14 @@ export function BookPage({ store, owner, id, onBack, backLabel = 'Back to the li
               <div className="book-fields">
                 <DateField label="Started" value={book.dateStarted} onCommit={day('date_started')} />
                 <DateField label="Finished" value={book.dateRead} onCommit={day('date_read')} />
-                <Field kind="number" label="Current page" shown={show(book.currentPage)} onCommit={whole('current_page', book.currentPage)} />
+                <Field kind="number" label="Current page" shown={show(book.currentPage)} onCommit={currentPage} />
                 <Field kind="number" label="Progress (%)" max={100} shown={show(book.progressPercent)} onCommit={whole('progress_percent', book.progressPercent)} />
               </div>
+              {book.status !== 'READ' && (
+                <button type="button" className="primary reading-done" onClick={() => edit(statusChange(book, 'READ', Date.now()))}>
+                  Mark as read
+                </button>
+              )}
             </fieldset>
 
             <fieldset className="book-section">
@@ -304,7 +314,7 @@ export function BookPage({ store, owner, id, onBack, backLabel = 'Back to the li
           </form>
 
           <QuoteList store={store} bookId={id} />
-          <BookCommunity book={book} />
+          <BookReviews book={book} />
 
           <section className="book-section cover-panel" aria-label="Cover">
             <h2>Cover</h2>
@@ -351,6 +361,7 @@ export function BookPage({ store, owner, id, onBack, backLabel = 'Back to the li
           )}
 
           <p className="hint added">Added {formatDay(book.dateAdded)}</p>
+          <BookFriends book={book} />
           </div>
         </div>
       </main>

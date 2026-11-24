@@ -134,14 +134,24 @@ export function SuggestToFriend({ book }: { book: Book }) {
   )
 }
 
-/** What the community says about a book. Quiet by design: nothing shows when there's nothing, or it can't be loaded. */
-export function BookCommunity({ book }: { book: Book }) {
+/** What readers say about a book. Quiet by design: nothing shows when there's nothing, or it can't be loaded. */
+export function BookReviews({ book }: { book: Book }) {
+  const community = useOptionalCommunity()
+  if (!community?.profile || !book.isbn) return null
+  return (
+    <div className="book-community" key={book.isbn}>
+      <Reviews community={community} isbn={book.isbn} />
+    </div>
+  )
+}
+
+/** Which friends have the book: the last section of its page, and just as quiet. */
+export function BookFriends({ book }: { book: Book }) {
   const community = useOptionalCommunity()
   if (!community?.profile || !book.isbn) return null
   return (
     <div className="book-community" key={book.isbn}>
       <FriendsWithBook community={community} isbn={book.isbn} />
-      <Reviews community={community} isbn={book.isbn} />
     </div>
   )
 }
