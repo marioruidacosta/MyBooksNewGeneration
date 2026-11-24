@@ -383,7 +383,7 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
           <option value="in">Not lent</option>
         </select>
         {filtered && (
-          <button type="button" onClick={() => setFilters(NO_FILTERS)}>
+          <button type="button" className="toolbar__clear" onClick={() => setFilters(NO_FILTERS)}>
             Clear filters
           </button>
         )}

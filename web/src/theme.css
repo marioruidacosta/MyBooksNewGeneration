@@ -790,6 +790,16 @@ button.chip[aria-pressed='true'], [data-theme='night'] button.chip[aria-pressed=
   .book-main { margin-top: 0; }
   .quote { grid-template-columns: 1fr; }
   .cover-grid { grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 1.5rem 1rem; }
+  /* Two equal columns: search alone, then the filters, then the view and Add a book; Clear filters on its own row. */
+  .toolbar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .toolbar > * { width: 100%; min-width: 0; min-height: 2.75rem; }
+  .toolbar input[type='search'] { grid-column: 1 / -1; min-width: 0; }
+  .toolbar .view-switch, .toolbar button.primary { order: 2; }
+  .toolbar button.primary { margin-left: 0; }
+  .toolbar .toolbar__clear { order: 1; grid-column: 1 / -1; }
+  .toolbar .view-switch { display: flex; }
+  .toolbar .view-switch button { flex: 1 1 0; }
+  .toolbar .columns summary { display: flex; align-items: center; justify-content: center; min-height: 2.75rem; box-sizing: border-box; }
   .toast-region { bottom: calc(0.75rem + env(safe-area-inset-bottom)); }
   .toast { width: 100%; justify-content: space-between; }
 }
