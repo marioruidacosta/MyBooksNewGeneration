@@ -527,6 +527,8 @@ const router = createRouter({
   routeTree,
   basepath: import.meta.env.BASE_URL.replace(/\/$/, ''),
   context: { signedIn: false },
+  // A new page opens at its top, not as far down as the last one was; Back returns to where the list was left.
+  scrollRestoration: true,
 })
 
 declare module '@tanstack/react-router' {

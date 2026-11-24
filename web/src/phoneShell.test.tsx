@@ -193,6 +193,19 @@ describe('going back from a book', () => {
     expect(await screen.findByText(/Shelf A1 · 1st from the left/)).toBeInTheDocument()
   })
 
+  it('aBookOpensAtTheTopOfItsPage', async () => {
+    // Scrolled down a list, the book page opened as far down as the list had been.
+    window.history.pushState({}, '', '/MyBooksNewGeneration/app/physical/unplaced')
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    const user = userEvent.setup({ delay: null })
+    render(<App createApi={() => apiWith(stoner)} />)
+    const open = await screen.findByRole('button', { name: /^Stoner/ })
+    scrollTo.mockClear()
+    await user.click(open)
+    await screen.findByRole('button', { name: 'Back to Without a place' })
+    await vi.waitFor(() => expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ top: 0 })))
+  })
+
   it('aBookOpenedFromTidyUpGoesBackToIt', async () => {
     window.history.pushState({}, '', '/MyBooksNewGeneration/app/tidy')
     const user = userEvent.setup({ delay: null })
