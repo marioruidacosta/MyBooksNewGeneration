@@ -117,6 +117,15 @@ describe('phone layout rules', () => {
 describe('the book page side column', () => {
   const declarations = (selector: string) => new RegExp(`(?:^|\\n)${selector.replace(/\./g, '\\.')} \\{([^}]*)\\}`).exec(css)?.[1] ?? ''
 
+  it('theCoverTopIsLevelWithTheTitleAndAtAGlanceWithReading', () => {
+    expect(declarations('.book-hero__inner')).toMatch(/align-items: start/)
+    const glanceTop = /margin-top: ([\d.]+rem)/.exec(declarations('.glance'))?.[1]
+    expect(glanceTop).toBeDefined()
+    expect(declarations('.book-main')).toMatch(new RegExp(`margin-top: ${glanceTop}`))
+    // On a phone the side column sits above the form, so neither keeps the gap.
+    expect(css).toMatch(/\n {2}\.book-main \{ margin-top: 0; \}/)
+  })
+
   it('atAGlanceAndWhereItIsHeadingsLookLikeReading', () => {
     expect(declarations('.book-section legend, .book-section h2')).toMatch(/font-size: 1\.375rem/)
     for (const heading of ['.glance h2', '.where-it-is h3']) {
