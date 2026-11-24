@@ -13,6 +13,7 @@ import { STATUSES, type Book, type Status } from '../sync/model'
 import type { LibraryStore } from '../sync/store'
 import { useToast } from '../ui/toastContext'
 import { BulkBar, type BulkActions } from './BulkBar'
+import { challengePercent, countText, pace, paceText } from './challenge'
 import { CoverGrid } from './CoverGrid'
 import { ReadingShelf } from './ReadingShelf'
 import {
@@ -91,7 +92,7 @@ function GoalEditor({ store, year }: { store: LibraryStore; year: number }) {
 
   return (
     <label className="goal">
-      <span>{year} goal</span>
+      <span>Goal</span>
       <input
         type="number"
         min={0}
@@ -126,6 +127,30 @@ function GoalBar({ store, year, read }: { store: LibraryStore; year: number; rea
   )
 }
 
+/** The year's reading challenge as the app shows it: "22 of 25 books", the per cent, the bar and the pace. */
+function GoalPanel({ store, year, read, today }: { store: LibraryStore; year: number; read: number; today: Date }) {
+  const goal = useSyncExternalStore(store.subscribe, () => store.goal(year))
+  const set = goal !== null && goal > 0
+  return (
+    <section className="goal-panel" aria-label="Reading challenge">
+      <h2 className="goal-title">{set ? `${String(year)} Reading Challenge` : `Set your ${String(year)} reading goal`}</h2>
+      {set ? (
+        <>
+          <p className="goal-count">
+            <span>{countText(read, goal)}</span>
+            <span>{challengePercent(read, goal)}%</span>
+          </p>
+          <GoalBar store={store} year={year} read={read} />
+          <p className="goal-pace">{paceText(pace(year, goal, read, today))}</p>
+        </>
+      ) : (
+        <p className="goal-pace">Choose how many books you want to read this year and follow your progress.</p>
+      )}
+      <GoalEditor store={store} year={year} />
+    </section>
+  )
+}
+
 export type LibraryPageProps = {
   store: LibraryStore
   /** The year whose goal is shown; this year when left out. */
@@ -135,10 +160,12 @@ export type LibraryPageProps = {
   /** The day whose quote shows, and what brings its portrait; today and the browser's fetch when left out. */
   quoteDay?: Date
   quoteFetch?: PortraitFetch
+  /** The day the challenge's pace is measured on; today when left out. */
+  today?: Date
 }
 
 /** Every book in a table: sort, search, filter, choose several and change them together. */
-export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onOpen, quoteDay, quoteFetch }: LibraryPageProps) {
+export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onOpen, quoteDay, quoteFetch, today }: LibraryPageProps) {
   const books = useSyncExternalStore(store.subscribe, () => store.books())
   const firstVisitOffline = useSyncExternalStore(store.subscribe, () => store.firstVisitOffline)
   // Newest first until a column is chosen.
@@ -329,11 +356,7 @@ export function LibraryPage({ store, year = new Date().getFullYear(), onAdd, onO
             ))}
           </p>
         </div>
-        <div className="goal-panel">
-          <GoalEditor store={store} year={year} />
-          <GoalBar store={store} year={year} read={readThisYear} />
-          <span className="read-count">{readThisYear} read in {year}</span>
-        </div>
+        <GoalPanel store={store} year={year} read={readThisYear} today={today ?? new Date()} />
       </header>
       <QuoteOfTheDay place="library" now={quoteDay} fetchImpl={quoteFetch} />
 

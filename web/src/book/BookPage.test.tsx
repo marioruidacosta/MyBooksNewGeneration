@@ -11,6 +11,7 @@ import { Publisher } from '../share/publisher'
 import { SharingContext } from '../share/SharingContext'
 import { AtAGlance } from './AtAGlance'
 import { BookPage } from './BookPage'
+import { PHONE_QUERY } from '../ui/usePhone'
 
 const T = 15_000
 
@@ -70,6 +71,25 @@ afterEach(async () => {
 })
 
 describe('BookPage', () => {
+  it('onAPhoneTheCoverIsASliderAsInTheApp', async () => {
+    window.matchMedia = ((q: string) => ({
+      matches: q === PHONE_QUERY, media: q, addEventListener: () => {}, removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+    try {
+      show(await open())
+      expect(await screen.findByRole('tablist', { name: 'Cover, details and author' })).toBeInTheDocument()
+    } finally {
+      // @ts-expect-error jsdom has no matchMedia.
+      delete window.matchMedia
+    }
+  }, T)
+
+  it('onADeskTheCoverStaysAsItWas', async () => {
+    show(await open())
+    expect(await screen.findByRole('heading', { name: 'Blindness' })).toBeInTheDocument()
+    expect(screen.queryByRole('tablist', { name: 'Cover, details and author' })).not.toBeInTheDocument()
+  }, T)
+
   it('aReviewOverTheLimitIsNotSaved', async () => {
     const store = await open(book({ review: 'fine' }))
     const edit = vi.spyOn(store, 'edit')

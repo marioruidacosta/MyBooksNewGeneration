@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { chooseTheme, loadTheme, THEMES, type Theme } from './appearance'
 
-/** Night or Paper, from the top bar; the choice stays in this browser. */
+/** The look (Night, Paper, Sepia, Midnight, Sage or Bordeaux), from the top bar; the choice stays in this browser. */
 export function ThemeSwitch() {
   const [theme, setTheme] = useState<Theme>(loadTheme)
   return (

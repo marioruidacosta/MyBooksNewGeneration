@@ -70,7 +70,7 @@ function show(store: LibraryStore, extra: { onAdd?: () => void; onOpen?: (id: st
   const onOpen = extra.onOpen ?? vi.fn()
   const page = () => (
     <ToastProvider>
-      <LibraryPage store={store} year={2026} onAdd={onAdd} onOpen={onOpen} />
+      <LibraryPage store={store} year={2026} today={new Date(2026, 10, 3)} onAdd={onAdd} onOpen={onOpen} />
     </ToastProvider>
   )
   const view = render(page())
@@ -483,12 +483,17 @@ describe('LibraryPage', () => {
 
     const goal = screen.getByRole('spinbutton', { name: '2026 goal' })
     expect(goal).toHaveValue(null)
-    expect(screen.getByText('1 read in 2026')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Set your 2026 reading goal' })).toBeInTheDocument()
     await user.type(goal, '30{Enter}')
 
     expect(edit).toHaveBeenCalledWith('challenges', '2026', { goal: 30 })
     expect(store.goal(2026)).toBe(30)
     expect(screen.getByRole('spinbutton', { name: '2026 goal' })).toHaveValue(30)
+    // As the app shows it: 1 of 30 by 3 November, when an even pace would be 25.
+    expect(screen.getByRole('heading', { name: '2026 Reading Challenge' })).toBeInTheDocument()
+    expect(screen.getByText('1 of 30 books')).toBeInTheDocument()
+    expect(screen.getByText('3%')).toBeInTheDocument()
+    expect(screen.getByText('24 books behind schedule')).toBeInTheDocument()
 
     // Leaving it as it is writes nothing; a bad value goes back.
     edit.mockClear()
