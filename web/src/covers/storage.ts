@@ -1,4 +1,5 @@
 import { createContext } from 'react'
+import { dropPhoto } from './photoCache'
 
 /** The part of Supabase Storage the site uses (so a test can bring its own). */
 export interface CoverStorage {
@@ -50,7 +51,10 @@ export function onCoverRevision(cb: () => void): () => void {
 type Waiting = { resolve: (url: string) => void; reject: (e: Error) => void }
 const waiting = new WeakMap<CoverStorage, Map<string, Waiting[]>>()
 
-/** Signs everything asked for in this turn with one request (a page of covers is one call, not one per book). */
+/** How long asks are gathered: each cover first looks on this device, and those lookups don't all end at once. */
+const SIGN_WINDOW_MS = 40
+
+/** Signs everything asked for within [SIGN_WINDOW_MS] with one request (a page of covers is one call, not one per book). */
 function signLater(storage: CoverStorage, path: string): Promise<string> {
   let queue = waiting.get(storage)
   const first = !queue
@@ -61,7 +65,7 @@ function signLater(storage: CoverStorage, path: string): Promise<string> {
     else queue.set(path, [{ resolve, reject }])
   })
   if (first) {
-    void Promise.resolve().then(async () => {
+    void new Promise((wait) => setTimeout(wait, SIGN_WINDOW_MS)).then(async () => {
       const batch = waiting.get(storage)
       waiting.delete(storage)
       if (!batch) return
@@ -112,6 +116,7 @@ export function dropSignedUrl(storage: CoverStorage, path: string): void {
 /** Drops the cached link (the photo behind it changed) and tells the covers on screen to look again. */
 export function forgetSignedUrl(storage: CoverStorage, path: string): void {
   caches.get(storage)?.delete(path)
+  void dropPhoto(path)
   revision++
   listeners.forEach((l) => l())
 }

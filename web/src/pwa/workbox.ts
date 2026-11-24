@@ -3,10 +3,12 @@ import type { GenerateSWOptions } from 'workbox-build'
 /**
  * What the service worker keeps (vite.config.ts hands this to vite-plugin-pwa, which has Workbox write sw.js).
  *
- * Kept: the built app shell, so the site opens with no connection, and the public book-news files.
+ * Kept: the built app shell, so the site opens with no connection, the public book-news files, and the public covers
+ * of the three book databases (they hold nothing private, and the National Library's server forbids the browser's own
+ * cache, so each one was downloaded again every time).
  * Never kept: anything from Supabase (rows, sign-in, Edge Functions, signed cover addresses), or any other
- * cross-origin picture. The person's library lives only in this browser's IndexedDB, per account, never in a cache the
- * service worker could serve to someone else.
+ * cross-origin picture. The person's library and own cover photos live only in this browser's IndexedDB, per account,
+ * never in a cache the service worker could serve to someone else.
  */
 export const workboxOptions = {
   // The shell: html, js, css, the icons, and only the Latin and Latin-ext Literata files (Cyrillic, Greek and
@@ -35,6 +37,20 @@ export const workboxOptions = {
         networkTimeoutSeconds: 4,
         expiration: { maxEntries: 6, maxAgeSeconds: 7 * 24 * 60 * 60 },
         cacheableResponse: { statuses: [200] },
+      },
+    },
+    {
+      // Written out here: Workbox copies this function into sw.js, so it can't use anything from this file.
+      urlPattern: ({ url, request }: { url: URL; request: Request }) =>
+        request.destination === 'image' &&
+        url.protocol === 'https:' &&
+        ['rnod.bnportugal.gov.pt', 'books.google.com', 'covers.openlibrary.org'].includes(url.hostname),
+      // The saved picture at once, refreshed behind it: a bad copy (these responses can't be inspected) doesn't stay.
+      handler: 'StaleWhileRevalidate',
+      options: {
+        cacheName: 'mybooks-public-covers',
+        expiration: { maxEntries: 500, maxAgeSeconds: 30 * 24 * 60 * 60, purgeOnQuotaError: true },
+        cacheableResponse: { statuses: [0, 200] },
       },
     },
   ],
