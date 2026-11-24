@@ -52,6 +52,32 @@ describe('SignIn', () => {
     expect(await screen.findByText("That code didn't work. Check it, or send a new one.")).toBeInTheDocument()
   })
 
+  it('askingForAnotherCodeTooSoonSaysHowLongToWait', async () => {
+    // The server sends at most one code per address a minute, e.g. after signing out right after signing in.
+    signInWithOtp.mockResolvedValue({
+      data: {},
+      error: { code: 'over_email_send_rate_limit', status: 429, message: 'For security purposes, you can only request this after 21 seconds.' },
+    })
+    const user = userEvent.setup({ delay: null })
+    render(<SignIn />)
+
+    await user.type(screen.getByLabelText('Email'), 'reader@example.com')
+    await user.click(screen.getByRole('button', { name: 'Send code' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A code was sent to this address less than a minute ago. Wait 21 seconds, then send a new one.',
+    )
+    expect(screen.getByRole('button', { name: 'Send code' })).toBeEnabled()
+
+    signInWithOtp.mockResolvedValue({ data: {}, error: { status: 429, message: 'Email rate limit exceeded' } })
+    await user.click(screen.getByRole('button', { name: 'Send code' }))
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'A code was sent to this address less than a minute ago. Wait a minute, then send a new one.',
+      ),
+    )
+  })
+
   it("aNetworkFailureWhileSendingCanBeRetried", async () => {
     signInWithOtp.mockRejectedValue(new TypeError("Failed to fetch"))
     const user = userEvent.setup({ delay: null })

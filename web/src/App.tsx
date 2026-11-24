@@ -169,11 +169,17 @@ function ImportRoute() {
 function TidyRoute() {
   const store = useStore()
   const covers = useContext(CoverContext)
+  const navigate = useNavigate()
   if (!covers) throw new Error('TidyRoute: no signed-in account')
   return (
     <PageBoundary>
       <Suspense fallback={loadingPage}>
-        <TidyPage store={store} owner={covers.owner} storage={supabase.storage} />
+        <TidyPage
+          store={store}
+          owner={covers.owner}
+          storage={supabase.storage}
+          onOpenBook={(id) => void navigate({ to: '/book/$id', params: { id }, search: { from: 'tidy' } })}
+        />
       </Suspense>
     </PageBoundary>
   )
@@ -252,7 +258,9 @@ function BookRoute() {
       ? { label: 'Back to Without a place', go: () => void navigate({ to: '/physical/unplaced' }) }
       : from === 'physical'
         ? { label: 'Back to Physical library', go: () => void navigate({ to: '/physical' }) }
-        : { label: 'Back to the library', go: () => void navigate({ to: '/' }) }
+        : from === 'tidy'
+          ? { label: 'Back to Tidy up', go: () => void navigate({ to: '/tidy' }) }
+          : { label: 'Back to the library', go: () => void navigate({ to: '/' }) }
   return (
     <BookPage
       store={store}
@@ -383,7 +391,7 @@ const libraryRoute = createRoute({
 /** Where a book's Back returns to. Only these kinds, so a link can't make it go anywhere else. */
 function bookSearch(search: Record<string, unknown>): { from?: string } {
   const { from } = search
-  return typeof from === 'string' && (from === 'physical' || from === 'unplaced' || /^shelf:[A-Za-z0-9_-]{1,40}$/.test(from)) ? { from } : {}
+  return typeof from === 'string' && (from === 'physical' || from === 'unplaced' || from === 'tidy' || /^shelf:[A-Za-z0-9_-]{1,40}$/.test(from)) ? { from } : {}
 }
 
 const bookRoute = createRoute({

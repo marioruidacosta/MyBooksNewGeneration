@@ -91,6 +91,18 @@ describe('phone layout rules', () => {
     expect(inMedia(COARSE, 'button.shelf-meta')).toMatch(/min-width:\s*2\.75rem/)
   })
 
+  it('onAPhoneTheLibraryToolbarIsTwoEqualColumns', () => {
+    // Search on its own row; Status | Tags; Lent or not | Recently added; Table/Covers | Add a book.
+    const block = css.slice(css.lastIndexOf('@media (max-width: 52rem) {'))
+    const rule = (selector: string) => block.slice(block.indexOf(`${selector} {`), block.indexOf('}', block.indexOf(`${selector} {`)))
+    expect(rule('.toolbar')).toMatch(/grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/)
+    expect(rule('.toolbar > *')).toMatch(/width: 100%/)
+    expect(rule('.toolbar > *')).toMatch(/min-height: 2\.75rem/)
+    expect(rule(".toolbar input[type='search']")).toMatch(/grid-column: 1 \/ -1/)
+    expect(rule('.toolbar .view-switch, .toolbar button.primary')).toMatch(/order: 2/)
+    expect(rule('.toolbar .toolbar__clear')).toMatch(/order: 1; grid-column: 1 \/ -1/)
+  })
+
   it('onAPhoneTheBookCoverAlignsWithTheTopOfTheText', () => {
     const block = css.slice(css.lastIndexOf('@media (max-width: 52rem) {'))
     const rule = block.slice(block.indexOf('.book-hero__inner'), block.indexOf('}', block.indexOf('.book-hero__inner')))

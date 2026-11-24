@@ -193,6 +193,15 @@ describe('going back from a book', () => {
     expect(await screen.findByText(/Shelf A1 · 1st from the left/)).toBeInTheDocument()
   })
 
+  it('aBookOpenedFromTidyUpGoesBackToIt', async () => {
+    window.history.pushState({}, '', '/MyBooksNewGeneration/app/tidy')
+    const user = userEvent.setup({ delay: null })
+    render(<App createApi={() => apiWith(stoner)} />)
+    await user.click(await screen.findByRole('button', { name: /^Stoner/ }))
+    await user.click(await screen.findByRole('button', { name: 'Back to Tidy up' }))
+    expect(await screen.findByRole('heading', { name: 'Tidy up' })).toBeInTheDocument()
+  })
+
   it('anUnknownOriginGoesBackToTheLibrary', async () => {
     window.history.pushState({}, '', '/MyBooksNewGeneration/app/book/nope?from=https://example.com')
     render(<App createApi={() => api} />)

@@ -18,6 +18,8 @@ type Props = {
   lookup?: Lookup
   /** Makes an uploaded picture small enough; a test brings its own. */
   shrink?: (file: Blob) => Promise<Blob>
+  /** Opens a listed book's own page. */
+  onOpenBook?: (id: string) => void
 }
 
 type TabId = 'cover' | 'pages' | 'isbn' | 'duplicates'
@@ -25,7 +27,7 @@ type TabId = 'cover' | 'pages' | 'isbn' | 'duplicates'
 const quoteText = (n: number) => `${String(n)} ${n === 1 ? 'quote moves' : 'quotes move'}`
 
 /** Books that need tidying: what is missing, and likely duplicates, each with a quick fix. */
-export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink = shrinkToJpeg }: Props) {
+export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink = shrinkToJpeg, onOpenBook }: Props) {
   const books = useSyncExternalStore(store.subscribe, () => store.books())
   const toast = useToast()
   const [tab, setTab] = useState<TabId>('cover')
@@ -142,11 +144,13 @@ export function TidyPage({ store, owner, storage, lookup = defaultLookup, shrink
 
   const row = (b: Book, withUpload: boolean) => (
     <li key={b.id} className="tidy-row">
-      <CoverImage book={b} compact className="tidy-cover" />
-      <span className="tidy-title">
-        <strong>{b.title}</strong>
-        <span className="hint">{b.authors}</span>
-      </span>
+      <button type="button" className="tidy-open" onClick={() => onOpenBook?.(b.id)}>
+        <CoverImage book={b} compact className="tidy-cover" />
+        <span className="tidy-title">
+          <strong>{b.title}</strong>
+          <span className="hint">{b.authors}</span>
+        </span>
+      </button>
       <button type="button" disabled={busy !== null} onClick={() => void lookUp(b)}>
         Look up
       </button>

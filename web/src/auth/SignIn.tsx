@@ -7,6 +7,14 @@ import { verifyCode } from './verifyCode'
 const CODE_ERROR = "That code didn't work. Check it, or send a new one."
 const SEND_ERROR = "We couldn't send a code to that address. Check it and try again."
 
+/** The server sends at most one code per address a minute; when that is why, say how long to wait. */
+function sendError(err: { code?: string; status?: number; message?: string }): string {
+  if (err.code !== 'over_email_send_rate_limit' && err.status !== 429) return SEND_ERROR
+  const seconds = /after (\d+) seconds?/.exec(err.message ?? '')?.[1]
+  const wait = seconds === undefined ? 'a minute' : `${seconds} second${seconds === '1' ? '' : 's'}`
+  return `A code was sent to this address less than a minute ago. Wait ${wait}, then send a new one.`
+}
+
 /** Where the email and the step are kept while the code is awaited (never the code itself). */
 export const SIGNIN_KEY = 'mybooks.signin.pending'
 const KEEP_MS = 10 * 60_000
@@ -69,7 +77,7 @@ export function SignIn() {
         email,
         options: { shouldCreateUser: true },
       })
-      if (err) setError(SEND_ERROR)
+      if (err) setError(sendError(err))
       else {
         keepPending(email)
         setStep('code')
