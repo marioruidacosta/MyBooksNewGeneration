@@ -12,7 +12,7 @@ import { LibraryStore } from '../sync/store'
 import { ToastContext } from '../ui/toastContext'
 import { AccountPage } from './AccountPage'
 import { CommunityError, communityMessage, createCommunityApi, relationshipFrom, type CommunityApi } from './api'
-import { BookCommunity, ShareSwitch, SuggestToFriend } from './BookCommunity'
+import { BookFriends, BookReviews, ShareSwitch, SuggestToFriend } from './BookCommunity'
 import { SharingSection } from './SharingSection'
 import { CommunityProvider } from './CommunityProvider'
 import type { CommunityNav } from './useCommunity'
@@ -552,6 +552,9 @@ describe('a book', () => {
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
     publisher.stop()
   })
+
+  // The book page shows these two apart: what readers say, and at its very end, which friends have the book.
+  const BookCommunity = ({ book: b }: { book: Book }) => <><BookReviews book={b} /><BookFriends book={b} /></>
 
   it('friendsAndReadersShowOnABookWithAnIsbn', async () => {
     const api = fakeApi({

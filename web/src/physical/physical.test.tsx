@@ -635,3 +635,44 @@ describe('finding a book at home', () => {
     expect(screen.getByLabelText(label)).toHaveValue('')
   })
 })
+
+describe('the bookcase drawing, as on Android', () => {
+  it('spinesHaveTheAndroidSizes', () => {
+    // Worked out with Java's String.hashCode, which is what the app uses.
+    const expected: [string, number, number][] = [['Stoner', 9, 91], ['Ensaio sobre a Cegueira', 7, 86], ['Memória', 9, 72], ['Target', 9, 97]]
+    for (const [title, width, height] of expected) {
+      const { container, unmount } = render(<BookcaseDrawing bookcase={windowCase} books={[book(title, { shelfId: 's1', shelfPosition: 1 })]} />)
+      const spine = container.querySelector('.spine') as HTMLElement
+      expect(spine.style.width, title).toBe(`${String(width)}px`)
+      expect(spine.style.height, title).toBe(`${String(height)}%`)
+      unmount()
+    }
+  })
+
+  it('aThumbnailHasThinSpinesWithoutTitles', () => {
+    const { container } = render(<BookcaseDrawing bookcase={windowCase} size="mini" books={[book('Stoner', { shelfId: 's1', shelfPosition: 1 })]} />)
+    expect((container.querySelector('.spine') as HTMLElement).style.width).toBe('3px')
+    expect(container.querySelector('.spine__title')).toBeNull()
+  })
+
+  it('theBookPageDrawingShowsSpineTitles', () => {
+    saved(windowCase)
+    store.create(book('Target', { shelfId: 's1', shelfPosition: 1 }))
+    const { container } = render(<WhereItIs store={store} book={store.book('Target') as Book} />)
+    expect(container.querySelector('.bookcase--card .spine__title')).toHaveTextContent('Target')
+  })
+
+  it('theEditorDrawingHasTheAndroidHeight', () => {
+    const { container } = render(<BookcaseEditPage store={store} id={null} onDone={() => {}} />)
+    expect(container.querySelector('.bookcase--edit')).not.toBeNull()
+  })
+
+  it('moveAndTakeOffLookTheSame', () => {
+    saved(windowCase)
+    store.create(book('Target', { shelfId: 's1', shelfPosition: 1 }))
+    render(<WhereItIs store={store} book={store.book('Target') as Book} />)
+    const move = screen.getByRole('button', { name: 'Move' })
+    const takeOff = screen.getByRole('button', { name: 'Take off the shelf' })
+    expect(takeOff.className).toBe(move.className)
+  })
+})
