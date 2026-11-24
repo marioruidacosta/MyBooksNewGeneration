@@ -74,6 +74,17 @@ describe('TidyPage', () => {
     expect(screen.getByText('Blindness')).toBeInTheDocument()
   }, T)
 
+  it('aBookInTheListOpensItsPage', async () => {
+    const user = userEvent.setup({ delay: null })
+    const onOpenBook = vi.fn()
+    const store = await open(book({ id: 'a', coverUrl: null }))
+    render(<TidyPage store={store} owner="u1" storage={storage} onOpenBook={onOpenBook} />)
+
+    await user.click(screen.getByRole('button', { name: /^Blindness/ }))
+
+    expect(onOpenBook).toHaveBeenCalledWith('a')
+  }, T)
+
   it('lookUpFillsOnlyTheEmptyFields', async () => {
     const user = userEvent.setup({ delay: null })
     const store = await open(book({ id: 'a', coverUrl: null, publisher: 'Mine' }))

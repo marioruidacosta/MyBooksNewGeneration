@@ -472,7 +472,16 @@ button.date-pick { display: inline-flex; align-items: center; padding: 0 0.5rem;
 .tidy-tabs [aria-selected='true'] { color: var(--ink); border-bottom-color: var(--teal); font-weight: 600; }
 .tidy-list { list-style: none; margin: 0; padding: 0; }
 .tidy-row, .tidy-choice { display: flex; align-items: center; gap: 0.875rem; padding: 0.5rem 0; }
-.tidy-row { border-bottom: 1px solid var(--rule); }
+/* On a phone the book keeps its width and the fixes wrap below it. */
+.tidy-row { border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+.tidy-upload { min-width: 0; max-width: 100%; }
+.tidy-upload input { max-width: 100%; }
+.tidy-open {
+  display: flex; align-items: center; gap: 0.875rem; flex: 1 1 14rem; min-width: 0;
+  padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: inherit; text-align: left;
+}
+.tidy-open:hover:not(:disabled) { background: none; }
+.tidy-open:hover .tidy-title > :first-child { text-decoration: underline; }
 .tidy-title { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .tidy-title > :first-child { font-family: var(--serif); font-weight: 550; }
 .tidy-cover { width: 2.25rem; height: 3.375rem; flex: none; box-shadow: 0 1px 2px rgb(30 27 22 / 0.3); }
