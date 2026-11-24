@@ -177,6 +177,7 @@ main.sign-in { max-width: 26rem; padding-top: calc(6rem + env(safe-area-inset-to
 }
 .sign-in h1 { font-size: 3rem; }
 .sign-in__lede { color: var(--ink-soft); margin: 0.5rem 0 2rem; font-size: 1.0625rem; }
+.sign-in__notice { margin: -1rem 0 1.25rem; padding: 0.625rem 0.75rem; border: 1px solid var(--rule); border-radius: 6px; color: var(--ink); }
 .sign-in form { display: flex; flex-direction: column; gap: 0.875rem; }
 .sign-in__new { margin: 0; color: var(--ink-soft); font-size: 0.9375rem; }
 .community-join__leave { margin: 2rem 0 0; color: var(--ink-soft); font-size: 0.9375rem; }

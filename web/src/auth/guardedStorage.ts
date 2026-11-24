@@ -1,4 +1,5 @@
 import { authStorageKey } from '../supabase-config'
+import { clearExpired, markUsed } from './idle'
 
 /**
  * Where a sign-out is remembered (localStorage, so another tab and a later launch honour it). It names the account that
@@ -52,6 +53,8 @@ let signingIn = false
 
 /** Runs [verify], the explicit sign-in, letting it store its session; [userOf] says whose session it made. */
 export async function duringSignIn<T>(verify: () => Promise<T>, userOf: (result: T) => string | null): Promise<T> {
+  // Before the session is stored: it must not be judged by the previous session's last use.
+  markUsed()
   signingIn = true
   let result: T
   try {
@@ -60,6 +63,7 @@ export async function duringSignIn<T>(verify: () => Promise<T>, userOf: (result:
     signingIn = false
   }
   const user = userOf(result)
+  if (user !== null) clearExpired()
   const guard = readGuard()
   // The same account signing in again lifts the guard; another account leaves it for the one that signed out, so that
   // account's late refresh cannot replace the new session.

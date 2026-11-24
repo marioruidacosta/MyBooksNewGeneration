@@ -33,6 +33,9 @@ interface AuthService {
     suspend fun sendCode(email: String)
     suspend fun verifyCode(email: String, code: String)
     suspend fun signOut()
+
+    /** Ends this device's session on the server; when the server can't be reached, it's forgotten here anyway. */
+    suspend fun endSession() = signOut()
 }
 
 interface ProfileService {

@@ -49,6 +49,7 @@ import com.mcosta.mybooks.ui.releases.ReleasesViewModel
 import com.mcosta.mybooks.ui.releases.ReleaseView
 import io.ktor.http.encodeURLPathPart
 import com.mcosta.mybooks.ui.social.AccountRoute
+import com.mcosta.mybooks.ui.social.SessionExpiredDialog
 import com.mcosta.mybooks.sync.SyncStatus
 import com.mcosta.mybooks.ui.social.ActivityScreen
 import com.mcosta.mybooks.ui.social.ActivityViewModel
@@ -211,6 +212,18 @@ fun MyBooksNavHost(
     val syncOn = (container.sync?.status?.collectAsStateWithLifecycle()?.value ?: SyncStatus.Off) != SyncStatus.Off
     val syncRefresh: (suspend () -> Unit)? = if (syncOn) container::syncNow else null
     val nav = rememberNavController()
+    container.idleSession?.let { idle ->
+        val signedOutForIdle by idle.expired.collectAsStateWithLifecycle()
+        if (signedOutForIdle) {
+            SessionExpiredDialog(
+                onSignIn = {
+                    idle.dismissExpired()
+                    nav.navigate(Routes.ACCOUNT) { launchSingleTop = true }
+                },
+                onLater = idle::dismissExpired,
+            )
+        }
+    }
     // Once the graph is set (on the first composition it may not be yet): the start screen is then on the stack.
     LaunchedEffect(openRoute) {
         if (openRoute != null) {
@@ -729,7 +742,7 @@ fun MyBooksNavHost(
                     )
                 }
                 screen(Routes.ACCOUNT) {
-                    AccountRoute(social, container.sharingStatus, onBack = { nav.popBackStack() }, sync = container.sync, sessions = container.sessions, libraries = container.libraries)
+                    AccountRoute(social, container.sharingStatus, onBack = { nav.popBackStack() }, sync = container.sync, sessions = container.sessions, libraries = container.libraries, idle = container.idleSession)
                 }
             }
             screen(Routes.EDIT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->

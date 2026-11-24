@@ -1,6 +1,8 @@
 package com.mcosta.mybooks
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
 import com.mcosta.mybooks.alerts.BookSuggestionWorker
 import com.mcosta.mybooks.alerts.ReleaseAlertWorker
 import com.mcosta.mybooks.social.SocialConfig
@@ -21,6 +23,18 @@ class MyBooksApp : Application(), ContainerOwner {
             BuildConfig.VERSION_NAME,
             SocialConfig(BuildConfig.SUPABASE_URL, BuildConfig.SUPABASE_ANON_KEY),
         )
+        // Only the app on screen counts as use of the session.
+        container.idleSession?.let { idle ->
+            registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+                override fun onActivityStarted(activity: Activity) = idle.opened()
+                override fun onActivityStopped(activity: Activity) = idle.left()
+                override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+                override fun onActivityResumed(activity: Activity) = Unit
+                override fun onActivityPaused(activity: Activity) = Unit
+                override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+                override fun onActivityDestroyed(activity: Activity) = Unit
+            })
+        }
         // Kept scheduled while turned on (e.g. after a backup is restored on a new phone).
         if (container.releaseAlerts.enabled) ReleaseAlertWorker.schedule(this)
         // Friends' suggestions are checked once someone is signed in. After signing out the check finds nobody and stops there.

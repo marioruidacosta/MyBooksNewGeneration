@@ -42,6 +42,8 @@ All data stays on the phone; you can export/import it as a .zip backup from Sett
   deposit records), by genre, for the current month and the six before it. Add a book to your library, or
   open it at Bertrand, Almedina, Wook or Fnac. Built nightly by a GitHub Actions job; see
   [docs/releases-setup.md](docs/releases-setup.md).
+- **Staying signed in**: each device keeps its own session. After 7 days without use it asks you to sign in again, and
+  your library stays on the device. A nightly job on the server ends sessions of devices that never come back.
 - **Settings**: export the library, including cover photos, to a `.zip` file / import it back
   (older `.json` backups still import; merges, never deletes).
 

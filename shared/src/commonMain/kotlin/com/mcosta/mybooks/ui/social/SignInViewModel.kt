@@ -43,6 +43,8 @@ class SignInViewModel(
     private val profiles: ProfileService,
     /** Called once a new profile exists (activity sharing then starts). */
     private val onProfileCreated: suspend () -> Unit = {},
+    /** Runs just before a code is verified: the new session starts its own clock of use. */
+    private val beforeVerify: () -> Unit = {},
 ) : ViewModel() {
     private val _state = MutableStateFlow(SignInState())
     val state: StateFlow<SignInState> = _state.asStateFlow()
@@ -117,6 +119,7 @@ class SignInViewModel(
         }
         viewModelScope.launch {
             attempt {
+                beforeVerify()
                 auth.verifyCode(_state.value.email, code)
                 val next = stepAfterSignIn()
                 _state.update { it.copy(step = next) }
