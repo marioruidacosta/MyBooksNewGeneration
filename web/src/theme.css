@@ -356,7 +356,7 @@ main.book-page { max-width: none; padding: 0; --cloth: #3e4a5c; }
 .book-hero__inner {
   max-width: 64rem; margin: 0 auto;
   padding: 1.5rem max(2rem, env(safe-area-inset-right)) 2.5rem max(2rem, env(safe-area-inset-left));
-  display: grid; grid-template-columns: 13rem 1fr; column-gap: 2.5rem; align-items: end;
+  display: grid; grid-template-columns: 13rem 1fr; column-gap: 2.5rem; align-items: start;
 }
 .book-hero .back {
   grid-column: 1 / -1; justify-self: start; margin-bottom: 1.75rem;
@@ -395,7 +395,8 @@ button.star.star--on { color: #f0d27a; }
   max-width: 64rem; margin: 0 auto; padding: 2rem 2rem 4rem;
   display: grid; grid-template-columns: 13rem minmax(0, 1fr); column-gap: 2.5rem; align-items: start;
 }
-.book-main { display: grid; gap: 2.75rem; min-width: 0; }
+/* The same top margin as .glance, so Reading is level with At a glance. */
+.book-main { display: grid; gap: 2.75rem; min-width: 0; margin-top: 2.5rem; }
 /* Under the cover: the cover hangs 4.5rem below the hero, so this starts below it and then follows the page. */
 .glance {
   position: sticky; top: 4.5rem; margin-top: 2.5rem; display: grid; gap: 0.875rem;
@@ -786,6 +787,7 @@ button.chip[aria-pressed='true'], [data-theme='night'] button.chip[aria-pressed=
   .book-hero .cover-large { margin-bottom: 0; }
   .book-body { padding: 1.5rem max(1rem, env(safe-area-inset-right)) 3rem max(1rem, env(safe-area-inset-left)); grid-template-columns: minmax(0, 1fr); row-gap: 2.75rem; }
   .glance { position: static; margin-top: 0; max-height: none; overflow: visible; }
+  .book-main { margin-top: 0; }
   .quote { grid-template-columns: 1fr; }
   .cover-grid { grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 1.5rem 1rem; }
   .toast-region { bottom: calc(0.75rem + env(safe-area-inset-bottom)); }
