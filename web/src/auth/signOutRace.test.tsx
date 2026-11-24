@@ -149,6 +149,26 @@ describe('signing out while a refresh is still retrying', () => {
     expect(window.localStorage.getItem(GUARD_KEY)).toBeNull()
   })
 
+  for (const [who, user] of [['TheSameAccount', userA], ['AnotherAccount', userB]] as const) {
+    it(`aSignInAfterASignOutOpensTheLibrary_${who}`, async () => {
+      const { useSession, signOut } = await load()
+      const { verifyCode } = await import('./verifyCode')
+      const { result } = renderHook(() => useSession())
+      await advance(6_000)
+      await through(signOut())
+      expect(result.current.session).toBeNull()
+      online = true
+      route = (u) => {
+        if (u.includes('/verify')) return json(sessionOf(user, 3600, 'new'))
+        throw new TypeError('Load failed')
+      }
+      const { error } = await through(verifyCode(user.email, '123456'))
+      expect(error).toBeNull()
+      // The page itself must move on: the code is spent, so pressing Sign in again would say it didn't work.
+      expect(result.current.session?.user.id).toBe(user.id)
+    })
+  }
+
   it('aNormalSignInRefreshAndSignOutAreUnaffected', async () => {
     window.localStorage.clear()
     online = true

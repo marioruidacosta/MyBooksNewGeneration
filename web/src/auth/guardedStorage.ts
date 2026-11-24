@@ -41,15 +41,19 @@ export function dropGuard(): void {
   }
 }
 
-/** Whether a session of [userId] must be ignored: it belongs to the account that signed out (or, when not known, any). */
+/** True only while an explicit sign-in (an emailed code) is being verified: its own session is the one to store. */
+let signingIn = false
+
+/**
+ * Whether a session of [userId] must be ignored: it belongs to the account that signed out (or, when not known, any).
+ * Never during an explicit sign-in: supabase-js announces it before the guard is lifted, and the page must open.
+ */
 export function guardBlocks(userId: string | null | undefined): boolean {
+  if (signingIn) return false
   const guard = readGuard()
   if (!guard) return false
   return guard.user === '*' || guard.user === userId
 }
-
-/** True only while an explicit sign-in (an emailed code) is being verified: its own session is the one to store. */
-let signingIn = false
 
 /** Runs [verify], the explicit sign-in, letting it store its session; [userOf] says whose session it made. */
 export async function duringSignIn<T>(verify: () => Promise<T>, userOf: (result: T) => string | null): Promise<T> {
@@ -84,7 +88,7 @@ function userIdOf(value: string): string | undefined {
 export const authStorage = {
   getItem: (key: string): string | null => window.localStorage.getItem(key),
   setItem: (key: string, value: string): void => {
-    if (key === authStorageKey() && !signingIn && guardBlocks(userIdOf(value))) return
+    if (key === authStorageKey() && guardBlocks(userIdOf(value))) return
     window.localStorage.setItem(key, value)
   },
   removeItem: (key: string): void => window.localStorage.removeItem(key),
