@@ -114,6 +114,20 @@ describe('phone layout rules', () => {
   })
 })
 
+describe('the book page side column', () => {
+  const declarations = (selector: string) => new RegExp(`(?:^|\\n)${selector.replace(/\./g, '\\.')} \\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+
+  it('atAGlanceAndWhereItIsHeadingsLookLikeReading', () => {
+    expect(declarations('.book-section legend, .book-section h2')).toMatch(/font-size: 1\.375rem/)
+    for (const heading of ['.glance h2', '.where-it-is h3']) {
+      expect(declarations(heading), heading).toMatch(/font-size: 1\.375rem/)
+      // Reading is a legend, so it takes the 1.5 line height of the page.
+      expect(declarations(heading), heading).toMatch(/line-height: 1\.5/)
+      expect(css, heading).toMatch(new RegExp(`\\[data-theme='night'\\] ${heading.replace('.', '\\.')}[^{]*\\{ color: #f3dca6; \\}`))
+    }
+  })
+})
+
 describe('the bookcase drawing', () => {
   const rule = (selector: string) => new RegExp(`(?:^|\\n)${selector.replace(/\./g, '\\.')} \\{([^}]*)\\}`).exec(css.replace(/\r/g, ''))?.[1] ?? ''
 
