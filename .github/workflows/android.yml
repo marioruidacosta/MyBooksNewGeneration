@@ -16,8 +16,22 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      # Robolectric downloads its Android jars from Maven Central on the first screen test, and Maven Central often
+      # refuses GitHub's runners: the jars are kept between runs, and saved even when a later step fails.
+      - name: Robolectric jars (restore)
+        id: robolectric
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('gradle/libs.versions.toml') }}
       - name: Tests and debug APK
         run: bash .github/scripts/annotate.sh ./gradlew :shared:compileCommonMainKotlinMetadata :shared:testAndroidHostTest :androidReader:testDebugUnitTest :androidApp:testDebugUnitTest :androidApp:assembleDebug
+      - name: Robolectric jars (save)
+        if: always() && steps.robolectric.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: ${{ steps.robolectric.outputs.cache-primary-key }}
       - name: Lint (new Android APIs on old phones, and more)
         # Its own run: Gradle rejects lint and the shared host tests in one build (implicit task dependency).
         run: bash .github/scripts/annotate.sh ./gradlew :androidReader:lintDebug :androidApp:lintDebug
