@@ -7,12 +7,14 @@ import './theme.css'
 import { App } from './App'
 import { applyTheme, loadTheme } from './appearance'
 import { registerServiceWorker } from './pwa/updates'
+import { LaunchIntro } from './shell/LaunchIntro'
 
 applyTheme(loadTheme())
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    <LaunchIntro />
   </StrictMode>,
 )
 
