@@ -36,7 +36,7 @@ class MainActivity : ComponentActivity() {
         )
         if (savedInstanceState == null) openFrom(intent)
         setContent {
-            App(container, services, openRoute = openRoute.value, onOpened = { openRoute.value = null })
+            App(container, services, openRoute = openRoute.value, onOpened = { openRoute.value = null }, showIntro = true)
         }
     }
 

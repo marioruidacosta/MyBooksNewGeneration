@@ -2,6 +2,8 @@ package com.mcosta.mybooks.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import com.mcosta.mybooks.ui.components.LaunchIntro
+import com.mcosta.mybooks.ui.components.LaunchIntroShown
 import com.mcosta.mybooks.ui.components.LocalReduceMotion
 import com.mcosta.mybooks.ui.components.rememberReduceMotion
 import androidx.compose.runtime.DisposableEffect
@@ -40,6 +42,8 @@ fun App(
     /** A screen to open now (from a notification); [onOpened] is called once it is. */
     openRoute: String? = null,
     onOpened: () -> Unit = {},
+    /** The animated wordmark over the app when it starts fresh (not when it comes back from the background). */
+    showIntro: Boolean = false,
 ) {
     val followWallpaper by container.appearance.followWallpaper.collectAsState()
     val space by container.libraries.active.collectAsState()
@@ -73,6 +77,15 @@ fun App(
                     // Over whatever screen is open: the first sign-in's question, and the move it starts.
                     PhoneBooksPrompts(container.libraries)
                 }
+            }
+        }
+        // Over everything, once per start of the app: turning the phone or coming back from the background doesn't
+        // show it again.
+        var intro by remember { mutableStateOf(showIntro && !LaunchIntroShown.value) }
+        if (intro) {
+            LaunchIntro(rememberReduceMotion()) {
+                LaunchIntroShown.value = true
+                intro = false
             }
         }
     }
