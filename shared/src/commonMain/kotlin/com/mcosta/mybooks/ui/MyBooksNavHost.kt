@@ -534,7 +534,7 @@ fun MyBooksNavHost(
             screen(Routes.BOOK, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
                 val id = entry.savedStateHandle.get<Long>("id")!!
                 BookDetailScreen(
-                    viewModel = viewModel { BookDetailViewModel(container.repository, id, container.writes, container.authors, container.quotes, container.ebooks) },
+                    viewModel = viewModel { BookDetailViewModel(container.repository, id, container.writes, container.authors, container.quotes, container.ebooks, container.bookFacts) },
                     onRead = ebookPlatform?.let { p -> { p.openReader(id) } },
                     onAddEbookFile = pickEbook?.let { pick -> { pick(id) } },
                     ebookElsewhere = syncOn,

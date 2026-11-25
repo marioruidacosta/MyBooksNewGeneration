@@ -69,6 +69,25 @@ describe('CoverSlider', () => {
     expect(onOpenBook).toHaveBeenCalledWith('2')
   })
 
+  it('theDetailsAddWhatWikidataKnowsWhenFirstShown', async () => {
+    const user = userEvent.setup({ delay: null })
+    const fetchFacts = vi.fn(async () => ({
+      firstPublished: '1995', originalTitle: 'Ensaio sobre a Cegueira', originalLanguage: 'português', genres: ['ficção científica'],
+      awards: ['Some Prize'], follows: null, followedBy: 'Seeing', pageUrl: 'https://www.wikidata.org/wiki/Q826428',
+    }))
+    render(<CoverSlider book={book()} books={[book()]} fetchAuthor={vi.fn()} fetchFacts={fetchFacts} />)
+    expect(fetchFacts).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('tab', { name: 'Details' }))
+
+    expect(fetchFacts).toHaveBeenCalledWith('Blindness', 'José Saramago')
+    const details = screen.getByRole('tabpanel', { name: 'Details' })
+    expect((await within(details).findByText('Followed by')).nextElementSibling).toHaveTextContent('Seeing')
+    expect(within(details).getByText('Awards').nextElementSibling).toHaveTextContent('Some Prize')
+    expect(within(details).getByText('Original title').nextElementSibling).toHaveTextContent('Ensaio sobre a Cegueira (português)')
+    expect(within(details).getByRole('link', { name: 'Wikidata' })).toHaveAttribute('href', 'https://www.wikidata.org/wiki/Q826428')
+  })
+
   it('aBookWithNoAuthorSaysSo', async () => {
     const user = userEvent.setup({ delay: null })
     const fetchAuthor = vi.fn()
