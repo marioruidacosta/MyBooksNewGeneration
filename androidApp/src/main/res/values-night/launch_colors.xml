@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launch screen's background: the launch intro's Night green in dark mode (LaunchIntro.kt). -->
+    <color name="launch_background">#FF0F1C18</color>
+</resources>

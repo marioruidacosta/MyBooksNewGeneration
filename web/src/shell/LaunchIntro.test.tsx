@@ -14,9 +14,11 @@ describe('LaunchIntro', () => {
     const { container } = render(<LaunchIntro reducedMotion={false} />)
     const intro = container.querySelector('.launch-intro')
     expect(intro).toHaveTextContent('MyBooks')
+    // "My" comes in whole, then "Books" whole: two words, not seven letters.
+    expect([...intro!.querySelectorAll('.launch-intro__word > span')].map((s) => s.textContent)).toEqual(['My', 'Books'])
     // Out of the way of screen readers: it says nothing the app doesn't.
     expect(intro).toHaveAttribute('aria-hidden', 'true')
-    after(1399)
+    after(1499)
     expect(intro).not.toHaveClass('launch-intro--leaving')
     after(1)
     expect(intro).toHaveClass('launch-intro--leaving')

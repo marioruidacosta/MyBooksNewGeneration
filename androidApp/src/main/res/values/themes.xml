@@ -1,3 +1,7 @@
 <resources>
-    <style name="Theme.MyBooks" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- The window's background is also the launch screen's (Android 12 and later): the same colour as the launch intro, so
+         starting the app goes from the launch screen into the intro without a white flash. -->
+    <style name="Theme.MyBooks" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/launch_background</item>
+    </style>
 </resources>
