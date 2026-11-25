@@ -13,6 +13,7 @@ import com.mcosta.mybooks.data.FakeShareStateDao
 import com.mcosta.mybooks.share.ShareTracker
 import com.mcosta.mybooks.data.SaveResult
 import com.mcosta.mybooks.data.authors.AuthorInfo
+import com.mcosta.mybooks.data.books.BookFacts
 import com.mcosta.mybooks.data.lookup.BookLookupService
 import com.mcosta.mybooks.data.lookup.LookupResult
 import com.mcosta.mybooks.domain.Book
@@ -238,6 +239,21 @@ class BookDetailViewModelTest : MainDispatcherTest() {
         vm.loadAuthor()
         advanceUntilIdle()
         assertEquals(listOf("José Saramago"), asked)                                              // loaded once
+    }
+
+    @Test
+    fun theWorksFactsAreLoadedOnceWhenTheDetailsAreShown() = runTest {
+        val id = (repo.save(Book(title = "Blindness", authors = "José Saramago")) as SaveResult.Saved).id
+        val asked = mutableListOf<Pair<String, String>>()
+        val found = BookFacts("1995", null, null, emptyList(), listOf("Some Prize"), null, "Seeing", "https://www.wikidata.org/wiki/Q1")
+        val vm = BookDetailViewModel(repo, id, backgroundScope, bookFacts = { title, authors -> asked += title to authors; found })
+        assertNull(vm.facts.value)
+        vm.loadFacts()
+        advanceUntilIdle()
+        assertEquals(found, vm.facts.value)
+        vm.loadFacts()
+        advanceUntilIdle()
+        assertEquals(listOf("Blindness" to "José Saramago"), asked)
     }
 
     @Test

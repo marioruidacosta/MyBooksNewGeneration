@@ -6,6 +6,8 @@ import com.mcosta.mybooks.data.BookRepository
 import com.mcosta.mybooks.data.MAX_REVIEW_LENGTH
 import com.mcosta.mybooks.data.authors.AuthorInfo
 import com.mcosta.mybooks.data.authors.AuthorInfoSource
+import com.mcosta.mybooks.data.books.BookFacts
+import com.mcosta.mybooks.data.books.BookFactsSource
 import com.mcosta.mybooks.domain.Book
 import com.mcosta.mybooks.domain.ReadingStatus
 import com.mcosta.mybooks.domain.BookFilter
@@ -52,7 +54,25 @@ class BookDetailViewModel(
     private val quoteRepo: QuoteRepository? = null,
     /** The book's ebook file; null shows no Ebook card (tests that don't involve it). */
     private val ebookRepo: EbookRepository? = null,
+    /** What Wikidata knows about the work, under the header's details; null shows only the book's own details. */
+    private val bookFacts: BookFactsSource? = null,
 ) : ViewModel() {
+    private val _facts = MutableStateFlow<BookFacts?>(null)
+    /** The work's facts, loaded when the details are first shown ([loadFacts]). */
+    val facts: StateFlow<BookFacts?> = _facts.asStateFlow()
+    private var factsAsked = false
+
+    /** Asks for the work's facts once, by the book's title and first author. */
+    fun loadFacts() {
+        val source = bookFacts ?: return
+        if (factsAsked) return
+        factsAsked = true
+        viewModelScope.launch {
+            val book = repo.getBook(id) ?: return@launch
+            _facts.value = source.facts(book.title, book.authors)
+        }
+    }
+
     /** The book's ebook and whether its file is on this phone; null without one. */
     val ebook: StateFlow<EbookState?> = (ebookRepo?.observe(id) ?: flowOf(null))
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

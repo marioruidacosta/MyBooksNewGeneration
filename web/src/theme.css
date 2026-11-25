@@ -380,11 +380,14 @@ main.book-page { max-width: none; padding: 0; --cloth: #3e4a5c; }
 .cover-slider__track::-webkit-scrollbar { display: none; }
 .cover-slider__panel {
   flex: 0 0 100%; min-width: 0; height: 14.0625rem; scroll-snap-align: center;
-  display: flex; justify-content: center; align-items: center; overflow-y: auto;
+  display: flex; justify-content: center; align-items: flex-start; overflow-y: auto;
 }
-.cover-slider__panel--top { align-items: flex-start; }
-.cover-details { display: grid; gap: 0.375rem; width: min(100%, 19rem); margin: 0; font-size: 0.9375rem; text-align: left; }
-.cover-details > div { display: grid; grid-template-columns: 5.25rem minmax(0, 1fr); gap: 0.75rem; }
+/* Centred when it fits, scrolling from its top when it doesn't (centring alone would cut off the top). */
+.cover-slider__panel > * { margin-block: auto; }
+.cover-details { display: grid; gap: 0.5rem; width: min(100%, 19rem); font-size: 0.9375rem; text-align: left; }
+.cover-details dl { display: grid; gap: 0.375rem; margin: 0; }
+.cover-details dl > div { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 0.75rem; }
+.cover-details a { color: inherit; font-size: 0.8125rem; justify-self: start; }
 .cover-details dt { opacity: 0.75; }
 .cover-details dd { margin: 0; overflow-wrap: anywhere; }
 .author-panel { display: grid; gap: 0.375rem; width: min(100%, 20rem); font-size: 0.875rem; text-align: left; }

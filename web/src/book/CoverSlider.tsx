@@ -4,6 +4,7 @@ import { STATUS_LABELS } from '../library/filters'
 import type { Book } from '../sync/model'
 import { formatDay } from '../text/dates'
 import { authorKey, searchKey } from '../text/keys'
+import { bookFacts, factRows, type BookFacts } from './wikidataFacts'
 import { authorInfo, type AuthorInfo } from './wikipediaAuthor'
 
 const PANELS = ['Cover', 'Details', 'Author'] as const
@@ -76,18 +77,29 @@ type Props = {
   onOpenBook?: (id: string) => void
   /** Finds the author's biography; Wikipedia when left out. */
   fetchAuthor?: (name: string) => Promise<AuthorInfo | null>
+  /** Finds what is known about the work (awards, first published, …); Wikidata when left out. */
+  fetchFacts?: (title: string, authors: string) => Promise<BookFacts | null>
 }
 
 /**
  * The phone's cover, as in the app: swiping it shows the book's details, then its author, in its place (three dots
  * show which). The author's biography is fetched only when their panel is first shown.
  */
-export function CoverSlider({ book, books, onOpenBook, fetchAuthor = authorInfo }: Props) {
+export function CoverSlider({ book, books, onOpenBook, fetchAuthor = authorInfo, fetchFacts = bookFacts }: Props) {
   const track = useRef<HTMLDivElement>(null)
   const [current, setCurrent] = useState(0)
   const [author, setAuthor] = useState<Author | null>(null)
+  const [facts, setFacts] = useState<BookFacts | null>(null)
   const started = useRef(false)
+  const factsAsked = useRef(false)
   const name = book.authors.split(',')[0].trim()
+
+  // Like the author, the work's facts are fetched only when the details are first shown.
+  useEffect(() => {
+    if (current !== 1 || factsAsked.current) return
+    factsAsked.current = true
+    fetchFacts(book.title, book.authors).then(setFacts, () => setFacts(null))
+  }, [current, book.title, book.authors, fetchFacts])
 
   useEffect(() => {
     if (current !== 2 || started.current || name === '') return
@@ -126,14 +138,21 @@ export function CoverSlider({ book, books, onOpenBook, fetchAuthor = authorInfo 
           <CoverImage book={book} className="cover-large" />
         </div>
         <div className="cover-slider__panel" role="tabpanel" aria-label="Details">
-          <dl className="cover-details">
-            {bookDetails(book).map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
+          <div className="cover-details">
+            <dl>
+              {[...bookDetails(book), ...(facts ? factRows(facts, book.title) : [])].map(([label, value]) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+            {facts && (
+              <a href={facts.pageUrl} target="_blank" rel="noopener noreferrer">
+                Wikidata
+              </a>
+            )}
+          </div>
         </div>
         <div className="cover-slider__panel cover-slider__panel--top" role="tabpanel" aria-label="Author">
           <AuthorPanel name={name} author={author} others={others} onOpenBook={onOpenBook} />

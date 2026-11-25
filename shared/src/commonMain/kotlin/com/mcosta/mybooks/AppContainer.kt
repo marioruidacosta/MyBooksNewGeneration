@@ -117,6 +117,9 @@ class AppContainer(
     /** Author biographies (Wikipedia) for the book page. */
     val authors = WikipediaAuthors(http)
 
+    /** What Wikidata knows about a book's work (awards, first published, …), for the book page's details. */
+    val bookFacts = com.mcosta.mybooks.data.books.WikidataFacts(http)
+
     /** "More by …" on the book page (Google Books, by author). */
     val authorBooks = GoogleBooksAuthorSearch(http, apiKey = googleBooksApiKey)
 

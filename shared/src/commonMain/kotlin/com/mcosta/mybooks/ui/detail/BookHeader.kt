@@ -1,6 +1,9 @@
 package com.mcosta.mybooks.ui.detail
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +38,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,10 +68,20 @@ fun BookHeader(
     onChoosePhoto: (() -> Unit)? = null,
     /** The key the list's cover used: the cover grows from there into this header. */
     shareKey: String? = null,
+    /** More lines under [details], from Wikidata, and its page (credited under them). */
+    facts: List<Pair<String, String>> = emptyList(),
+    factsUrl: String? = null,
+    /** Called when the details panel is first shown (the work's facts are fetched then). */
+    onDetailsShown: () -> Unit = {},
 ) {
     val pages = rememberPagerState { 3 }
-    // The author's biography is fetched only when their panel is first shown.
-    LaunchedEffect(pages.currentPage) { if (pages.currentPage == 2) onAuthorShown() }
+    // The work's facts and the author's biography are fetched only when their panel is first shown.
+    LaunchedEffect(pages.currentPage) {
+        when (pages.currentPage) {
+            1 -> onDetailsShown()
+            2 -> onAuthorShown()
+        }
+    }
     Box(Modifier.fillMaxWidth()) {
         BookCover(coverUrl, Modifier.matchParentSize().blur(28.dp).alpha(0.5f), title = title, authors = authors)
         Box(
@@ -87,7 +101,7 @@ fun BookHeader(
                             BookCover(coverUrl, Modifier.width(COVER_HEIGHT * 2 / 3).height(COVER_HEIGHT), title = title, authors = authors)
                         }
                     } else {
-                        if (page == 1) DetailsPanel(details) else AuthorPanelView(author, onOpenBook)
+                        if (page == 1) DetailsPanel(details + facts, factsUrl) else AuthorPanelView(author, onOpenBook)
                     }
                 }
             }
@@ -121,20 +135,29 @@ private fun AddCoverPhoto(onTakePhoto: () -> Unit, onChoosePhoto: (() -> Unit)?)
 
 /** The book's details in the cover's place, as plain text over the blurred backdrop: label and value per line. */
 @Composable
-private fun DetailsPanel(details: List<Pair<String, String>>) {
-    Column(
-        Modifier.fillMaxHeight().widthIn(max = 300.dp).fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
-    ) {
-        for ((label, value) in details) {
-            Row {
+private fun DetailsPanel(details: List<Pair<String, String>>, sourceUrl: String?) {
+    val uris = LocalUriHandler.current
+    // Centred when it fits, scrolling within the cover's height when Wikidata adds more than fits.
+    Box(Modifier.fillMaxHeight().widthIn(max = 300.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            for ((label, value) in details) {
+                Row {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.width(108.dp),
+                    )
+                    Text(value, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            sourceUrl?.let { url ->
                 Text(
-                    label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(84.dp),
+                    "Wikidata",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { runCatching { uris.openUri(url) } },
                 )
-                Text(value, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
